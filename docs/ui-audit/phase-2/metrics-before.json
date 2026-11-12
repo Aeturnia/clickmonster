@@ -1,0 +1,343 @@
+[
+ {
+  "size": "320x640",
+  "town": {
+   "mainH": 224,
+   "visibleRows": 0,
+   "firstRowTop": 242,
+   "hudH": 95,
+   "hudClipped": false,
+   "dockH": 229,
+   "dockOverlaps": 0,
+   "dockMinTarget": 46,
+   "dockOffscreen": 0,
+   "hOverflow": false
+  },
+  "open": {
+   "mainH": 276,
+   "visibleRows": 0,
+   "firstRowTop": 221,
+   "hudH": 95,
+   "hudClipped": false,
+   "dockH": 177,
+   "dockOverlaps": 0,
+   "dockMinTarget": 46,
+   "dockOffscreen": 0,
+   "hOverflow": false
+  },
+  "battle": {
+   "logH": 208,
+   "meleeInView": true,
+   "castInView": true,
+   "hOverflow": false
+  },
+  "chat": {
+   "inputVisible": true,
+   "listH": 340
+  },
+  "chatKeyboard": {
+   "inputVisible": false,
+   "listH": 340
+  },
+  "map": {
+   "cell": 20,
+   "meVisible": false,
+   "tabStops": 1600,
+   "hOverflow": false
+  }
+ },
+ {
+  "size": "375x812",
+  "town": {
+   "mainH": 496,
+   "visibleRows": 4,
+   "firstRowTop": 242,
+   "hudH": 95,
+   "hudClipped": false,
+   "dockH": 129,
+   "dockOverlaps": 0,
+   "dockMinTarget": 46,
+   "dockOffscreen": 0,
+   "hOverflow": false
+  },
+  "open": {
+   "mainH": 506,
+   "visibleRows": 4,
+   "firstRowTop": 221,
+   "hudH": 95,
+   "hudClipped": false,
+   "dockH": 119,
+   "dockOverlaps": 0,
+   "dockMinTarget": 46,
+   "dockOffscreen": 0,
+   "hOverflow": false
+  },
+  "battle": {
+   "logH": 380,
+   "meleeInView": true,
+   "castInView": true,
+   "hOverflow": false
+  },
+  "chat": {
+   "inputVisible": true,
+   "listH": 464
+  },
+  "chatKeyboard": {
+   "inputVisible": false,
+   "listH": 464
+  },
+  "map": {
+   "cell": 20,
+   "meVisible": false,
+   "tabStops": 1600,
+   "hOverflow": false
+  }
+ },
+ {
+  "size": "390x844",
+  "town": {
+   "mainH": 528,
+   "visibleRows": 4,
+   "firstRowTop": 242,
+   "hudH": 95,
+   "hudClipped": false,
+   "dockH": 129,
+   "dockOverlaps": 0,
+   "dockMinTarget": 46,
+   "dockOffscreen": 0,
+   "hOverflow": false
+  },
+  "open": {
+   "mainH": 538,
+   "visibleRows": 5,
+   "firstRowTop": 221,
+   "hudH": 95,
+   "hudClipped": false,
+   "dockH": 119,
+   "dockOverlaps": 0,
+   "dockMinTarget": 46,
+   "dockOffscreen": 0,
+   "hOverflow": false
+  },
+  "battle": {
+   "logH": 412,
+   "meleeInView": true,
+   "castInView": true,
+   "hOverflow": false
+  },
+  "chat": {
+   "inputVisible": true,
+   "listH": 487
+  },
+  "chatKeyboard": {
+   "inputVisible": false,
+   "listH": 487
+  },
+  "map": {
+   "cell": 20,
+   "meVisible": false,
+   "tabStops": 1600,
+   "hOverflow": false
+  },
+  "text200": {
+   "mainH": 138,
+   "visibleRows": 0,
+   "firstRowTop": 556,
+   "hudH": 198,
+   "hudClipped": false,
+   "dockH": 404,
+   "dockOverlaps": 0,
+   "dockMinTarget": 74,
+   "dockOffscreen": 0,
+   "hOverflow": false
+  }
+ },
+ {
+  "size": "430x932",
+  "town": {
+   "mainH": 616,
+   "visibleRows": 6,
+   "firstRowTop": 220,
+   "hudH": 95,
+   "hudClipped": false,
+   "dockH": 129,
+   "dockOverlaps": 0,
+   "dockMinTarget": 46,
+   "dockOffscreen": 0,
+   "hOverflow": false
+  },
+  "open": {
+   "mainH": 626,
+   "visibleRows": 6,
+   "firstRowTop": 221,
+   "hudH": 95,
+   "hudClipped": false,
+   "dockH": 119,
+   "dockOverlaps": 0,
+   "dockMinTarget": 46,
+   "dockOffscreen": 0,
+   "hOverflow": false
+  },
+  "battle": {
+   "logH": 503,
+   "meleeInView": true,
+   "castInView": true,
+   "hOverflow": false
+  },
+  "chat": {
+   "inputVisible": true,
+   "listH": 551
+  },
+  "chatKeyboard": {
+   "inputVisible": false,
+   "listH": 551
+  },
+  "map": {
+   "cell": 20,
+   "meVisible": false,
+   "tabStops": 1600,
+   "hOverflow": false
+  }
+ },
+ {
+  "size": "844x390",
+  "town": {
+   "mainH": 106,
+   "visibleRows": 0,
+   "firstRowTop": 220,
+   "hudH": 73,
+   "hudClipped": false,
+   "dockH": 119,
+   "dockOverlaps": 0,
+   "dockMinTarget": 46,
+   "dockOffscreen": 0,
+   "hOverflow": false
+  },
+  "open": {
+   "mainH": 106,
+   "visibleRows": 0,
+   "firstRowTop": 198,
+   "hudH": 73,
+   "hudClipped": false,
+   "dockH": 119,
+   "dockOverlaps": 0,
+   "dockMinTarget": 46,
+   "dockOffscreen": 0,
+   "hOverflow": false
+  },
+  "battle": {
+   "logH": 0,
+   "meleeInView": true,
+   "castInView": true,
+   "hOverflow": false
+  },
+  "chat": {
+   "inputVisible": true,
+   "listH": 160
+  },
+  "chatKeyboard": {
+   "inputVisible": false,
+   "listH": 160
+  },
+  "map": {
+   "cell": 20,
+   "meVisible": false,
+   "tabStops": 1600,
+   "hOverflow": false
+  }
+ },
+ {
+  "size": "1024x768",
+  "town": {
+   "mainH": 484,
+   "visibleRows": 4,
+   "firstRowTop": 220,
+   "hudH": 73,
+   "hudClipped": false,
+   "dockH": 119,
+   "dockOverlaps": 0,
+   "dockMinTarget": 46,
+   "dockOffscreen": 0,
+   "hOverflow": false
+  },
+  "open": {
+   "mainH": 484,
+   "visibleRows": 4,
+   "firstRowTop": 198,
+   "hudH": 73,
+   "hudClipped": false,
+   "dockH": 119,
+   "dockOverlaps": 0,
+   "dockMinTarget": 46,
+   "dockOffscreen": 0,
+   "hOverflow": false
+  },
+  "battle": {
+   "logH": 361,
+   "meleeInView": true,
+   "castInView": true,
+   "hOverflow": false
+  },
+  "chat": {
+   "inputVisible": true,
+   "listH": 432
+  },
+  "chatKeyboard": {
+   "inputVisible": false,
+   "listH": 432
+  },
+  "map": {
+   "cell": 20,
+   "meVisible": false,
+   "tabStops": 1600,
+   "hOverflow": false
+  }
+ },
+ {
+  "size": "1440x900",
+  "town": {
+   "mainH": 616,
+   "visibleRows": 6,
+   "firstRowTop": 220,
+   "hudH": 73,
+   "hudClipped": false,
+   "dockH": 119,
+   "dockOverlaps": 0,
+   "dockMinTarget": 46,
+   "dockOffscreen": 0,
+   "hOverflow": false
+  },
+  "open": {
+   "mainH": 616,
+   "visibleRows": 6,
+   "firstRowTop": 198,
+   "hudH": 73,
+   "hudClipped": false,
+   "dockH": 119,
+   "dockOverlaps": 0,
+   "dockMinTarget": 46,
+   "dockOffscreen": 0,
+   "hOverflow": false
+  },
+  "battle": {
+   "logH": 493,
+   "meleeInView": true,
+   "castInView": true,
+   "hOverflow": false
+  },
+  "chat": {
+   "inputVisible": true,
+   "listH": 528
+  },
+  "chatKeyboard": {
+   "inputVisible": false,
+   "listH": 528
+  },
+  "map": {
+   "cell": 20,
+   "meVisible": false,
+   "tabStops": 1600,
+   "hOverflow": false
+  }
+ }
+]

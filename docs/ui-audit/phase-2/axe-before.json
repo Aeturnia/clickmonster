@@ -1,0 +1,437 @@
+[
+ {
+  "width": "320",
+  "screen": "auth",
+  "violations": []
+ },
+ {
+  "width": "320",
+  "screen": "levelup-sheet",
+  "violations": []
+ },
+ {
+  "width": "320",
+  "screen": "explore-town",
+  "violations": []
+ },
+ {
+  "width": "320",
+  "screen": "shop-sheet",
+  "violations": []
+ },
+ {
+  "width": "320",
+  "screen": "explore-open",
+  "violations": []
+ },
+ {
+  "width": "320",
+  "screen": "battle",
+  "violations": []
+ },
+ {
+  "width": "320",
+  "screen": "battle-result",
+  "violations": []
+ },
+ {
+  "width": "320",
+  "screen": "hero",
+  "violations": []
+ },
+ {
+  "width": "320",
+  "screen": "gear",
+  "violations": []
+ },
+ {
+  "width": "320",
+  "screen": "item-sheet",
+  "violations": []
+ },
+ {
+  "width": "320",
+  "screen": "map",
+  "violations": []
+ },
+ {
+  "width": "320",
+  "screen": "chat-drawer",
+  "violations": []
+ },
+ {
+  "width": "320",
+  "screen": "map-40x40",
+  "violations": [
+   "target-size:serious"
+  ]
+ },
+ {
+  "width": "320",
+  "screen": "admin-dashboard",
+  "violations": []
+ },
+ {
+  "width": "320",
+  "screen": "admin-players",
+  "violations": []
+ },
+ {
+  "width": "320",
+  "screen": "admin-player",
+  "violations": []
+ },
+ {
+  "width": "320",
+  "screen": "admin-zones",
+  "violations": []
+ },
+ {
+  "width": "390",
+  "screen": "auth",
+  "violations": []
+ },
+ {
+  "width": "390",
+  "screen": "levelup-sheet",
+  "violations": []
+ },
+ {
+  "width": "390",
+  "screen": "explore-town",
+  "violations": []
+ },
+ {
+  "width": "390",
+  "screen": "shop-sheet",
+  "violations": []
+ },
+ {
+  "width": "390",
+  "screen": "explore-open",
+  "violations": []
+ },
+ {
+  "width": "390",
+  "screen": "battle",
+  "violations": []
+ },
+ {
+  "width": "390",
+  "screen": "battle-result",
+  "violations": []
+ },
+ {
+  "width": "390",
+  "screen": "hero",
+  "violations": []
+ },
+ {
+  "width": "390",
+  "screen": "gear",
+  "violations": []
+ },
+ {
+  "width": "390",
+  "screen": "item-sheet",
+  "violations": []
+ },
+ {
+  "width": "390",
+  "screen": "map",
+  "violations": []
+ },
+ {
+  "width": "390",
+  "screen": "chat-drawer",
+  "violations": []
+ },
+ {
+  "width": "390",
+  "screen": "map-40x40",
+  "violations": [
+   "target-size:serious"
+  ]
+ },
+ {
+  "width": "390",
+  "screen": "admin-dashboard",
+  "violations": []
+ },
+ {
+  "width": "390",
+  "screen": "admin-players",
+  "violations": []
+ },
+ {
+  "width": "390",
+  "screen": "admin-player",
+  "violations": []
+ },
+ {
+  "width": "390",
+  "screen": "admin-zones",
+  "violations": []
+ },
+ {
+  "width": "844x390",
+  "screen": "auth",
+  "violations": []
+ },
+ {
+  "width": "844x390",
+  "screen": "levelup-sheet",
+  "violations": []
+ },
+ {
+  "width": "844x390",
+  "screen": "explore-town",
+  "violations": []
+ },
+ {
+  "width": "844x390",
+  "screen": "shop-sheet",
+  "violations": []
+ },
+ {
+  "width": "844x390",
+  "screen": "explore-open",
+  "violations": []
+ },
+ {
+  "width": "844x390",
+  "screen": "battle",
+  "violations": []
+ },
+ {
+  "width": "844x390",
+  "screen": "battle-result",
+  "violations": []
+ },
+ {
+  "width": "844x390",
+  "screen": "hero",
+  "violations": []
+ },
+ {
+  "width": "844x390",
+  "screen": "gear",
+  "violations": []
+ },
+ {
+  "width": "844x390",
+  "screen": "item-sheet",
+  "violations": []
+ },
+ {
+  "width": "844x390",
+  "screen": "map",
+  "violations": []
+ },
+ {
+  "width": "844x390",
+  "screen": "chat-drawer",
+  "violations": []
+ },
+ {
+  "width": "844x390",
+  "screen": "map-40x40",
+  "violations": [
+   "target-size:serious"
+  ]
+ },
+ {
+  "width": "844x390",
+  "screen": "admin-dashboard",
+  "violations": []
+ },
+ {
+  "width": "844x390",
+  "screen": "admin-players",
+  "violations": []
+ },
+ {
+  "width": "844x390",
+  "screen": "admin-player",
+  "violations": []
+ },
+ {
+  "width": "844x390",
+  "screen": "admin-zones",
+  "violations": []
+ },
+ {
+  "width": "1024",
+  "screen": "auth",
+  "violations": []
+ },
+ {
+  "width": "1024",
+  "screen": "levelup-sheet",
+  "violations": []
+ },
+ {
+  "width": "1024",
+  "screen": "explore-town",
+  "violations": []
+ },
+ {
+  "width": "1024",
+  "screen": "shop-sheet",
+  "violations": []
+ },
+ {
+  "width": "1024",
+  "screen": "explore-open",
+  "violations": []
+ },
+ {
+  "width": "1024",
+  "screen": "battle",
+  "violations": []
+ },
+ {
+  "width": "1024",
+  "screen": "battle-result",
+  "violations": []
+ },
+ {
+  "width": "1024",
+  "screen": "hero",
+  "violations": []
+ },
+ {
+  "width": "1024",
+  "screen": "gear",
+  "violations": []
+ },
+ {
+  "width": "1024",
+  "screen": "item-sheet",
+  "violations": []
+ },
+ {
+  "width": "1024",
+  "screen": "map",
+  "violations": []
+ },
+ {
+  "width": "1024",
+  "screen": "chat-drawer",
+  "violations": []
+ },
+ {
+  "width": "1024",
+  "screen": "map-40x40",
+  "violations": [
+   "target-size:serious"
+  ]
+ },
+ {
+  "width": "1024",
+  "screen": "admin-dashboard",
+  "violations": []
+ },
+ {
+  "width": "1024",
+  "screen": "admin-players",
+  "violations": []
+ },
+ {
+  "width": "1024",
+  "screen": "admin-player",
+  "violations": []
+ },
+ {
+  "width": "1024",
+  "screen": "admin-zones",
+  "violations": []
+ },
+ {
+  "width": "1440",
+  "screen": "auth",
+  "violations": []
+ },
+ {
+  "width": "1440",
+  "screen": "levelup-sheet",
+  "violations": []
+ },
+ {
+  "width": "1440",
+  "screen": "explore-town",
+  "violations": []
+ },
+ {
+  "width": "1440",
+  "screen": "shop-sheet",
+  "violations": []
+ },
+ {
+  "width": "1440",
+  "screen": "explore-open",
+  "violations": []
+ },
+ {
+  "width": "1440",
+  "screen": "battle",
+  "violations": []
+ },
+ {
+  "width": "1440",
+  "screen": "battle-result",
+  "violations": []
+ },
+ {
+  "width": "1440",
+  "screen": "hero",
+  "violations": []
+ },
+ {
+  "width": "1440",
+  "screen": "gear",
+  "violations": []
+ },
+ {
+  "width": "1440",
+  "screen": "item-sheet",
+  "violations": []
+ },
+ {
+  "width": "1440",
+  "screen": "map",
+  "violations": []
+ },
+ {
+  "width": "1440",
+  "screen": "chat-drawer",
+  "violations": []
+ },
+ {
+  "width": "1440",
+  "screen": "map-40x40",
+  "violations": [
+   "target-size:serious"
+  ]
+ },
+ {
+  "width": "1440",
+  "screen": "admin-dashboard",
+  "violations": []
+ },
+ {
+  "width": "1440",
+  "screen": "admin-players",
+  "violations": []
+ },
+ {
+  "width": "1440",
+  "screen": "admin-player",
+  "violations": []
+ },
+ {
+  "width": "1440",
+  "screen": "admin-zones",
+  "violations": []
+ }
+]

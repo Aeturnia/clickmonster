@@ -20,7 +20,7 @@ import { generateQuests, accept, hourBucket } from '../../public/js/engine/quest
 import { canSend } from '../../public/js/engine/chat.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const PUBLIC = path.join(ROOT, process.env.UI_PUBLIC_DIR || 'public');
+const PUBLIC = path.resolve(ROOT, process.env.UI_PUBLIC_DIR || 'public');
 const CACHE = path.join(ROOT, 'tests/ui/.cache');
 const SUPA = new URL(SUPABASE_URL);
 const ALLOWED_CDN = /^https:\/\/cdn\.jsdelivr\.net\/npm\/@supabase\//;
@@ -83,8 +83,9 @@ function fakeJwt(sub, email) {
 
 // ---------------------------------------------------------------- fake backend
 export class FakeBackend {
-  constructor({ hero = makeHero(), players = [], chat = [], events = [], seed = 7 } = {}) {
-    loadZones(DEFAULT_ZONES);
+  constructor({ hero = makeHero(), players = [], chat = [], events = [], seed = 7, zones = [] } = {}) {
+    this.zoneDefs = [...DEFAULT_ZONES, ...zones];
+    loadZones(this.zoneDefs);
     this.rng = seeded(seed);
     this.heroes = { [ACCOUNTS.player.id]: hero };
     this.charIds = { [ACCOUNTS.player.id]: 'char-player' };
@@ -111,6 +112,7 @@ export class FakeBackend {
 
   // Game edge function, using the real engine.
   game(user, action, args) {
+    loadZones(this.zoneDefs); // other backends in the same process may have loaded different zones
     const now = Date.now();
     const id = user.id;
     if (action === 'state') {
@@ -192,7 +194,7 @@ export class FakeBackend {
     const eq = (k) => (params.get(k) || '').replace(/^eq\./, '');
     const c = user ? this.heroes[user.id] : null;
     switch (table) {
-      case 'zones': return DEFAULT_ZONES.map((z, i) => ({ data: z, sort: i }));
+      case 'zones': return this.zoneDefs.map((z, i) => ({ data: z, sort: i }));
       case 'world_config': return single ? { data: { base: { xp: 1, gold: 1, drop: 1, elite: 1, mastery: 1 }, events: [] } } : [{ data: { base: {}, events: [] } }];
       case 'hunts': return [];
       case 'events': return [...this.events].reverse();
@@ -392,3 +394,62 @@ export const focusInfo = (page) => page.evaluate(() => {
     inDialog: a.closest('dialog')?.id || null, outlineWidth: parseFloat(cs.outlineWidth) || 0, outlineStyle: cs.outlineStyle,
   };
 });
+
+// A large zone for map tests (no Overworld placement, so it needs no paths).
+export function bigZone(size = 40, id = 'test-expanse') {
+  const mid = Math.ceil(size / 2);
+  return {
+    id, name: 'The Test Expanse', desc: 'A very large test zone.', size, starter: false, pvp: false, minLevel: 0, exitLevel: 0,
+    overworld: null, entry: { x: mid, y: size },
+    town: { x: mid, y: mid, name: 'Midpoint' },
+    shop: null, lairs: [{ x: 3, y: 3 }],
+    portals: [{ x: size, y: 1, to: 'bramblebrook', tx: 5, ty: 5, minLevel: 0, label: 'Back to the meadows' }],
+    monsters: [{ name: 'Dune Crawler', level: 12, arch: 'brute', verb: 'bites' }, { name: 'Sand Wisp', level: 14, arch: 'caster', verb: 'zaps', element: 'storm' }],
+    boss: { name: 'The Expanse Titan', level: 20, arch: 'tank', verb: 'crushes', proper: true },
+  };
+}
+
+// An on-screen keyboard as iOS Safari presents it: the layout viewport keeps its size and only
+// the visual viewport shrinks, so anything anchored to the bottom ends up behind the keyboard.
+// Call before navigation; then setKeyboard(page, px) opens (or, with 0, closes) it.
+export async function fakeKeyboard(page) {
+  await page.addInitScript(() => {
+    const vv = new EventTarget();
+    let covered = 0;
+    Object.defineProperties(vv, {
+      width: { get: () => window.innerWidth },
+      height: { get: () => window.innerHeight - covered },
+      offsetTop: { get: () => 0 }, offsetLeft: { get: () => 0 },
+      pageTop: { get: () => window.scrollY }, pageLeft: { get: () => window.scrollX }, scale: { get: () => 1 },
+    });
+    Object.defineProperty(window, 'visualViewport', { configurable: true, get: () => vv });
+    window.__setKeyboard = (px) => { covered = px; vv.dispatchEvent(new Event('resize')); };
+  });
+}
+export const setKeyboard = (page, px) => page.evaluate((v) => window.__setKeyboard(v), px);
+
+// Layout measurements for the responsive acceptance criteria (run in the page).
+export const PAGE_METRICS = () => {
+  const main = document.getElementById('main');
+  const m = main.getBoundingClientRect();
+  const rowsIn = [...document.querySelectorAll('#main .row[data-a="fight"]')];
+  const visibleRows = rowsIn.filter((r) => { const b = r.getBoundingClientRect(); return b.top >= m.top - 1 && b.bottom <= m.bottom + 1 && b.bottom <= innerHeight; }).length;
+  const firstRow = rowsIn[0]?.getBoundingClientRect();
+  const clip = (sel) => [...document.querySelectorAll(sel)].some((el) => el.scrollWidth > el.clientWidth + 1);
+  const dockBtns = [...document.querySelectorAll('#dock button')].map((b) => b.getBoundingClientRect()).filter((b) => b.width && b.height);
+  let overlaps = 0;
+  for (let i = 0; i < dockBtns.length; i++) for (let j = i + 1; j < dockBtns.length; j++) {
+    const a = dockBtns[i]; const b = dockBtns[j];
+    if (a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1) overlaps++;
+  }
+  const minTarget = dockBtns.length ? Math.round(Math.min(...dockBtns.map((b) => Math.min(b.width, b.height)))) : null;
+  const offscreen = dockBtns.filter((b) => b.bottom > innerHeight + 1 || b.right > innerWidth + 1).length;
+  const dock = document.getElementById('dock').getBoundingClientRect();
+  const top = document.getElementById('top').getBoundingClientRect();
+  return {
+    mainH: Math.round(m.height), visibleRows, firstRowTop: firstRow ? Math.round(firstRow.top - m.top) : null,
+    hudH: Math.round(top.height), hudClipped: clip('#top .hud-name') || clip('#top .hud-res'),
+    dockH: Math.round(dock.height), dockOverlaps: overlaps, dockMinTarget: minTarget, dockOffscreen: offscreen,
+    hOverflow: document.documentElement.scrollWidth > innerWidth + 1,
+  };
+};
