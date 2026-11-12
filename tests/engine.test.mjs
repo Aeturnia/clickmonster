@@ -155,3 +155,26 @@ test('data integrity: monsters, shops and portals reference real things', () => 
   for (const m of Object.values(MONSTERS)) assert.ok(m.level > 0 && m.verb);
   for (const r of Object.values(RACES)) for (const g of r.gear) assert.ok(ITEMS[g], g);
 });
+
+test('pvp: only in PvP zones, outside town, within level gap', async () => {
+  const { duel, canAttack } = await import('../public/js/engine/pvp.js');
+  const a = createCharacter('Attacker', 'orc');
+  const d = createCharacter('Defender', 'elf');
+  for (const c of [a, d]) { c.level = 30; c.loc = { zone: 'marsh', x: 3, y: 3 }; }
+  assert.equal(canAttack(a, d).ok, false, 'marsh is not PvP');
+  for (const c of [a, d]) c.loc = { zone: 'duskhollow', x: ZONES.duskhollow.town.x, y: ZONES.duskhollow.town.y };
+  assert.match(canAttack(a, d).reason, /safe/);
+  for (const c of [a, d]) c.loc = { zone: 'duskhollow', x: 3, y: 3 };
+  d.level = 15;
+  assert.match(canAttack(a, d).reason, /levels below/);
+  d.level = 30;
+  a.gold = 0; d.gold = 1000;
+  a.stats.str = 500; a.stats.dex = 500; a.stats.vit = 500; a.hp = maxHp(a);
+  const res = duel(a, d, seeded(5));
+  assert.equal(res.winner, 'attacker');
+  assert.equal(d.gold, 900);
+  assert.equal(a.gold, 100);
+  assert.deepEqual([d.loc.x, d.loc.y], [ZONES.duskhollow.town.x, ZONES.duskhollow.town.y]);
+  assert.equal(d.notices.length, 1);
+  assert.equal(a.battle.over, 'victory');
+});

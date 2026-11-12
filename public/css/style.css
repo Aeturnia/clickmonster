@@ -187,11 +187,11 @@ button.sm { min-height: 36px; padding: 6px 10px; font-size: 14px; }
 /* ---------- Creation ---------- */
 .hero-title { text-align: center; padding: 24px 0 8px; }
 .hero-title p { color: var(--muted); }
-input[type=text] {
+input[type=text], input[type=email], input[type=password] {
   width: 100%; font: inherit; font-size: 17px; color: var(--text);
   background: #0d0b09; border: 1px solid var(--line); border-radius: 10px; padding: 12px; min-height: 48px;
 }
-input[type=text]:focus { outline: 2px solid var(--gold); outline-offset: 1px; }
+input:focus { outline: 2px solid var(--gold); outline-offset: 1px; }
 .races { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .races button { text-align: left; padding: 10px 12px; }
 .races button b { display: block; }
@@ -230,3 +230,6 @@ input[type=text]:focus { outline: 2px solid var(--gold); outline-offset: 1px; }
 }
 #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 #toast.bad { border-color: var(--bad); background: #3a1d19; }
+
+body.busy #main button, body.busy #modal button { cursor: progress; }
+body.busy .actions .big { opacity: .75; }
