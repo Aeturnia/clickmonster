@@ -58,6 +58,7 @@ export const ACCOUNTS = {
   player: { email: 'player@example.test', password: 'pw-player', id: '00000000-0000-4000-8000-000000000001' },
   admin: { email: 'admin@example.test', password: 'pw-admin', id: '00000000-0000-4000-8000-000000000002', role: 'admin' },
   fresh: { email: 'fresh@example.test', password: 'pw-fresh', id: '00000000-0000-4000-8000-000000000003' },
+  mod: { email: 'mod@example.test', password: 'pw-mod', id: '00000000-0000-4000-8000-000000000004', role: 'moderator' },
 };
 
 export function makeHero({ name = 'Bartholomew Thorne', race = 'halfling', level = 12, gold = 123456789, bank = 98765432, zone = 'bramblebrook', x = 5, y = 5, pendingLevels = 0 } = {}) {
@@ -84,7 +85,8 @@ function fakeJwt(sub, email) {
 
 // ---------------------------------------------------------------- fake backend
 export class FakeBackend {
-  constructor({ hero = makeHero(), players = [], chat = [], events = [], seed = 7, zones = [], quests = null } = {}) {
+  constructor({ hero = makeHero(), players = [], chat = [], events = [], seed = 7, zones = [], quests = null, reports = null } = {}) {
+    this.reportsSeed = reports; // admin chat reports: [{ message_id, reporter_name, reason }]
     this.zoneDefs = [...DEFAULT_ZONES, ...zones];
     loadZones(this.zoneDefs);
     this.rng = seeded(seed);
@@ -188,24 +190,139 @@ export class FakeBackend {
     return { char: c, sanctions: { banned: null, jailed: null, muted: null, reason: null } };
   }
 
+  // ------------------------------------------------------------ admin console (stateful)
+  // Mirrors the admin edge function's permission rules: admin-only actions, and moderators
+  // limited to sanctions of at most 7 days. Data is deterministic.
+  adminData() {
+    if (this._admin) return this._admin;
+    const c = this.heroes[ACCOUNTS.player.id];
+    const day = 86400000;
+    const iso = (t) => new Date(t).toISOString();
+    const NAMES = [['Musa', 'human', 9, 'bramblebrook'], ['Ilsabet Varn', 'elf', 31, 'duskhollow'], ['Grubnak', 'orc', 18, 'bloodrock'],
+      ['Tamsin Reed', 'halfling', 4, 'bramblebrook'], ['Oswin of the Long Marsh', 'human', 27, 'marsh'], ['Kettle', 'gnome', 12, 'cogwhistle'],
+      ['Brannoc', 'dwarf', 45, 'catacombs'], ['Yselde', 'elf', 2, 'silverleaf'], ['Hollis Crane', 'human', 22, 'ashford'], ['Mirabel Thistlewood-Ashcombe', 'halfling', 15, 'marsh']];
+    const players = [
+      { id: 'char-player', name: c.name, race: c.race, level: c.level, zone: c.loc.zone, x: c.loc.x, y: c.loc.y, strikes: 1, sanction_reason: 'Spamming the global channel', muted_until: null },
+      ...NAMES.map(([name, race, level, zone], i) => ({ id: i === 0 ? 'char-other' : `char-${i}`, name, race, level, zone, x: 1 + (i % 5), y: 1 + (i % 4), strikes: i % 3 === 0 ? 2 : 0 })),
+    ].map((p, i) => ({ banned_until: null, jailed_until: null, muted_until: null, sanction_reason: null, ...p, updated_at: iso(NOW - i * 3600000), created_at: iso(NOW - 30 * day + i * day) }));
+    players.find((p) => p.name === 'Grubnak').banned_until = iso(NOW + 3 * day);
+    players.find((p) => p.name === 'Kettle').muted_until = iso(Date.now() + day);
+    const others = this.chat.filter((m) => m.sender_id && m.sender_id !== 'char-player');
+    const reports = (this.reportsSeed || others.slice(0, 2).map((m, i) => ({ message_id: m.id, reporter_name: c.name, reason: i ? '' : 'Rude to new players' })))
+      .map((r, i) => ({ id: 900 + i, created_at: iso(NOW - (i + 1) * 600000), resolved_at: null, ...r }));
+    this._admin = {
+      players, reports,
+      history: { 'char-player': [{ kind: 'warn', reason: 'Spamming the global channel', until: null, by_name: 'mod@example.test', created_at: iso(NOW - 2 * day) }] },
+      log: [
+        { action: 'sanction:warn', target_id: 'char-player', target_name: c.name, details: { reason: 'Spamming the global channel' }, actor_name: 'mod@example.test', created_at: iso(NOW - 2 * day) },
+        { action: 'zone:save', target_id: null, target_name: 'Bramblebrook Meadows', details: { id: 'bramblebrook' }, actor_name: 'admin@example.test', created_at: iso(NOW - 3 * day) },
+      ],
+      hunts: [
+        { id: 'hunt-1', name: 'The Ashen Colossus', zone: 'ashford', level: 20, hp: 41000, max_hp: 60000, status: 'active', ends_at: iso(Date.now() + 5 * 3600000), hunters: 7, killed_by_name: null, top: [{ name: 'Brannoc', damage: 9100 }, { name: 'Musa', damage: 4200 }] },
+        { id: 'hunt-0', name: 'Old Mother Bramble', zone: 'bramblebrook', level: 12, hp: 0, max_hp: 20000, status: 'defeated', ends_at: iso(NOW - day), hunters: 12, killed_by_name: 'Hollis Crane', top: [{ name: 'Hollis Crane', damage: 6000 }] },
+      ],
+      world: { base: { xp: 1, gold: 1, drop: 1, elite: 1, mastery: 1 }, events: [{ id: 'ev-1', name: 'Harvest Moon', xp: 1.5, gold: 2, until: iso(Date.now() + 2 * day) }] },
+      economy: Array.from({ length: 6 }, (_, i) => iso(NOW - i * day).slice(0, 10)).flatMap((d, i) => [
+        { day: d, source: 'monsters', amount: 52000 + i * 1300 }, { day: d, source: 'quests', amount: 9000 },
+        { day: d, source: 'shop', amount: -21000 - i * 400 }, { day: d, source: 'healer', amount: -3100 }, { day: d, source: 'death', amount: -12000 }]),
+      staff: [
+        { user_id: ACCOUNTS.admin.id, role: 'admin', email: ACCOUNTS.admin.email, created_at: iso(NOW - 60 * day) },
+        { user_id: ACCOUNTS.mod.id, role: 'moderator', email: ACCOUNTS.mod.email, created_at: iso(NOW - 20 * day) },
+      ],
+    };
+    if (!this.events.length) {
+      this.events = [{ id: 1, kind: 'announce', text: 'Welcome to the test realm!', created_at: iso(NOW - day) }, { id: 2, kind: 'pvp', text: 'Ilsabet Varn defeated Grubnak in a duel.', created_at: iso(NOW - 3600000) }];
+    }
+    return this._admin;
+  }
+
   admin(user, action, a) {
     if (!user.role) throw Object.assign(new Error('This account is not staff.'), { status: 403 });
+    const err = (msg, status = 400) => Object.assign(new Error(msg), { status });
+    const requireAdmin = () => { if (user.role !== 'admin') throw err('Only admins can do that.', 403); };
     const c = this.heroes[ACCOUNTS.player.id];
-    const pub = { id: 'char-player', name: c.name, race: c.race, level: c.level, zone: c.loc.zone, x: c.loc.x, y: c.loc.y, updated_at: new Date().toISOString(), created_at: new Date(NOW).toISOString(), strikes: 0 };
+    const D = this.adminData();
+    const find = (id) => D.players.find((p) => p.id === id);
+    const log = (entry) => D.log.unshift({ actor_name: user.email, created_at: new Date().toISOString(), target_id: null, target_name: null, details: null, ...entry });
+    const heroOf = (p) => {
+      if (p.id === 'char-player') return c;
+      const h = createCharacter(p.name, p.race, NOW);
+      h.level = p.level; h.loc = { zone: p.zone, x: p.x, y: p.y };
+      return h;
+    };
+    const withMessages = (r) => ({ ...r, message: this.chat.find((m) => m.id === r.message_id) || null });
     switch (action) {
       case 'whoami': return { role: user.role, email: user.email };
-      case 'stats': return { players: 3, online15m: 2, active24h: 3, active7d: 3, signups24h: 1, signups7d: 3, banned: 0, goldCarried: 123456789, goldBanked: 98765432, byRace: { halfling: 1, human: 2 }, byZone: { bramblebrook: 2, ashford: 1 }, levels: { '1-9': 2, '10-19': 1, '20-29': 0, '30-49': 0, '50+': 0 }, events24h: 4, top: [pub] };
-      case 'search': return { players: [pub, { ...pub, id: 'char-other', name: 'Musa', race: 'human', level: 5 }] };
-      case 'player': return { player: { ...pub, data: c }, history: [], actions: [], email: ACCOUNTS.player.email };
+      case 'stats': {
+        const pub = find('char-player');
+        return { players: D.players.length, online15m: 4, active24h: 9, active7d: D.players.length, signups24h: 1, signups7d: 3, banned: D.players.filter((p) => p.banned_until && new Date(p.banned_until) > Date.now()).length, goldCarried: 123456789, goldBanked: 98765432, byRace: { halfling: 3, human: 4, elf: 2, orc: 1, gnome: 1, dwarf: 1 }, byZone: { bramblebrook: 3, marsh: 2, ashford: 1, duskhollow: 1 }, levels: { '1-9': 4, '10-19': 3, '20-29': 2, '30-49': 2, '50+': 0 }, events24h: this.events.length, top: [...D.players].sort((x, y) => y.level - x.level).slice(0, 5).map((p) => (p.id === 'char-player' ? pub : p)) };
+      }
+      case 'search': {
+        const q = String(a.q || '').trim().toLowerCase();
+        return { players: D.players.filter((p) => !q || p.name.toLowerCase().includes(q)) };
+      }
+      case 'player': {
+        const p = find(String(a.id));
+        if (!p) throw err('No such hero.', 404);
+        return { player: { ...p, data: heroOf(p) }, history: D.history[p.id] || [], actions: D.log.filter((l) => l.target_id === p.id), email: p.id === 'char-player' ? ACCOUNTS.player.email : null };
+      }
+      case 'update': requireAdmin(); log({ action: 'edit', target_id: a.id, target_name: find(a.id)?.name, details: a.patch }); return { player: find(a.id) };
+      case 'sanction': {
+        const kind = String(a.kind);
+        const text = String(a.reason || '').trim();
+        if (!['mute', 'jail', 'ban', 'warn', 'lift'].includes(kind)) throw err('Unknown sanction.');
+        if (!text) throw err('Give a reason.');
+        const p = find(String(a.id));
+        if (!p) throw err('No such hero.', 404);
+        let until = null;
+        if (['mute', 'jail', 'ban'].includes(kind)) {
+          const permanent = a.days == null || Number(a.days) <= 0;
+          if (permanent || Number(a.days) > 7) requireAdmin();
+          until = permanent ? '9999-12-31T00:00:00.000Z' : new Date(Date.now() + Number(a.days) * 86400000).toISOString();
+        }
+        if (kind === 'lift') Object.assign(p, { muted_until: null, jailed_until: null, banned_until: null, sanction_reason: null });
+        else { p[`${{ mute: 'muted', jail: 'jailed', ban: 'banned' }[kind] || 'x'}_until`] = until; p.sanction_reason = text; p.strikes = (p.strikes || 0) + 1; }
+        (D.history[p.id] ||= []).unshift({ kind, reason: text, until, by_name: user.email, created_at: new Date().toISOString() });
+        log({ action: `sanction:${kind}`, target_id: p.id, target_name: p.name, details: { days: a.days, reason: text, until } });
+        return { ok: true };
+      }
       case 'zones': return { zones: DEFAULT_ZONES.map((z, i) => ({ id: z.id, data: z, sort: i, players: z.id === 'bramblebrook' ? 1 : 0, builtin: true })) };
-      case 'chatLog': return { messages: this.chat };
-      case 'chatReports': return { reports: [] };
-      case 'world': return { data: { base: { xp: 1, gold: 1, drop: 1, elite: 1, mastery: 1 }, events: [] } };
-      case 'hunts': return { hunts: [], suggest: {} };
-      case 'economy': return { rows: [] };
+      case 'chatLog': {
+        const q = String(a.q || '').toLowerCase();
+        const sender = String(a.sender || '').toLowerCase();
+        return { messages: this.chat.filter((m) => (!a.channel || m.channel === a.channel) && (!sender || m.sender_name.toLowerCase().includes(sender)) && (!q || (m.original_text || m.text).toLowerCase().includes(q))).slice().reverse() };
+      }
+      case 'chatReports': return { reports: D.reports.map(withMessages) };
+      case 'chatDelete': {
+        const m = this.chat.find((x) => x.id === Number(a.id));
+        if (!m) throw err('No such message.');
+        if (m.deleted_at) throw err('Already removed.');
+        Object.assign(m, { original_text: m.text, text: '', deleted_at: new Date().toISOString(), deleted_by: user.email });
+        log({ action: 'chat:delete', target_id: m.sender_id, target_name: m.sender_name, details: { id: m.id, text: m.original_text } });
+        return { ok: true };
+      }
+      case 'resolveReport': {
+        const r = D.reports.find((x) => x.id === Number(a.id));
+        if (!r) throw err('No such report.');
+        D.reports = D.reports.filter((x) => x.message_id !== r.message_id);
+        log({ action: 'chat:resolveReport', details: { message: r.message_id, note: a.note || null } });
+        return { ok: true };
+      }
+      case 'world': return { data: D.world };
+      case 'setBase': requireAdmin(); D.world.base = { ...D.world.base, ...a.base }; return { data: D.world };
+      case 'startEvent': requireAdmin(); D.world.events.push({ id: `ev-${D.world.events.length + 1}`, name: a.name, ...a.mults, until: new Date(Date.now() + Number(a.hours) * 3600000).toISOString() }); return { data: D.world };
+      case 'endEvent': requireAdmin(); D.world.events = D.world.events.filter((e) => e.id !== a.id); return { data: D.world };
+      case 'hunts': return { hunts: D.hunts, suggest: {} };
+      case 'startHunt': requireAdmin(); return { ok: true };
+      case 'cancelHunt': requireAdmin(); D.hunts = D.hunts.map((h) => (h.id === a.id ? { ...h, status: 'cancelled' } : h)); return { ok: true };
+      case 'economy': return { rows: D.economy };
       case 'events': return { events: this.events };
-      case 'log': return { log: [] };
-      case 'staff': return { staff: [{ user_id: user.id, role: user.role, email: user.email, created_at: new Date(NOW).toISOString() }] };
+      case 'announce': this.events.unshift({ id: this.events.length + 10, kind: 'announce', text: a.text, created_at: new Date().toISOString() }); return { ok: true };
+      case 'deleteEvent': requireAdmin(); this.events = this.events.filter((e) => String(e.id) !== String(a.id)); return { ok: true };
+      case 'log': return { log: D.log };
+      case 'staff': return { staff: D.staff };
+      case 'setStaff': requireAdmin(); return { staff: D.staff };
+      case 'saveZone': case 'deleteZone': case 'resetZone': requireAdmin(); return { zones: DEFAULT_ZONES.map((z, i) => ({ id: z.id, data: z, sort: i, players: 0, builtin: true })) };
       default: return { ok: true };
     }
   }
@@ -490,3 +607,13 @@ export function fixedQuest() {
     reward: { xp: 120, gold: 300, gem: null, kind: 'gold' }, expiresAt: Date.now() + 3600000, completedBy: null,
   };
 }
+
+// Admin console fixtures: chat with two open reports (one with a reason, one without).
+const ago_ = (m) => new Date(Date.now() - m * 60000).toISOString();
+export const ADMIN_CHAT = [
+  { id: 11, channel: 'global', zone: null, sender_id: 'char-other', sender_name: 'Musa', sender_role: null, recipient_id: null, recipient_name: null, text: 'Anyone hunting goblins?', deleted_at: null, created_at: ago_(50) },
+  { id: 12, channel: 'global', zone: null, sender_id: 'char-2', sender_name: 'Grubnak', sender_role: null, recipient_id: null, recipient_name: null, text: 'Get lost, newbies. This meadow is mine.', deleted_at: null, created_at: ago_(40) },
+  { id: 13, channel: 'zone', zone: 'bramblebrook', sender_id: 'char-player', sender_name: 'Bartholomew Thorne', sender_role: null, recipient_id: null, recipient_name: null, text: 'Selling a Padded Helm, cheap.', deleted_at: null, created_at: ago_(30) },
+];
+export const ADMIN_REPORTS = [{ message_id: 12, reporter_name: 'Tamsin Reed', reason: 'Rude to new players' }, { message_id: 11, reporter_name: 'Kettle', reason: '' }];
+

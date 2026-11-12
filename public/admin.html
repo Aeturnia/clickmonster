@@ -8,55 +8,8 @@
   <title>ClickMonster Admin</title>
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="css/style.css">
-  <style>
-    body { overflow: auto; }
-    #admin { max-width: 960px; margin: 0 auto; padding: calc(12px + env(safe-area-inset-top)) 16px 40px; }
-    .a-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
-    .a-head h1 { font-size: 1.5rem; }
-    .a-head .who { margin-left: auto; font-size: 0.8125rem; color: var(--muted); }
-    .a-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
-    .row-link { padding: 0; min-height: 24px; text-align: left; font-weight: 600; }
-    #alerts { top: calc(12px + env(safe-area-inset-top)); }
-    .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; margin-bottom: 16px; }
-    .tile { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
-    .tile b { display: block; font-size: 1.375rem; font-variant-numeric: tabular-nums; }
-    .tile span { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
-    .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
-    table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
-    th, td { text-align: left; padding: 7px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
-    th { color: var(--muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: .06em; }
-    td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
-    tr.click { cursor: pointer; }
-    tr.click:active td { background: var(--surface); }
-    .form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px 10px; }
-    .form-grid label, .lbl { font-size: 0.75rem; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
-    .form-grid input, .form-grid select, .a-input, select.a-input, textarea.a-input {
-      display: block; width: 100%; margin-top: 4px; font: inherit; font-size: 0.9375rem; color: var(--text);
-      background: #0d0a08; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; min-height: 40px;
-    }
-    textarea.a-input { min-height: 90px; resize: vertical; }
-    .box { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px; margin-bottom: 16px; overflow-x: auto; min-width: 0; }
-    .cols > * { min-width: 0; }
-    td { overflow-wrap: anywhere; }
-    .box h2 { font-size: 1.125rem; margin-bottom: 8px; }
-    .acts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
-    .pill { display: inline-block; font-size: 0.6875rem; font-weight: 700; padding: 1px 7px; border-radius: 99px; margin-right: 4px; }
-    .pill.ban { background: #4a1712; color: #ffb4a8; } .pill.jail { background: #45330f; color: #f2d48f; }
-    .pill.mute { background: #1f2c40; color: #a9c8ee; } .pill.admin { background: #3a2a10; color: var(--gold-soft); }
-    .pill.moderator { background: #1f3346; color: #a9c8ee; }
-    .bar-row { display: grid; grid-template-columns: 90px 1fr 40px; gap: 8px; align-items: center; font-size: 0.8125rem; margin: 4px 0; }
-    .bar-row i { display: block; height: 8px; background: var(--gold); border-radius: 4px; }
-    .zone-cols { display: grid; grid-template-columns: 1fr; gap: 16px; }
-    @media (min-width: 860px) { .zone-cols { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); } .zone-side { position: sticky; top: 12px; } }
-    label.chk { display: inline-flex; align-items: center; gap: 6px; font-size: 0.875rem; color: var(--text); text-transform: none; letter-spacing: 0; font-weight: 500; margin-right: 12px; min-height: 36px; }
-    label.chk input { width: 18px; height: 18px; min-height: 0; margin: 0; }
-    .chips-wrap { display: flex; flex-wrap: wrap; gap: 0 4px; }
-    .mon-row { padding: 8px 0; border-bottom: 1px solid var(--line); margin-bottom: 8px; }
-    .map button[data-owpick] { cursor: pointer; }
-    pre { white-space: pre-wrap; word-break: break-all; font-size: 0.75rem; color: var(--muted); margin: 0; max-width: 100%; }
-  </style>
 </head>
-<body>
+<body class="admin-page">
   <main id="admin"></main>
   <div id="alerts" aria-label="Problems"></div>
   <div id="toast" role="status" aria-live="polite"></div>

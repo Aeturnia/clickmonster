@@ -28,7 +28,8 @@ test('admin axe: no serious or critical violations', async () => {
   await tab(page, 'players'); await check('players');
   await page.click('.row-link'); await page.waitForSelector('#sanction'); await check('player detail and editor');
   await tab(page, 'zones'); await check('zones list');
-  await page.click('tr[data-v="ashford"] [data-a="zoneEdit"]'); await page.waitForSelector('#zone-form'); await check('zone editor');
+  // The row's real button (Phase 4: rows themselves are no longer clickable).
+  await page.click('button[data-a="zoneEdit"][data-v="ashford"]'); await page.waitForSelector('#zone-form'); await check('zone editor');
   await tab(page, 'chat'); await check('chat moderation');
   noLiveAccess(ctx);
   await ctx.context.close();
