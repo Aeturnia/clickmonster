@@ -71,6 +71,23 @@ const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const pct = (n) => `${Math.round(n * 100)}%`;
 const fmt = (n) => Math.round(n).toLocaleString();
+// Short form for tight spaces: 98,765,432 becomes 98.8M. Exact below 100,000.
+function short(n) {
+  const v = Math.round(n);
+  const a = Math.abs(v);
+  if (a < 100000) return v.toLocaleString();
+  const [d, s] = a < 1e6 ? [1e3, 'K'] : a < 1e9 ? [1e6, 'M'] : a < 1e12 ? [1e9, 'B'] : [1e12, 'T'];
+  const x = v / d;
+  return `${Math.abs(x) < 100 ? x.toFixed(1).replace(/\.0$/, '') : Math.round(x)}${s}`;
+}
+// A shortened amount that still reads out (and shows on hover) in full.
+// quiet: the unit is only read out, not shown.
+const amount = (n, unit, quiet = false) => {
+  const u = quiet ? `<span class="sr-only"> ${unit}</span>` : ` ${unit}`;
+  return short(n) === fmt(n)
+    ? `<b>${fmt(n)}</b>${u}`
+    : `<b aria-hidden="true" title="${fmt(n)} ${unit}">${short(n)}</b><span class="sr-only">${fmt(n)}</span>${u}`;
+};
 const btn = (a, v, label, cls = '', disabled = false) =>
   `<button data-a="${a}"${v != null ? ` data-v="${esc(v)}"` : ''} class="btn ${cls}"${disabled ? ' disabled' : ''}>${label}</button>`;
 
@@ -127,13 +144,45 @@ function placeOverlays() {
 }
 for (const d of document.querySelectorAll('dialog')) d.addEventListener('close', () => { placeOverlays(); positionToast(); });
 
+// The on-screen keyboard. iOS (and Android without resizes-content) shrink only the visual
+// viewport, leaving bottom-anchored dialogs behind the keyboard. Expose the visible height and
+// the covered strip as CSS variables so the chat drawer and sheets sit above it.
+function syncViewport() {
+  const vv = window.visualViewport;
+  const root = document.documentElement.style;
+  if (!vv) return;
+  const covered = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
+  root.setProperty('--vvh', `${Math.round(vv.height)}px`);
+  root.setProperty('--kb', `${covered}px`);
+  positionToast();
+  // With the keyboard up over a sheet, keep the field being typed in and the buttons that act on
+  // it (the next row of buttons, such as Deposit and Withdraw) in view.
+  const field = document.activeElement;
+  if (covered > 0 && field?.matches?.('dialog[open] input')) {
+    let next = (field.closest('label') || field).nextElementSibling;
+    while (next && !next.querySelector('button:not([disabled])')) next = next.nextElementSibling;
+    requestAnimationFrame(() => {
+      next?.scrollIntoView({ block: 'nearest' });
+      field.scrollIntoView({ block: 'nearest' });
+    });
+  }
+}
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', syncViewport);
+  window.visualViewport.addEventListener('scroll', syncViewport);
+  syncViewport();
+}
+
 function positionToast() {
   const el = document.getElementById('toast');
   if (!el) return;
   // Sit just above the bottom controls so it never covers the screen title.
   const anchor = el.parentNode === document.body && ($('#dock:not(:empty)') || $('#nav:not(:empty)'));
   el.style.top = 'auto';
-  el.style.bottom = anchor ? `${window.innerHeight - anchor.getBoundingClientRect().top + 10}px` : '24px';
+  const r = anchor && anchor.getBoundingClientRect();
+  el.style.bottom = r ? `${window.innerHeight - r.top + 10}px` : '24px';
+  // Centred over the controls: the whole screen on phones, the side column in the wide layout.
+  el.style.left = r ? `${r.left + r.width / 2}px` : '50%';
 }
 
 function renderAlerts() {
@@ -204,12 +253,13 @@ function viewTop() {
   if (!char) return '';
   const race = RACES[char.race];
   const gems = Object.values(char.gems).reduce((a, b) => a + b, 0);
+  // One line for identity and wealth, one for the meters. Race and the full numbers stay
+  // available to screen readers; the Hero and Gear tabs show them in full.
   return `<div class="hud-row">
-      <span class="hud-name">${esc(char.name)}</span>
-      <span class="hud-sub">Lv ${char.level} ${race.name}</span>
-      <span class="hud-res"><b>${fmt(char.gold)}</b> gold <span class="gems"><b>${gems}</b> gems</span></span>
+      <span class="hud-name">${esc(char.name)}<span class="sr-only">, level ${char.level} ${esc(race.name)}</span></span>
+      <span class="hud-res">${amount(char.gold, 'gold')}<span class="gems"> ${amount(gems, 'gems')}</span></span>
     </div>
-    <div class="hud-bars">${meter('HP', char.hp, maxHp(char))}${meter('XP', char.xp, xpToNext(char.level), 'xp')}</div>`;
+    <div class="hud-bars">${meter('HP', char.hp, maxHp(char))}${meter(`Lv ${char.level}`, char.xp, xpToNext(char.level), 'xp')}</div>`;
 }
 
 function viewNav() {
@@ -277,7 +327,7 @@ function viewExplore() {
   const here = featuresAt(zone, x, y);
   const lines = [];
   for (const f of here) {
-    if (f.type === 'town') lines.push(`You are in <b>${esc(f.name)}</b>. Shop, healer and jeweler are here, and it is safe from attack.`);
+    if (f.type === 'town') lines.push(`<b>${esc(f.name)}</b>. Safe from attack.`);
     if (f.type === 'portal') lines.push(char.level < f.minLevel
       ? `<b>${esc(f.label)}</b>. <span class="warn">Requires level ${f.minLevel}.</span>`
       : `<b>${esc(f.label)}</b> leads to ${esc(ZONES[f.to].name)}.`);
@@ -379,8 +429,8 @@ function dockExplore() {
       const cost = healCost(char);
       ctx.push(`<div class="ctx-grid">
         ${btn('shop', null, 'Shop')}
-        ${btn('heal', null, cost > 0 ? `Heal <small>${fmt(cost)} gold</small>` : 'Heal <small>Full health</small>', '', cost <= 0)}
-        ${btn('bank', null, `Bank <small>${fmt(char.bank)} saved</small>`)}
+        ${btn('heal', null, cost > 0 ? `Heal <small>${amount(cost, 'gold')}</small>` : 'Heal <small>Full health</small>', '', cost <= 0)}
+        ${btn('bank', null, `Bank <small>${amount(char.bank, 'gold saved', true)}</small>`)}
         ${btn('quests', null, char.quest ? 'Quests <small>1 active</small>' : 'Quests')}
       </div>`);
     }
@@ -440,8 +490,8 @@ function viewBattle() {
       <div class="side foe" id="fx-foe"><div class="side-name${b.variant ? ' elite-name' : ''}">${esc(mon.name)}</div>
         <div class="side-sub"><span class="${d.cls}">Lv ${mon.level} ${d.word}</span>${mon.element ? `, ${ELEMENT_LABEL[mon.element]}` : ''}</div>
         ${meter('HP', b.hp, b.maxHp, 'foe big')}</div></div>
-    ${summary}
-    <div class="log" id="log" tabindex="0" role="log" aria-label="Battle log" aria-live="off">${logHtml(b.log)}</div>`;
+    <div class="log" id="log" tabindex="0" role="log" aria-label="Battle log" aria-live="off">${logHtml(b.log)}</div>
+    ${summary}`;
 }
 
 function dockBattle() {
@@ -568,6 +618,8 @@ function viewGear() {
 // ---------------------------------------------------------------- map
 function viewMap() {
   const zone = currentZone(char);
+  // One square is in the tab order (roving focus): the last one focused, else where you stand.
+  const [cx, cy] = (ui.mapCursor && ui.mapCursor.zone === zone.id ? [ui.mapCursor.x, ui.mapCursor.y] : [char.loc.x, char.loc.y]);
   const cells = [];
   for (let y = 1; y <= zone.size; y++) {
     for (let x = 1; x <= zone.size; x++) {
@@ -586,23 +638,70 @@ function viewMap() {
       const here = x === char.loc.x && y === char.loc.y;
       if (here) { cls += ' me'; label = 'You'; says.unshift('You are here'); }
       const name = `${says.length ? `${says.join('. ')}. ` : ''}Square ${x}, ${y}${here ? '' : '. Walk here'}`;
-      cells.push(`<button class="${cls}" data-a="walk" data-v="${x},${y}" aria-label="${esc(name)}"${here ? ' aria-current="location"' : ''}>${label}</button>`);
+      const tab = x === cx && y === cy ? '0' : '-1';
+      cells.push(`<button class="${cls}" data-a="walk" data-v="${x},${y}" tabindex="${tab}" aria-label="${esc(name)}"${here ? ' aria-current="location"' : ''}>${label}</button>`);
     }
   }
-  const dests = zone.features.filter((f) => f.type === 'portal').map((f) => {
-    const z = ZONES[f.to];
-    const locked = char.level < f.minLevel;
-    return `<button class="row" data-a="walk" data-v="${f.x},${f.y}">
-      <span class="lv num">${f.x}, ${f.y}</span>
-      <span class="nm">${esc(zone.id === 'overworld' ? z.name : f.label)}<small>Level ${z.levelRange[0]} to ${z.levelRange[1]}${z.pvp ? ', PvP' : ''}${locked ? `, requires level ${f.minLevel}` : ''}</small></span>
-      <span class="go">Go</span></button>`;
+  // Places worth walking to, nearest first.
+  const dist = (f) => Math.abs(f.x - char.loc.x) + Math.abs(f.y - char.loc.y);
+  const places = [];
+  if (zone.town) places.push({ x: zone.town.x, y: zone.town.y, name: zone.town.name, sub: 'Town: shop, healer, bank and quests' });
+  for (const f of zone.features) {
+    if (f.type === 'lair' && zone.boss) places.push({ x: f.x, y: f.y, name: 'Boss lair', sub: `${zone.boss.name}, level ${zone.boss.level}` });
+    if (f.type === 'portal') {
+      const z = ZONES[f.to];
+      const locked = char.level < f.minLevel;
+      places.push({ x: f.x, y: f.y, name: zone.id === 'overworld' ? z.name : f.label, sub: `Level ${z.levelRange[0]} to ${z.levelRange[1]}${z.pvp ? ', PvP' : ''}${locked ? `, requires level ${f.minLevel}` : ''}` });
+    }
+  }
+  places.sort((a, b) => dist(a) - dist(b));
+  const placeRows = places.map((p) => {
+    const here = p.x === char.loc.x && p.y === char.loc.y;
+    return `<button class="row${here ? ' static' : ''}" data-a="walkto" data-v="${p.x},${p.y}"${here ? ' aria-disabled="true"' : ''}>
+      <span class="lv num">${p.x}, ${p.y}</span>
+      <span class="nm">${esc(p.name)}<small>${esc(p.sub)}</small></span>
+      <span class="go">${here ? 'Here' : esc(directionTo(char, p.x, p.y))}</span></button>`;
   });
   return `
     <div class="place-row"><h2>${esc(zone.name)}</h2><span class="coords">${char.loc.x}, ${char.loc.y}</span></div>
     <p class="small muted" style="margin-top:6px">${esc(zone.desc)}</p>
-    <div class="map ${zone.pvp ? 'pvp' : ''}" role="group" aria-label="Map of ${esc(zone.name)}, ${zone.size} by ${zone.size} squares" style="grid-template-columns:repeat(${zone.size},1fr)">${cells.join('')}</div>
-    <div class="legend"><span><b>T</b> Town</span><span><b>P</b> Path</span><span><b>X</b> Locked path</span><span><b>B</b> Boss</span><span>Tap any square to walk there.</span></div>
-    ${dests.length ? `<h3>Paths</h3><div class="rows">${dests.join('')}</div>` : ''}`;
+    <div class="map-tools" id="map-tools" hidden><span class="small muted">${zone.size} by ${zone.size}. Drag to look around.</span>${btn('mapcenter', null, 'Center on me', 'sm')}</div>
+    <div class="map-scroll" id="map-scroll">
+      <div class="map ${zone.pvp ? 'pvp' : ''}" id="map" role="group" aria-label="Map of ${esc(zone.name)}, ${zone.size} by ${zone.size} squares" aria-describedby="map-help" style="--n:${zone.size}">${cells.join('')}</div>
+    </div>
+    <div class="legend"><span><b>T</b> Town</span><span><b>P</b> Path</span><span><b>X</b> Locked path</span><span><b>B</b> Boss</span><span id="map-help">Tap a square to walk there. With a keyboard, arrow keys move between squares and Enter walks.</span></div>
+    ${placeRows.length ? `<h3>Places</h3><div class="rows">${placeRows.join('')}</div>` : ''}`;
+}
+
+// Any map wider or taller than its space scrolls inside its own frame (whatever the zone size and
+// screen); the frame and the Center on me button only appear when it does.
+function syncMapFrame() {
+  const box = $('#map-scroll');
+  if (!box) return;
+  const map = box.firstElementChild;
+  const over = map.offsetWidth > box.clientWidth + 1 || box.scrollHeight > box.clientHeight + 1;
+  box.classList.toggle('scrolls', over);
+  const tools = $('#map-tools');
+  if (tools) tools.hidden = !over;
+}
+window.addEventListener('resize', () => { if ($('#map-scroll')) { syncMapFrame(); if (char) centerMap(char.loc.x, char.loc.y); } });
+
+// Scroll the map so a square sits in the middle of the visible area (the map scrolls on its own,
+// the rest of the screen stays put).
+function centerMap(x, y) {
+  const box = $('#map-scroll');
+  const cell = box && box.querySelector(`[data-a="walk"][data-v="${x},${y}"]`);
+  if (!cell) return;
+  const b = box.getBoundingClientRect();
+  const c = cell.getBoundingClientRect();
+  box.scrollLeft += c.left - b.left - (box.clientWidth - c.width) / 2;
+  box.scrollTop += c.top - b.top - (box.clientHeight - c.height) / 2;
+  // On short screens the frame can be taller than the visible part of the screen area:
+  // scroll that too, just enough to show the square.
+  const main = $('#main').getBoundingClientRect();
+  const r = cell.getBoundingClientRect();
+  if (r.bottom > main.bottom - 8) $('#main').scrollTop += r.bottom - main.bottom + 8;
+  else if (r.top < main.top + 8) $('#main').scrollTop -= main.top + 8 - r.top;
 }
 
 // ---------------------------------------------------------------- sheets
@@ -879,6 +978,8 @@ function render() {
 
   const mainEl = $('#main');
   mainEl.classList.toggle('fill', fill);
+  const mapBox = $('#map-scroll');
+  const mapScroll = mapBox && [mapBox.scrollLeft, mapBox.scrollTop];
   focusLost = false;
   const changed = paint('main', `<h1 class="sr-only" id="screen-title" tabindex="-1">${esc(screenTitle())}</h1>${main}`);
   const inGame = ui.phase === 'game' && !!char && !ui.sanctions?.banned;
@@ -892,7 +993,16 @@ function render() {
   positionToast();
 
   const viewKey = `${ui.phase}:${!!char}:${ui.tab}:${!!char?.battle}`;
-  if (viewKey !== lastView) { mainEl.scrollTop = 0; lastView = viewKey; }
+  const viewChanged = viewKey !== lastView;
+  if (viewChanged) { mainEl.scrollTop = 0; lastView = viewKey; }
+  // The map keeps where you panned it, and recentres when you arrive or move.
+  const box = $('#map-scroll');
+  if (box) {
+    syncMapFrame();
+    const mapKey = locKey();
+    if (viewChanged || mapKey !== ui.mapKey || !mapScroll) { ui.mapKey = mapKey; centerMap(char.loc.x, char.loc.y); }
+    else if (box !== mapBox) [box.scrollLeft, box.scrollTop] = mapScroll;
+  }
   const log = $('#log');
   if (log && changed) log.scrollTop = log.scrollHeight;
 }
@@ -965,6 +1075,11 @@ function handleLocal(a, v) {
     case 'authmode': ui.authMode = v; ui.authMsg = ''; ui.email = $('#email')?.value || ui.email; return true;
     case 'tab': ui.tab = v; ui.sheet = null; if (v === 'explore') refreshPlayers(); return true;
     case 'list': ui.list = v; refreshPlayers(); return true;
+    case 'mapcenter': {
+      ui.mapCursor = null;
+      requestAnimationFrame(() => { centerMap(char.loc.x, char.loc.y); $('.map [aria-current="location"]')?.focus({ preventScroll: true }); });
+      return true;
+    }
     case 'shop': ui.sheet = { type: 'shop' }; return true;
     case 'bank': ui.sheet = { type: 'bank' }; return true;
     case 'quests': ui.sheet = { type: 'quests' }; ui.questBoard = null; loadBoard(); return true;
@@ -999,6 +1114,7 @@ function remoteCall(a, v) {
       return ['create', { name, race: ui.race }];
     }
     case 'move': return ['move', { dir: v }];
+    case 'walkto':
     case 'walk': { const [x, y] = v.split(',').map(Number); return x === char.loc.x && y === char.loc.y ? null : ['walk', { x, y }]; }
     case 'fight': ui.lastMonster = v; return ['fight', { monsterId: v }];
     case 'hunt': return ['hunt', { huntId: v }];
@@ -1128,7 +1244,32 @@ document.addEventListener('submit', async (e) => {
 
 // Keyboard support for desktop testing.
 const KEY_DIRS = { ArrowUp: 'n', ArrowDown: 's', ArrowLeft: 'w', ArrowRight: 'e' };
+// Map squares: one tab stop; arrows, Home and End move the focus, Enter or Space walks.
+document.addEventListener('focusin', (e) => {
+  const cell = e.target.closest?.('.map [data-a="walk"]');
+  if (!cell || !char) return;
+  const [x, y] = cell.dataset.v.split(',').map(Number);
+  ui.mapCursor = { zone: char.loc.zone, x, y };
+  for (const c of document.querySelectorAll('.map [data-a="walk"][tabindex="0"]')) if (c !== cell) c.tabIndex = -1;
+  cell.tabIndex = 0;
+});
+function mapKeys(e) {
+  const cell = e.target.closest?.('.map [data-a="walk"]');
+  if (!cell) return false;
+  const n = currentZone(char).size;
+  let [x, y] = cell.dataset.v.split(',').map(Number);
+  if (e.key === 'ArrowUp') y--; else if (e.key === 'ArrowDown') y++;
+  else if (e.key === 'ArrowLeft') x--; else if (e.key === 'ArrowRight') x++;
+  else if (e.key === 'Home') x = 1; else if (e.key === 'End') x = n;
+  else if (e.key === 'PageUp') y -= 5; else if (e.key === 'PageDown') y += 5;
+  else return false;
+  e.preventDefault();
+  x = Math.max(1, Math.min(n, x)); y = Math.max(1, Math.min(n, y));
+  document.querySelector(`.map [data-a="walk"][data-v="${x},${y}"]`)?.focus();
+  return true;
+}
 document.addEventListener('keydown', (e) => {
+  if (mapKeys(e)) return;
   if (e.target.tagName === 'INPUT') {
     if (e.key === 'Enter' && e.target.id === 'name') $('[data-a="create"]')?.click();
     return;

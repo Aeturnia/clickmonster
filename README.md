@@ -105,6 +105,8 @@ contact the live Supabase project: every request is answered by a fake backend i
 npm test        # run engine tests
 npm run sim     # print balance tables (win rates, fight length by build/level)
 npm run test:ui            # browser UI tests (Playwright + axe-core) against a fake backend
+node tools/ui-metrics.mjs out.json   # responsive layout measurements (UI_PUBLIC_DIR=<dir> to measure another checkout)
+node tools/ui-shots.mjs out 320,844x390   # screenshots plus an axe summary
 npm run deploy:functions   # deploy the game and admin servers (needs SUPABASE_ACCESS_TOKEN)
 npx serve public   # or any static server, then open http://localhost:3000
 ```

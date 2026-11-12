@@ -1,0 +1,343 @@
+[
+ {
+  "size": "320x640",
+  "town": {
+   "mainH": 375,
+   "visibleRows": 2,
+   "firstRowTop": 220,
+   "hudH": 66,
+   "hudClipped": false,
+   "dockH": 111,
+   "dockOverlaps": 0,
+   "dockMinTarget": 44,
+   "dockOffscreen": 0,
+   "hOverflow": false
+  },
+  "open": {
+   "mainH": 375,
+   "visibleRows": 2,
+   "firstRowTop": 221,
+   "hudH": 66,
+   "hudClipped": false,
+   "dockH": 111,
+   "dockOverlaps": 0,
+   "dockMinTarget": 44,
+   "dockOffscreen": 0,
+   "hOverflow": false
+  },
+  "battle": {
+   "logH": 246,
+   "meleeInView": true,
+   "castInView": true,
+   "hOverflow": false
+  },
+  "chat": {
+   "inputVisible": true,
+   "listH": 340
+  },
+  "chatKeyboard": {
+   "inputVisible": true,
+   "listH": 224
+  },
+  "map": {
+   "cell": 33,
+   "meVisible": true,
+   "tabStops": 1,
+   "hOverflow": false
+  }
+ },
+ {
+  "size": "375x812",
+  "town": {
+   "mainH": 547,
+   "visibleRows": 5,
+   "firstRowTop": 220,
+   "hudH": 66,
+   "hudClipped": false,
+   "dockH": 111,
+   "dockOverlaps": 0,
+   "dockMinTarget": 44,
+   "dockOffscreen": 0,
+   "hOverflow": false
+  },
+  "open": {
+   "mainH": 547,
+   "visibleRows": 5,
+   "firstRowTop": 221,
+   "hudH": 66,
+   "hudClipped": false,
+   "dockH": 111,
+   "dockOverlaps": 0,
+   "dockMinTarget": 44,
+   "dockOffscreen": 0,
+   "hOverflow": false
+  },
+  "battle": {
+   "logH": 418,
+   "meleeInView": true,
+   "castInView": true,
+   "hOverflow": false
+  },
+  "chat": {
+   "inputVisible": true,
+   "listH": 464
+  },
+  "chatKeyboard": {
+   "inputVisible": true,
+   "listH": 319
+  },
+  "map": {
+   "cell": 33,
+   "meVisible": true,
+   "tabStops": 1,
+   "hOverflow": false
+  }
+ },
+ {
+  "size": "390x844",
+  "town": {
+   "mainH": 579,
+   "visibleRows": 5,
+   "firstRowTop": 220,
+   "hudH": 66,
+   "hudClipped": false,
+   "dockH": 111,
+   "dockOverlaps": 0,
+   "dockMinTarget": 44,
+   "dockOffscreen": 0,
+   "hOverflow": false
+  },
+  "open": {
+   "mainH": 579,
+   "visibleRows": 5,
+   "firstRowTop": 221,
+   "hudH": 66,
+   "hudClipped": false,
+   "dockH": 111,
+   "dockOverlaps": 0,
+   "dockMinTarget": 44,
+   "dockOffscreen": 0,
+   "hOverflow": false
+  },
+  "battle": {
+   "logH": 450,
+   "meleeInView": true,
+   "castInView": true,
+   "hOverflow": false
+  },
+  "chat": {
+   "inputVisible": true,
+   "listH": 487
+  },
+  "chatKeyboard": {
+   "inputVisible": true,
+   "listH": 336
+  },
+  "map": {
+   "cell": 33,
+   "meVisible": true,
+   "tabStops": 1,
+   "hOverflow": false
+  },
+  "text200": {
+   "mainH": 311,
+   "visibleRows": 0,
+   "firstRowTop": 469,
+   "hudH": 149,
+   "hudClipped": false,
+   "dockH": 285,
+   "dockOverlaps": 0,
+   "dockMinTarget": 56,
+   "dockOffscreen": 0,
+   "hOverflow": false
+  }
+ },
+ {
+  "size": "430x932",
+  "town": {
+   "mainH": 667,
+   "visibleRows": 7,
+   "firstRowTop": 198,
+   "hudH": 66,
+   "hudClipped": false,
+   "dockH": 111,
+   "dockOverlaps": 0,
+   "dockMinTarget": 44,
+   "dockOffscreen": 0,
+   "hOverflow": false
+  },
+  "open": {
+   "mainH": 667,
+   "visibleRows": 7,
+   "firstRowTop": 221,
+   "hudH": 66,
+   "hudClipped": false,
+   "dockH": 111,
+   "dockOverlaps": 0,
+   "dockMinTarget": 44,
+   "dockOffscreen": 0,
+   "hOverflow": false
+  },
+  "battle": {
+   "logH": 540,
+   "meleeInView": true,
+   "castInView": true,
+   "hOverflow": false
+  },
+  "chat": {
+   "inputVisible": true,
+   "listH": 551
+  },
+  "chatKeyboard": {
+   "inputVisible": true,
+   "listH": 385
+  },
+  "map": {
+   "cell": 33,
+   "meVisible": true,
+   "tabStops": 1,
+   "hOverflow": false
+  }
+ },
+ {
+  "size": "844x390",
+  "town": {
+   "mainH": 390,
+   "visibleRows": 3,
+   "firstRowTop": 198,
+   "hudH": 65,
+   "hudClipped": false,
+   "dockH": 213,
+   "dockOverlaps": 0,
+   "dockMinTarget": 44,
+   "dockOffscreen": 0,
+   "hOverflow": false
+  },
+  "open": {
+   "mainH": 390,
+   "visibleRows": 3,
+   "firstRowTop": 198,
+   "hudH": 65,
+   "hudClipped": false,
+   "dockH": 163,
+   "dockOverlaps": 0,
+   "dockMinTarget": 44,
+   "dockOffscreen": 0,
+   "hOverflow": false
+  },
+  "battle": {
+   "logH": 285,
+   "meleeInView": true,
+   "castInView": true,
+   "hOverflow": false
+  },
+  "chat": {
+   "inputVisible": true,
+   "listH": 200
+  },
+  "chatKeyboard": {
+   "inputVisible": true,
+   "listH": 86
+  },
+  "map": {
+   "cell": 33,
+   "meVisible": true,
+   "tabStops": 1,
+   "hOverflow": false
+  }
+ },
+ {
+  "size": "1024x768",
+  "town": {
+   "mainH": 768,
+   "visibleRows": 8,
+   "firstRowTop": 198,
+   "hudH": 65,
+   "hudClipped": false,
+   "dockH": 111,
+   "dockOverlaps": 0,
+   "dockMinTarget": 44,
+   "dockOffscreen": 0,
+   "hOverflow": false
+  },
+  "open": {
+   "mainH": 768,
+   "visibleRows": 8,
+   "firstRowTop": 198,
+   "hudH": 65,
+   "hudClipped": false,
+   "dockH": 111,
+   "dockOverlaps": 0,
+   "dockMinTarget": 44,
+   "dockOffscreen": 0,
+   "hOverflow": false
+  },
+  "battle": {
+   "logH": 663,
+   "meleeInView": true,
+   "castInView": true,
+   "hOverflow": false
+  },
+  "chat": {
+   "inputVisible": true,
+   "listH": 432
+  },
+  "chatKeyboard": {
+   "inputVisible": true,
+   "listH": 294
+  },
+  "map": {
+   "cell": 33,
+   "meVisible": true,
+   "tabStops": 1,
+   "hOverflow": false
+  }
+ },
+ {
+  "size": "1440x900",
+  "town": {
+   "mainH": 900,
+   "visibleRows": 8,
+   "firstRowTop": 198,
+   "hudH": 65,
+   "hudClipped": false,
+   "dockH": 111,
+   "dockOverlaps": 0,
+   "dockMinTarget": 44,
+   "dockOffscreen": 0,
+   "hOverflow": false
+  },
+  "open": {
+   "mainH": 900,
+   "visibleRows": 8,
+   "firstRowTop": 198,
+   "hudH": 65,
+   "hudClipped": false,
+   "dockH": 111,
+   "dockOverlaps": 0,
+   "dockMinTarget": 44,
+   "dockOffscreen": 0,
+   "hOverflow": false
+  },
+  "battle": {
+   "logH": 795,
+   "meleeInView": true,
+   "castInView": true,
+   "hOverflow": false
+  },
+  "chat": {
+   "inputVisible": true,
+   "listH": 528
+  },
+  "chatKeyboard": {
+   "inputVisible": true,
+   "listH": 367
+  },
+  "map": {
+   "cell": 33,
+   "meVisible": true,
+   "tabStops": 1,
+   "hOverflow": false
+  }
+ }
+]
