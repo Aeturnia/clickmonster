@@ -1,0 +1,212 @@
+[
+ {
+  "width": 320,
+  "screen": "battle-turns",
+  "violations": [],
+  "native": []
+ },
+ {
+  "width": 320,
+  "screen": "pending",
+  "violations": [
+   "color-contrast:serious"
+  ],
+  "native": []
+ },
+ {
+  "width": 320,
+  "screen": "refused-while-busy",
+  "violations": [],
+  "native": []
+ },
+ {
+  "width": 320,
+  "screen": "double-tap",
+  "violations": [],
+  "native": []
+ },
+ {
+  "width": 320,
+  "screen": "battle-defeat",
+  "violations": [],
+  "native": []
+ },
+ {
+  "width": 320,
+  "screen": "battle-victory",
+  "violations": [],
+  "native": []
+ },
+ {
+  "width": 320,
+  "screen": "empty-players",
+  "violations": [],
+  "native": []
+ },
+ {
+  "width": 320,
+  "screen": "confirm-delete-hero",
+  "violations": [],
+  "native": [
+   {
+    "type": "confirm",
+    "message": "Delete Bartholomew Thorne forever? This cannot be undone."
+   }
+  ]
+ },
+ {
+  "width": 320,
+  "screen": "confirm-attack",
+  "violations": [],
+  "native": [
+   {
+    "type": "confirm",
+    "message": "Attack this player? The loser drops 10% of their gold."
+   }
+  ]
+ },
+ {
+  "width": 320,
+  "screen": "confirm-abandon-quest",
+  "violations": [],
+  "native": [
+   {
+    "type": "confirm",
+    "message": "Abandon your quest?"
+   }
+  ]
+ },
+ {
+  "width": 320,
+  "screen": "confirm-sell-gems",
+  "violations": [],
+  "native": []
+ },
+ {
+  "width": 320,
+  "screen": "confirm-chat-report",
+  "violations": [],
+  "native": [
+   {
+    "type": "prompt",
+    "message": "Why are you reporting this message? (optional)"
+   }
+  ]
+ },
+ {
+  "width": 320,
+  "screen": "admin-confirm-ban",
+  "violations": [],
+  "native": [
+   {
+    "type": "confirm",
+    "message": "Apply \"ban\" permanently to Bartholomew Thorne?"
+   }
+  ]
+ },
+ {
+  "width": 390,
+  "screen": "battle-turns",
+  "violations": [],
+  "native": []
+ },
+ {
+  "width": 390,
+  "screen": "pending",
+  "violations": [
+   "color-contrast:serious"
+  ],
+  "native": []
+ },
+ {
+  "width": 390,
+  "screen": "refused-while-busy",
+  "violations": [],
+  "native": []
+ },
+ {
+  "width": 390,
+  "screen": "double-tap",
+  "violations": [],
+  "native": []
+ },
+ {
+  "width": 390,
+  "screen": "battle-defeat",
+  "violations": [],
+  "native": []
+ },
+ {
+  "width": 390,
+  "screen": "battle-victory",
+  "violations": [],
+  "native": []
+ },
+ {
+  "width": 390,
+  "screen": "empty-players",
+  "violations": [],
+  "native": []
+ },
+ {
+  "width": 390,
+  "screen": "confirm-delete-hero",
+  "violations": [],
+  "native": [
+   {
+    "type": "confirm",
+    "message": "Delete Bartholomew Thorne forever? This cannot be undone."
+   }
+  ]
+ },
+ {
+  "width": 390,
+  "screen": "confirm-attack",
+  "violations": [],
+  "native": [
+   {
+    "type": "confirm",
+    "message": "Attack this player? The loser drops 10% of their gold."
+   }
+  ]
+ },
+ {
+  "width": 390,
+  "screen": "confirm-abandon-quest",
+  "violations": [],
+  "native": [
+   {
+    "type": "confirm",
+    "message": "Abandon your quest?"
+   }
+  ]
+ },
+ {
+  "width": 390,
+  "screen": "confirm-sell-gems",
+  "violations": [],
+  "native": []
+ },
+ {
+  "width": 390,
+  "screen": "confirm-chat-report",
+  "violations": [],
+  "native": [
+   {
+    "type": "prompt",
+    "message": "Why are you reporting this message? (optional)"
+   }
+  ]
+ },
+ {
+  "width": 390,
+  "screen": "admin-confirm-ban",
+  "violations": [],
+  "native": [
+   {
+    "type": "confirm",
+    "message": "Apply \"ban\" permanently to Bartholomew Thorne?"
+   }
+  ]
+ }
+]

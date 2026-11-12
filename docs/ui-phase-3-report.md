@@ -88,7 +88,26 @@ A delete the server would refuse is explained, not asked about. The zone editor 
 
 ## Accessibility results
 
-ACCESSIBILITY_RESULTS
+axe-core 4.10.2, all impacts including minor:
+
+| Sweep | Before (`main` f3fad5d) | After |
+|---|---|---|
+| Interaction states (`tools/ui-states.mjs`): 13 states × 320 and 390 | **2 violations**: `color-contrast` (serious) on the pending state at both widths (the opacity pulse). **10 native dialogs** (`confirm`/`prompt`). | **0 violations, 0 native dialogs** |
+| Main screens (`tools/ui-shots.mjs`): 17 screens × 320, 390, 844×390, 1024, 1440, including admin and the 40×40 map | 0 violations (the Phase 2 result) | **0 violations** (`axe-screens-after.json`) |
+
+- The new tests also run axe on the delete-hero dialog, the admin sanction dialog and the pending battle screen: no serious or critical violations.
+- Two flakiness sources were found and removed:
+  - **Opacity fades on text.** About 2 in 11 full runs, axe caught a toast mid-fade. The toast, the confirmation card and the HUD cues now appear with movement only, never opacity.
+  - **An hour-dependent quest fixture.** Fixed with `fixedQuest()`.
+- Final validation:
+  - `npm test`: 24 of 24 pass.
+  - `npm run test:ui`: 52 of 52 pass in each of 9 consecutive full runs.
+- Kept from Phases 1–2:
+  - Focus returns to the control that opened a confirmation.
+  - Escape and a tap outside cancel.
+  - Escape closes only the topmost dialog (the confirmation, not the sheet or chat underneath).
+  - Toasts and alerts re-home to the topmost open dialog.
+  - The reduced-motion paths are covered by a test.
 
 ## Evidence
 
