@@ -1,0 +1,16 @@
+# Static site — no build step. Netlify serves the public/ folder as-is.
+[build]
+  publish = "public"
+  command = "echo 'No build needed'"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "same-origin"
+
+# Always fetch fresh game code so updates show up right away.
+[[headers]]
+  for = "/js/*"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
