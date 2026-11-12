@@ -4,37 +4,28 @@ import { STATS, STAT_LABEL, STAT_SHORT, STAT_DESC, POINTS_PER_LEVEL } from './da
 import { ITEMS, SLOTS, SLOT_LABEL, WEAPON_TYPES, tierRoman } from './data/items.js';
 import { ELEMENT_LABEL } from './data/elements.js';
 import { ZONES, MONSTERS } from './data/zones.js';
-import { GEM_TYPES, parseGem, extractCost } from './data/gems.js';
+import { parseGem, extractCost } from './data/gems.js';
 import {
-  createCharacter, maxHp, xpToNext, totalStats, gemBonuses, totalArmor, playerCombatant,
-  spendLevel, applyRegen, healCost, findItem, equippedItem, meetsRequirements, SAVE_VERSION,
+  maxHp, xpToNext, totalStats, gemBonuses, totalArmor, playerCombatant,
+  applyRegen, healCost, findItem, equippedItem, meetsRequirements,
 } from './engine/character.js';
-import { currentZone, featuresAt, inTown, monstersHere, move, usePortal, heal, directionTo } from './engine/world.js';
-import { startBattle, battleAction } from './engine/battle.js';
+import { currentZone, featuresAt, inTown, monstersHere, directionTo } from './engine/world.js';
 import { monsterCombatant } from './engine/monster.js';
 import { meleeChance, spellChance, meleeBase, spellBase } from './engine/combat.js';
-import { buy, sell, equip, unequip, socketGem, extractGem, shopItems, isEquipped, sellPrice } from './engine/inventory.js';
+import { shopItems, isEquipped, sellPrice } from './engine/inventory.js';
+import { PVP_LEVEL_GAP } from './engine/pvp.js';
+import { sb, api, playersAt } from './net.js';
 
-// ---------------------------------------------------------------- storage
-const SAVE_KEY = 'clickmonster.save.v1';
-const store = {
-  load() {
-    try { const raw = localStorage.getItem(SAVE_KEY); return raw ? JSON.parse(raw) : null; } catch { return null; }
-  },
-  save(c) {
-    try { if (c) localStorage.setItem(SAVE_KEY, JSON.stringify(c)); } catch { /* storage unavailable */ }
-  },
-  clear() {
-    try { localStorage.removeItem(SAVE_KEY); } catch { /* ignore */ }
-  },
+// The server owns the real character; `char` is the latest copy it sent us.
+// Game rules run here only to display numbers (hit chances, costs, requirements).
+let session = null;
+let char = null;
+const ui = {
+  phase: 'loading', // loading | auth | game
+  authMode: 'signin',
+  tab: 'explore', list: 'monsters', race: 'human', modal: null, shopSlot: 'weapon',
+  nextActionAt: 0, busy: false, players: null, playersKey: null,
 };
-
-function validSave(c) {
-  return c && c.v === SAVE_VERSION && RACES[c.race] && c.loc && ZONES[c.loc.zone] ? c : null;
-}
-
-let char = validSave(store.load());
-const ui = { tab: 'explore', list: 'monsters', race: 'human', modal: null, shopSlot: 'weapon', nextActionAt: 0 };
 
 // ---------------------------------------------------------------- helpers
 const $ = (s) => document.querySelector(s);
@@ -131,6 +122,29 @@ function renderNav() {
 }
 
 // ---------------------------------------------------------------- views
+function viewLoading() {
+  return '<div class="hero-title"><h1>ClickMonster</h1><p>Loading…</p></div>';
+}
+
+function viewAuth() {
+  const signup = ui.authMode === 'signup';
+  return `
+    <div class="hero-title">
+      <h1>ClickMonster</h1>
+      <p>A shared world of monsters, gold and glory.</p>
+    </div>
+    <form class="card" id="authform" autocomplete="on">
+      <h2>${signup ? 'Create an account' : 'Sign in'}</h2>
+      <h3>Email</h3>
+      <input id="email" type="email" inputmode="email" autocomplete="email" required value="${esc(ui.email || '')}">
+      <h3>Password</h3>
+      <input id="password" type="password" autocomplete="${signup ? 'new-password' : 'current-password'}" minlength="6" required>
+      ${ui.authMsg ? `<p class="small ${ui.authMsgKind || 'muted'}" style="margin-top:10px">${esc(ui.authMsg)}</p>` : ''}
+      <button type="submit" class="primary block" style="margin-top:14px">${signup ? 'Create account' : 'Sign in'}</button>
+    </form>
+    ${btn('authmode', signup ? 'signin' : 'signup', signup ? 'I already have an account' : 'New here? Create an account', 'block')}`;
+}
+
 function viewCreate() {
   const r = RACES[ui.race];
   const zone = ZONES[r.startZone];
@@ -199,8 +213,13 @@ function viewExplore() {
   }
 
   const list = ui.list === 'monsters' ? monsterListHtml() : playersHtml(zone);
+  const notices = (char.notices || []).length ? `<div class="card feature">
+      ${char.notices.map((n) => `<p class="small">${esc(n.text)}</p>`).join('')}
+      ${btn('dismiss', null, 'Dismiss', 'sm')}
+    </div>` : '';
 
   return `
+    ${notices}
     <div class="card">
       <div class="loc-title">
         <h2 style="margin:0">${esc(zone.name)}</h2>
@@ -238,12 +257,48 @@ function monsterListHtml() {
 }
 
 function playersHtml(zone) {
-  return `<div class="card"><p>You're the only adventurer at this spot.</p>
-    <p class="muted small">Multiplayer is coming in the next phase: other players here will show up in this list${zone.pvp ? ', and since this is a PvP zone you’ll be able to challenge them' : ''}.</p></div>`;
+  const players = ui.playersKey === locKey() ? ui.players : null;
+  const safe = inTown(char);
+  const pvpNote = zone.pvp
+    ? `<p class="small ${safe ? 'muted' : 'warn'}" style="margin:0 0 8px">${safe ? 'Towns are safe, even in lawless lands.' : 'Lawless land: players here may attack you, and you them.'}</p>`
+    : '';
+  if (!players) return `${pvpNote}<p class="muted">Looking around…</p>`;
+  if (!players.length) return `${pvpNote}<div class="card"><p style="margin:0">No other adventurers are here right now.</p></div>`;
+  return `${pvpNote}<div class="list">${players.map((p) => {
+    const canHit = zone.pvp && !safe && p.level >= char.level - PVP_LEVEL_GAP;
+    return `<div class="mon card" style="margin:0">
+      <span class="lvl ${conClass(p.level)}">Lv ${p.level}</span>
+      <span class="nm">${esc(p.name)}<small>${RACES[p.race]?.name || ''}</small></span>
+      ${canHit ? btn('attack', p.id, 'Attack', 'sm danger') : ''}
+    </div>`;
+  }).join('')}</div>`;
+}
+
+const locKey = () => `${char.loc.zone}:${char.loc.x}:${char.loc.y}`;
+
+async function refreshPlayers() {
+  if (!char || ui.list !== 'players' || ui.tab !== 'explore' || char.battle) return;
+  const key = locKey();
+  try {
+    const list = await playersAt(char.loc, char.name);
+    if (key !== locKey()) return;
+    ui.players = list;
+    ui.playersKey = key;
+    render();
+  } catch (err) {
+    toast(err.message, 'bad');
+  }
 }
 
 function viewBattle() {
   const b = char.battle;
+  if (b.pvp) {
+    return `
+      <div class="card foe"><h2>Duel: ${esc(b.opponent)}</h2>
+        <p class="muted small">${b.over === 'victory' ? 'You won the duel.' : 'You lost the duel.'}</p></div>
+      <div class="log" id="log">${b.log.map((l) => `<p class="${l.kind}">${esc(l.text)}</p>`).join('')}</div>
+      <div class="actions">${btn('done', null, 'Continue', 'big primary full')}</div>`;
+  }
   const mon = monsterCombatant(b.monsterId);
   const player = playerCombatant(char);
   const logHtml = b.log.map((l) => `<p class="${l.kind}">${esc(l.text)}</p>`).join('');
@@ -314,9 +369,12 @@ function viewHero() {
       </dl>
     </div>
     <div class="card">
-      <h3 style="margin-top:0">Save</h3>
-      <p class="muted small">Your hero is saved on this device. Online accounts arrive with multiplayer.</p>
-      ${btn('delete', null, 'Delete character', 'danger block')}
+      <h3 style="margin-top:0">Account</h3>
+      <p class="muted small">Signed in as ${esc(session?.user?.email || '')}. Your hero is saved online.</p>
+      <div class="grid2">
+        ${btn('signout', null, 'Sign out')}
+        ${btn('delete', null, 'Delete hero', 'danger')}
+      </div>
     </div>`;
 }
 
@@ -464,7 +522,9 @@ function render() {
   const prevTab = $('#main').dataset.tab;
   const scroll = window.scrollY;
   let html;
-  if (!char) html = viewCreate();
+  if (ui.phase === 'loading') html = viewLoading();
+  else if (ui.phase === 'auth') html = viewAuth();
+  else if (!char) html = viewCreate();
   else if (ui.tab === 'hero') html = viewHero();
   else if (ui.tab === 'gear') html = viewGear();
   else if (ui.tab === 'map') html = viewMap();
@@ -482,67 +542,116 @@ function render() {
 }
 
 // ---------------------------------------------------------------- actions
-const BATTLE_ACTIONS = new Set(['melee', 'cast', 'flee', 'again', 'fight']);
+const BATTLE_ACTIONS = new Set(['melee', 'cast', 'flee', 'again', 'fight', 'attack']);
 
-function handle(a, v) {
+// Actions that only change what's on screen.
+function handleLocal(a, v) {
   switch (a) {
-    case 'race': ui.draftName = $('#name')?.value || ''; ui.race = v; break;
-    case 'create': {
-      char = createCharacter($('#name')?.value, ui.race);
-      ui.tab = 'explore';
-      toast(`Welcome to ${ZONES[char.loc.zone].name}, ${char.name}!`);
-      break;
-    }
-    case 'tab': ui.tab = v; ui.modal = null; break;
-    case 'list': ui.list = v; break;
-    case 'move': move(char, v); break;
-    case 'fight': startBattle(char, v); ui.tab = 'explore'; break;
-    case 'melee': case 'cast': case 'flee': battleAction(char, a); break;
-    case 'again': {
-      const id = char.battle.monsterId;
-      char.battle = null;
-      startBattle(char, id);
-      break;
-    }
-    case 'done': char.battle = null; break;
-    case 'portal': { const z = usePortal(char); toast(`You travel to ${z.name}.`); break; }
-    case 'heal': { const c = heal(char); toast(`The healer restores you for ${c} gold.`); break; }
-    case 'shopslot': ui.shopSlot = v; break;
-    case 'buy': { buy(char, v); toast(`Bought ${ITEMS[v].name}. Equip it from the Gear tab.`); break; }
-    case 'item': ui.modal = { type: 'item', uid: Number(v) }; break;
-    case 'close': ui.modal = null; break;
-    case 'equip': equip(char, Number(v)); toast('Equipped.'); break;
-    case 'unequip': unequip(char, v); break;
-    case 'socket': socketGem(char, ui.modal.uid, v); toast(`Socketed ${parseGem(v).name}.`); break;
-    case 'extract': { const c = extractGem(char, ui.modal.uid, Number(v)); toast(`The jeweler extracts the gem for ${c} gold.`); break; }
-    case 'sell': { const p = sell(char, Number(v)); ui.modal = null; toast(`Sold for ${p} gold.`); break; }
-    case 'level': spendLevel(char, v); toast(v === 'all' ? 'All stats increased!' : `${STAT_LABEL[v]} increased!`); break;
-    case 'delete':
-      if (confirm(`Delete ${char.name} forever? This can't be undone.`)) {
-        store.clear(); char = null; ui.tab = 'explore'; ui.modal = null;
-      }
-      break;
-    default: break;
+    case 'race': ui.draftName = $('#name')?.value || ''; ui.race = v; return true;
+    case 'authmode': ui.authMode = v; ui.authMsg = ''; ui.email = $('#email')?.value || ui.email; return true;
+    case 'tab': ui.tab = v; ui.modal = null; if (v === 'explore') refreshPlayers(); return true;
+    case 'list': ui.list = v; refreshPlayers(); return true;
+    case 'shopslot': ui.shopSlot = v; return true;
+    case 'item': ui.modal = { type: 'item', uid: Number(v) }; return true;
+    case 'close': ui.modal = null; return true;
+    default: return false;
   }
 }
 
-document.addEventListener('click', (e) => {
+// Actions the server performs. Returns [action, args, successMessage?] or null to cancel.
+function remoteCall(a, v) {
+  switch (a) {
+    case 'create': return ['create', { name: $('#name')?.value || '', race: ui.race }];
+    case 'move': return ['move', { dir: v }];
+    case 'fight': return ['fight', { monsterId: v }];
+    case 'melee': case 'cast': case 'flee': case 'again': case 'done': case 'dismiss': return [a, {}];
+    case 'portal': return ['portal', {}];
+    case 'heal': return ['heal', {}, `You are fully healed for ${healCost(char)} gold.`];
+    case 'buy': return ['buy', { itemId: v }, `Bought ${ITEMS[v].name}. Equip it from the Gear tab.`];
+    case 'equip': return ['equip', { uid: Number(v) }, 'Equipped.'];
+    case 'unequip': return ['unequip', { slot: v }];
+    case 'socket': return ['socket', { uid: ui.modal.uid, gem: v }, `Socketed ${parseGem(v).name}.`];
+    case 'extract': return ['extract', { uid: ui.modal.uid, index: Number(v) }, 'The jeweler extracts the gem.'];
+    case 'sell': return ['sell', { uid: Number(v) }, 'Sold.'];
+    case 'level': return ['level', { stat: v }, v === 'all' ? 'All stats increased!' : `${STAT_LABEL[v]} increased!`];
+    case 'attack': return confirm('Attack this player? The loser drops 10% of their gold.') ? ['attack', { targetId: v }] : null;
+    case 'delete':
+      return confirm(`Delete ${char.name} forever? This can't be undone.`) ? ['delete', {}, 'Your hero is gone.'] : null;
+    default: return null;
+  }
+}
+
+async function runRemote(a, v) {
+  const call = remoteCall(a, v);
+  if (!call) return;
+  const [action, args, msg] = call;
+  const before = char && { zone: char.loc.zone, ...char.loc, level: char.level };
+  ui.busy = true;
+  document.body.classList.add('busy');
+  try {
+    const res = await api(action, args);
+    char = res.char;
+    if (msg) toast(msg);
+    if (action === 'create' && char) { ui.tab = 'explore'; toast(`Welcome to ${ZONES[char.loc.zone].name}, ${char.name}!`); }
+    if (action === 'sell') ui.modal = null;
+    if (action === 'fight' || action === 'attack') ui.tab = 'explore';
+    if (char && before && char.loc.zone !== before.zone) toast(`You travel to ${ZONES[char.loc.zone].name}.`);
+    if (char && before && char.level > before.level) toast(`Level ${char.level}! Spend your points on the Hero tab.`);
+  } catch (err) {
+    toast(err.message || 'Something went wrong.', 'bad');
+    if (err.status === 401) await sb.auth.signOut();
+  } finally {
+    ui.busy = false;
+    document.body.classList.remove('busy');
+  }
+  render();
+  if (char && before && locKey() !== `${before.zone}:${before.x}:${before.y}`) { ui.players = null; refreshPlayers(); }
+  if (action === 'attack' || action === 'done') refreshPlayers();
+}
+
+document.addEventListener('click', async (e) => {
   if (e.target.id === 'modal') { ui.modal = null; render(); return; }
   const el = e.target.closest('[data-a]');
   if (!el || el.disabled) return;
   const a = el.dataset.a;
+  if (a === 'signout') { await sb.auth.signOut(); return; }
+  if (handleLocal(a, el.dataset.v)) { render(); return; }
+  if (ui.busy) return;
   if (BATTLE_ACTIONS.has(a)) {
     const now = Date.now();
     if (now < ui.nextActionAt) return; // small cooldown against accidental double-taps
-    ui.nextActionAt = now + 280;
+    ui.nextActionAt = now + 250;
   }
+  await runRemote(a, el.dataset.v);
+});
+
+document.addEventListener('submit', async (e) => {
+  if (e.target.id !== 'authform') return;
+  e.preventDefault();
+  const email = $('#email').value.trim();
+  const password = $('#password').value;
+  ui.email = email;
+  const submit = e.target.querySelector('button[type=submit]');
+  submit.disabled = true;
   try {
-    handle(a, el.dataset.v);
+    if (ui.authMode === 'signup') {
+      const { data, error } = await sb.auth.signUp({ email, password });
+      if (error) throw error;
+      if (!data.session) {
+        ui.authMode = 'signin';
+        ui.authMsg = 'Account created! Check your email to confirm it, then sign in here.';
+        ui.authMsgKind = 'good';
+        render();
+      }
+    } else {
+      const { error } = await sb.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+    }
   } catch (err) {
-    toast(err.message || 'Something went wrong.', 'bad');
+    ui.authMsg = err.message || 'Could not sign in.';
+    ui.authMsgKind = 'bad';
+    render();
   }
-  store.save(char);
-  render();
 });
 
 document.addEventListener('keydown', (e) => {
@@ -550,13 +659,12 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && ui.modal) { ui.modal = null; render(); }
 });
 
-// Passive regeneration while out of combat.
+// Passive regeneration, shown locally between server updates (the server does the real math).
 setInterval(() => {
   if (!char) return;
   const before = char.hp;
   applyRegen(char);
   if (char.hp !== before) {
-    store.save(char);
     renderTop();
     if (ui.tab === 'explore' && !char.battle) {
       const healBtn = document.querySelector('[data-a="heal"]');
@@ -569,7 +677,36 @@ setInterval(() => {
   }
 }, 1000);
 
-if (char) applyRegen(char);
+// Keep the players list fresh while it's open.
+setInterval(() => { if (document.visibilityState === 'visible') refreshPlayers(); }, 15000);
+
+async function loadHero() {
+  try {
+    char = (await api('state')).char;
+    ui.phase = 'game';
+  } catch (err) {
+    toast(err.message, 'bad');
+    ui.phase = 'auth';
+  }
+  render();
+  refreshPlayers();
+}
+
+sb.auth.onAuthStateChange((event, newSession) => {
+  const wasSignedIn = !!session;
+  session = newSession;
+  if (!newSession) {
+    char = null;
+    ui.phase = 'auth';
+    ui.modal = null;
+    render();
+  } else if (!wasSignedIn) {
+    ui.phase = 'loading';
+    render();
+    setTimeout(loadHero, 0); // don't call Supabase from inside the auth callback
+  }
+});
+
 render();
 
 // Expose for debugging from the browser console.
