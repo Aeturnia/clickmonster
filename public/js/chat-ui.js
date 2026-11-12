@@ -2,6 +2,7 @@
 // Global, Zone and Whisper tabs. Messages arrive live through Supabase Realtime; sending goes
 // through the game server, which enforces mutes, level, speed limits and link blocking.
 import { CHAT_LEVEL, CHAT_MAX_LEN, cleanChatText } from './engine/chat.js';
+import { ask } from './confirm.js';
 
 const TABS = [['global', 'Global'], ['zone', 'Zone'], ['whisper', 'Whispers']];
 const KEEP = 120;
@@ -186,7 +187,7 @@ export function setupChat({ sb, api, getChar, toast, esc, zoneName }) {
     const ignoreList = isWhisper && st.ignores.size ? `<p class="small muted chat-ign">Ignored: ${[...st.ignores.values()].map((n) =>
       `${esc(n)} <button class="textbtn" data-c="unignore" data-v="${esc(n)}">unignore</button>`).join(', ')}</p>` : '';
     const empty = st.tab === 'zone' ? `No messages in ${esc(zoneName(st.zone))} yet.` : isWhisper ? 'No whispers yet. Tap a name to whisper.' : 'No messages yet.';
-    return ignoreList + (st.msgs[st.tab].map(lineHtml).join('') || `<p class="empty">${empty}</p>`);
+    return ignoreList + (st.msgs[st.tab].map(lineHtml).join('') || `<div class="empty"><p class="empty-title">${empty}</p></div>`);
   }
 
   // Roving tab stop: exactly one message is reachable with Tab; arrows move between them.
@@ -341,6 +342,10 @@ export function setupChat({ sb, api, getChar, toast, esc, zoneName }) {
     }
   }
 
+  // The message a menu acts on, from whichever channel holds it.
+  const findMsg = (id) => Object.values(st.msgs).flat().find((m) => String(m.id) === String(id));
+  const quote = (m) => (m ? `${m.sender_name}: "${m.text.length > 120 ? `${m.text.slice(0, 117)}...` : m.text}"` : '');
+
   async function onAction(c, v) {
     switch (c) {
       case 'toggle':
@@ -361,20 +366,36 @@ export function setupChat({ sb, api, getChar, toast, esc, zoneName }) {
       case 'clearError': setError(null); drawer.querySelector('#chat-input')?.focus(); return;
       case 'whisper': st.menuFor = null; openWhisper(v); return;
       case 'ignore':
-        if (!confirm(`Ignore ${v}? You won't see their messages or whispers.`)) return;
+        if (!await ask({
+          title: `Ignore ${v}?`,
+          points: ["You won't see their messages or whispers.", 'You can stop ignoring them from the list at the top of the chat.'],
+          confirm: 'Ignore', cancel: 'Cancel', tone: 'normal',
+        })) return;
         try { await api('ignore', { name: v }); await loadMeta(); toast(`Ignoring ${v}.`); } catch (err) { setError(err.message); }
         st.menuFor = null; paint(); return;
       case 'unignore':
         try { await api('unignore', { name: v }); await loadMeta(); toast(`No longer ignoring ${v}.`); } catch (err) { setError(err.message); }
         paint(); return;
       case 'report': {
-        const reason = prompt('Why are you reporting this message? (optional)');
-        if (reason === null) return;
+        const res = await ask({
+          title: 'Report this message?',
+          lead: quote(findMsg(v)),
+          points: ['A moderator will review it. The sender is not told who reported it.'],
+          input: { label: 'Why are you reporting it? (optional)', maxlength: 200 },
+          confirm: 'Send report', cancel: 'Cancel', tone: 'normal',
+        });
+        if (!res) return;
+        const reason = res.value || '';
         try { await api('report', { messageId: v, reason }); toast('Thanks. A moderator will take a look.'); } catch (err) { setError(err.message); }
         st.menuFor = null; paint(); drawer.querySelector(`.chat-line[data-v="${v}"]`)?.focus(); return;
       }
       case 'delete':
-        if (!confirm('Remove this message for everyone?')) return;
+        if (!await ask({
+          title: 'Remove this message for everyone?',
+          lead: quote(findMsg(v)),
+          points: ['It is replaced by "message removed" for all players. The original stays in the moderation log.'],
+          confirm: 'Remove message', cancel: 'Keep it',
+        })) return;
         try { await api('modDelete', { messageId: v }); toast('Removed.'); } catch (err) { setError(err.message); }
         st.menuFor = null; paint(); drawer.querySelector(`.chat-line[data-v="${v}"]`)?.focus(); return;
       default:

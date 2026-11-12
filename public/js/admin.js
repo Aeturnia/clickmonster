@@ -10,6 +10,7 @@ import { ITEMS, itemDef, SLOT_LABEL } from './data/items.js';
 import { ZONES } from './data/zones.js';
 import { RACES } from './data/races.js';
 import { MULT_KEYS, MULT_LABEL, MULT_MAX } from './engine/world-config.js';
+import { ask } from './confirm.js';
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -509,24 +510,33 @@ document.addEventListener('click', async (e) => {
   if (a === 'open') openPlayer(v);
   if (a === 'back') { st.player = null; st.focusNext = st.returnFocus || null; render(); load('players'); }
   if (a === 'quick') editPlayer({ [v]: true });
-  if (a === 'removeItem' && confirm('Remove this item from the hero?')) editPlayer({ removeItem: Number(v) }, 'Item removed.');
-  if (a === 'deleteEvent' && confirm('Delete this news item?')) {
+  if (a === 'removeItem') {
+    const p = st.player?.player;
+    const item = p?.data.inventory.find((i) => String(i.uid) === v);
+    const d = item && itemDef(item);
+    if (await ask({
+      title: `Remove ${d?.name || 'this item'} from ${p?.name || 'the hero'}?`,
+      points: [`The item${item?.gems.length ? ' and the gems socketed in it are' : ' is'} deleted, not returned to the shop.`, 'The change is recorded in the audit log.'],
+      confirm: 'Remove item', cancel: 'Keep it',
+    })) editPlayer({ removeItem: Number(v) }, 'Item removed.');
+  }
+  if (a === 'deleteEvent' && await ask({ title: 'Delete this news item?', points: ['It disappears from the news feed for every player.'], confirm: 'Delete', cancel: 'Keep it' })) {
     try { await call('deleteEvent', { id: v }); toast('Deleted.'); } catch (err) { toast(err.message, true); }
     load('announce');
   }
-  if (a === 'chatDelete' && confirm('Remove this message for everyone?')) {
+  if (a === 'chatDelete' && await ask({ title: 'Remove this message for everyone?', points: ['Players see "message removed" in its place.', 'The original text stays in the moderation log.'], confirm: 'Remove message', cancel: 'Keep it' })) {
     try { await call('chatDelete', { id: v }); toast('Removed.'); load('chat'); } catch (err) { toast(err.message, true); }
   }
   if (a === 'resolveReport') {
     try { await call('resolveReport', { id: v }); toast('Report dismissed.'); load('chat'); } catch (err) { toast(err.message, true); }
   }
-  if (a === 'endEvent' && confirm('End this event now?')) {
+  if (a === 'endEvent' && await ask({ title: 'End this event now?', points: ['Its bonuses stop for every player straight away.'], confirm: 'End event', cancel: 'Keep it running' })) {
     try { st.world = await call('endEvent', { id: v }); toast('Event ended.'); render(); } catch (err) { toast(err.message, true); }
   }
-  if (a === 'cancelHunt' && confirm('Cancel this hunt? Nobody will be rewarded.')) {
+  if (a === 'cancelHunt' && await ask({ title: 'Cancel this hunt?', points: ['The world boss disappears and nobody is rewarded, including players who already hit it.'], confirm: 'Cancel hunt', cancel: 'Keep it running' })) {
     try { await call('cancelHunt', { id: v }); toast('Hunt cancelled.'); load('hunts'); } catch (err) { toast(err.message, true); }
   }
-  if (a === 'removeStaff' && confirm(`Remove ${v} from staff?`)) {
+  if (a === 'removeStaff' && await ask({ title: `Remove ${v} from staff?`, points: ['They lose access to this console straight away.', 'They keep their player account.'], confirm: 'Remove from staff', cancel: 'Cancel' })) {
     try { st.staff = (await call('setStaff', { email: v, role: null })).staff; toast('Removed.'); } catch (err) { toast(err.message, true); }
     render();
   }
@@ -552,7 +562,24 @@ document.addEventListener('submit', async (e) => {
     const daysRaw = $('#s-days').value.trim();
     const days = daysRaw === '' ? null : Number(daysRaw);
     const reason = $('#s-reason').value;
-    if (!confirm(`Apply "${kind}"${['mute', 'jail', 'ban'].includes(kind) ? (days ? ` for ${days} days` : ' permanently') : ''} to ${st.player.player.name}?`)) return;
+    const name = st.player.player.name;
+    const timed = ['mute', 'jail', 'ban'].includes(kind);
+    const span = timed ? (days ? `for ${days} ${days === 1 ? 'day' : 'days'}` : 'permanently') : '';
+    const effect = {
+      warn: 'They see the warning and the reason. It counts as a strike on their record.',
+      mute: "They can't send chat messages.",
+      jail: 'They can look around but not act.',
+      ban: "They can't play.",
+      lift: 'Every active mute, jail and ban on them ends now.',
+    }[kind];
+    const ok = await ask({
+      title: kind === 'lift' ? `Lift all sanctions on ${name}?` : `${kind[0].toUpperCase()}${kind.slice(1)} ${name}${span ? ` ${span}` : ''}?`,
+      points: [effect, ...(reason ? [`Reason shown to them: "${reason}"`] : []), 'The action is recorded in the audit log.'],
+      // A permanent ban is the one sanction worth typing the name for.
+      typeToConfirm: kind === 'ban' && !days ? name : null,
+      confirm: kind === 'lift' ? 'Lift sanctions' : `Apply ${kind}`, cancel: 'Cancel', tone: kind === 'lift' ? 'normal' : 'danger',
+    });
+    if (!ok) return;
     try {
       await call('sanction', { id: st.player.player.id, kind, days, reason });
       st.player = await call('player', { id: st.player.player.id });
@@ -593,7 +620,11 @@ document.addEventListener('submit', async (e) => {
   }
   if (id === 'hunt') {
     const f = new FormData(e.target);
-    if (!confirm(`Start the hunt for ${f.get('name')}?`)) return;
+    if (!await ask({
+      title: `Start the hunt for ${f.get('name')}?`,
+      points: [`It appears for every player in ${ZONES[f.get('zone')]?.name || f.get('zone')} for ${f.get('hours')} hours.`, 'Rewards are paid when it is defeated.'],
+      confirm: 'Start hunt', cancel: 'Cancel', tone: 'normal',
+    })) return;
     try {
       await call('startHunt', {
         name: f.get('name'), zone: f.get('zone'), level: f.get('level'), hp: f.get('hp') || null,
