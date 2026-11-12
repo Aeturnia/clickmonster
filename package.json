@@ -5,6 +5,11 @@
   "scripts": {
     "test": "node --test tests/*.test.mjs",
     "sim": "node tools/sim.mjs",
-    "deploy:functions": "NODE_USE_ENV_PROXY=1 node tools/deploy-functions.mjs"
+    "deploy:functions": "NODE_USE_ENV_PROXY=1 node tools/deploy-functions.mjs",
+    "test:ui": "node --test --test-concurrency=1 tests/ui/*.test.mjs"
+  },
+  "devDependencies": {
+    "axe-core": "4.10.2",
+    "playwright": "1.63.0"
   }
 }

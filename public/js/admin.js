@@ -37,8 +37,24 @@ const untilText = (t) => (new Date(t).getFullYear() > 9000 ? 'permanent' : `unti
 
 const st = { phase: 'loading', me: null, tab: 'dashboard', q: '', players: null, player: null, stats: null, log: null, events: null, staff: null, world: null, hunts: null, economy: null, zones: null, zoneEdit: null, chat: null, reports: null, chatQ: {} };
 
+// Problems stay until dismissed (or until the connection recovers); successes are brief.
+const problems = [];
+let nextProblem = 1;
+function renderProblems() {
+  const el = $('#alerts');
+  const last = problems.length - 1;
+  el.innerHTML = problems.map((p, i) => `<div class="alert"${i === last ? ' role="alert"' : ''}><p>${esc(p.text)}${p.count > 1 ? ` <span class="alert-count">(${p.count} times)</span>` : ''}</p>
+    <button type="button" class="textbtn" data-a="dismissProblem" data-v="${p.id}">Dismiss<span class="sr-only"> message: ${esc(p.text)}</span></button></div>`).join('');
+}
+function addProblem(text, kind = /^Can't reach the server/.test(text) ? 'connection' : 'action') {
+  const same = problems.find((p) => p.text === text);
+  if (same) same.count += 1; else problems.push({ id: nextProblem++, text, kind, count: 1 });
+  renderProblems();
+}
+
 let toastTimer;
 function toast(msg, bad = false) {
+  if (bad) { addProblem(msg); return; }
   const el = $('#toast');
   el.textContent = msg;
   el.className = `show ${bad ? 'bad' : ''}`;
@@ -52,9 +68,15 @@ async function call(action, args = {}) {
   const { data, error } = await sb.functions.invoke('admin', { body: { action, args } });
   if (error) {
     let msg = 'Request failed.';
+    let status = error.context?.status;
     try { msg = (await error.context.json()).error || msg; } catch { /* not json */ }
+    if (status == null) throw new Error(`Can't reach the server. ${msg}`);
     throw new Error(msg);
   }
+  // A successful request clears connection problems.
+  const before = problems.length;
+  for (let i = problems.length - 1; i >= 0; i--) if (problems[i].kind === 'connection') problems.splice(i, 1);
+  if (problems.length !== before) renderProblems();
   return data;
 }
 
@@ -92,8 +114,8 @@ function header() {
   return `<div class="a-head"><h1>ClickMonster Admin</h1>
       <span class="who">${esc(st.me.email)} <span class="pill ${st.me.role}">${st.me.role}</span>
       <button class="textbtn" data-a="signout">Sign out</button></span></div>
-    <div class="a-tabs">${tabs.map(([id, l]) => `<button class="chip ${st.tab === id ? 'on' : ''}" data-a="tab" data-v="${id}">${l}</button>`).join('')}
-      <a class="chip" href="./" style="text-decoration:none;display:inline-flex;align-items:center">Open game</a></div>`;
+    <nav class="a-tabs" aria-label="Admin sections">${tabs.map(([id, l]) => `<button class="chip ${st.tab === id ? 'on' : ''}" data-a="tab" data-v="${id}"${st.tab === id ? ' aria-current="page"' : ''}>${l}</button>`).join('')}
+      <a class="chip" href="./" style="text-decoration:none;display:inline-flex;align-items:center">Open game</a></nav>`;
 }
 
 function barList(obj, label = (k) => k) {
@@ -116,7 +138,7 @@ function viewDashboard() {
       <div class="box"><h2>Races</h2>${barList(s.byRace, (k) => RACES[k]?.name || k)}</div>
       <div class="box"><h2>Where players are</h2>${barList(s.byZone, (k) => ZONES[k]?.name || k)}</div>
       <div class="box"><h2>Top heroes</h2><table>${(s.top || []).map((p) =>
-        `<tr class="click" data-a="open" data-v="${p.id}"><td>${esc(p.name)}</td><td>${RACES[p.race]?.name || ''}</td><td class="num">Lv ${p.level}</td></tr>`).join('')}</table></div>
+        `<tr class="click" data-a="open" data-v="${p.id}"><td><button type="button" class="textbtn row-link" data-a="open" data-v="${p.id}">${esc(p.name)}</button></td><td>${RACES[p.race]?.name || ''}</td><td class="num">Lv ${p.level}</td></tr>`).join('')}</table></div>
     </div>
     <button class="btn sm" data-a="refresh">Refresh</button>`;
 }
@@ -130,7 +152,7 @@ function viewPlayers() {
     ${!list ? '<p class="muted">Loading.</p>' : !list.length ? '<p class="muted">No heroes found.</p>' : `<table style="margin-top:12px">
       <tr><th>Hero</th><th>Race</th><th class="num">Lv</th><th>Where</th><th>Last seen</th></tr>
       ${list.map((p) => `<tr class="click" data-a="open" data-v="${p.id}">
-        <td>${esc(p.name)} ${sanctionPills(p)}${p.strikes ? `<span class="small faint">${p.strikes} strikes</span>` : ''}</td>
+        <td><button type="button" class="textbtn row-link" data-a="open" data-v="${p.id}">${esc(p.name)}</button> ${sanctionPills(p)}${p.strikes ? `<span class="small faint">${p.strikes} strikes</span>` : ''}</td>
         <td>${RACES[p.race]?.name || p.race}</td><td class="num">${p.level}</td>
         <td>${esc(ZONES[p.zone]?.name || p.zone)} ${p.x},${p.y}</td><td>${ago(p.updated_at)}</td></tr>`).join('')}</table>`}`;
 }
@@ -177,13 +199,13 @@ function editBox(p) {
     </div>
     <h3>Give item</h3>
     <form id="give-item" class="acts" style="margin-top:0">
-      <select id="gi-base" class="a-input" style="flex:1;min-width:200px;margin:0">${itemOpts}</select>
-      <select id="gi-q" class="a-input" style="width:auto;margin:0"><option value="">Normal</option><option value="relic">Relic</option></select>
+      <select id="gi-base" aria-label="Item to give" class="a-input" style="flex:1;min-width:200px;margin:0">${itemOpts}</select>
+      <select id="gi-q" aria-label="Quality" class="a-input" style="width:auto;margin:0"><option value="">Normal</option><option value="relic">Relic</option></select>
       <button class="btn" type="submit">Give</button></form>
     <h3>Give gems</h3>
     <form id="give-gem" class="acts" style="margin-top:0">
-      <select id="gg-key" class="a-input" style="flex:1;min-width:200px;margin:0">${gemOpts}</select>
-      <input id="gg-n" class="a-input" type="number" min="1" value="1" style="width:80px;margin:0">
+      <select id="gg-key" aria-label="Gem to give" class="a-input" style="flex:1;min-width:200px;margin:0">${gemOpts}</select>
+      <input id="gg-n" aria-label="Number of gems" class="a-input" type="number" min="1" value="1" style="width:80px;margin:0">
       <button class="btn" type="submit">Give</button></form>
     <h3>Inventory (${c.inventory.length})</h3>
     <table>${c.inventory.map((i) => {
@@ -429,6 +451,13 @@ document.addEventListener('click', async (e) => {
   const a = el.dataset.a;
   const v = el.dataset.v;
   if (a.startsWith('zone') && await zones.onClick(a, v)) return;
+  if (a === 'dismissProblem') {
+    const i = problems.findIndex((p) => String(p.id) === v);
+    if (i >= 0) problems.splice(i, 1);
+    renderProblems();
+    ($('#alerts [data-a="dismissProblem"]') || $('.a-tabs [aria-current]'))?.focus();
+    return;
+  }
   if (a === 'signout') { await sb.auth.signOut(); return; }
   if (a === 'tab') { st.tab = v; st.player = null; render(); load(v); }
   if (a === 'refresh') load();
