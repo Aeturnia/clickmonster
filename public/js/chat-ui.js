@@ -10,10 +10,11 @@ export function setupChat({ sb, api, getChar, toast, esc, zoneName }) {
   const st = {
     started: false, visible: false, open: false, tab: 'global',
     msgs: { global: [], zone: [], whisper: [] }, unread: { global: 0, zone: 0, whisper: 0 },
-    myId: null, zone: null, role: null, ignores: new Map(), whisperTo: '', menuFor: null, channel: null,
+    myId: null, zone: null, role: null, ignores: new Map(), whisperTo: '', menuFor: null, channel: null, error: null,
   };
   const bar = document.getElementById('chatbar');
   const drawer = document.getElementById('chat');
+  const body = document.getElementById('chat-body'); // redrawn content; the dialog itself stays
 
   const time = (t) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const ignored = (m) => m.sender_id && st.ignores.has(m.sender_id);
@@ -101,7 +102,37 @@ export function setupChat({ sb, api, getChar, toast, esc, zoneName }) {
     paint();
   }
 
+  // ------------------------------------------------------------ focus-safe updates
+  // Live messages refresh the bar, tabs, list and error area. Replace their markup only when it
+  // changed, and keep keyboard focus (and the caret) on the equivalent control afterwards.
+  const lastHtml = new WeakMap();
+  const keyOf = (el) => {
+    if (el.id) return `#${CSS.escape(el.id)}`;
+    const { c, v } = el.dataset;
+    if (!c) return null;
+    return `[data-c="${CSS.escape(c)}"]${v != null ? `[data-v="${CSS.escape(v)}"]` : ':not([data-v])'}`;
+  };
+  function setHtml(el, html, fallback) {
+    if (!el || lastHtml.get(el) === html) return false;
+    const active = document.activeElement;
+    const inside = active && active !== el && el.contains(active);
+    const key = inside ? keyOf(active) : null;
+    const caret = inside && 'selectionStart' in active ? [active.selectionStart, active.selectionEnd] : null;
+    el.innerHTML = html;
+    lastHtml.set(el, html);
+    if (inside) {
+      const next = (key && el.querySelector(key)) || (fallback && fallback());
+      if (next) {
+        next.focus({ preventScroll: true });
+        if (caret && 'setSelectionRange' in next) { try { next.setSelectionRange(...caret); } catch { /* not a text field */ } }
+      }
+    }
+    return true;
+  }
+
   // ------------------------------------------------------------ rendering
+  // Messages are buttons in a single-tab-stop list (arrow keys move between them).
+  // Activating one opens a small action menu right below it.
   function lineHtml(m) {
     if (m.system) return `<p class="chat-line system"><span class="t">${time(m.created_at)}</span> ${esc(m.text)}</p>`;
     if (ignored(m)) return '';
@@ -113,14 +144,19 @@ export function setupChat({ sb, api, getChar, toast, esc, zoneName }) {
     } else {
       who = `<b>${esc(m.sender_name)}</b>${tag}`;
     }
-    const body = m.deleted_at ? '<span class="faint">[message removed]</span>' : esc(m.text);
-    const menu = st.menuFor === m.id ? `<span class="chat-menu">
-        ${!mine ? `<button data-c="whisper" data-v="${esc(m.channel === 'whisper' && mine ? m.recipient_name : m.sender_name)}">Whisper</button>` : ''}
-        ${!mine ? `<button data-c="ignore" data-v="${esc(m.sender_name)}">Ignore</button>` : ''}
-        ${!mine && !m.deleted_at ? `<button data-c="report" data-v="${m.id}">Report</button>` : ''}
-        ${st.role && !m.deleted_at ? `<button data-c="delete" data-v="${m.id}" class="bad">Remove</button>` : ''}
-      </span>` : '';
-    return `<p class="chat-line ${m.channel === 'whisper' ? 'whisper' : ''}" data-c="menu" data-v="${m.id}"><span class="t">${time(m.created_at)}</span> ${who}: ${body}${menu}</p>`;
+    const body = m.deleted_at ? '<span class="removed">[message removed]</span>' : esc(m.text);
+    const open = st.menuFor === m.id;
+    const actions = [
+      !mine ? `<button data-c="whisper" data-v="${esc(m.sender_name)}">Whisper</button>` : '',
+      !mine ? `<button data-c="ignore" data-v="${esc(m.sender_name)}">Ignore</button>` : '',
+      !mine && !m.deleted_at ? `<button data-c="report" data-v="${m.id}">Report</button>` : '',
+      st.role && !m.deleted_at ? `<button data-c="delete" data-v="${m.id}" class="bad">Remove</button>` : '',
+    ].join('');
+    const menu = open ? (actions
+      ? `<div class="chat-menu" id="chat-menu-${m.id}" role="group" aria-label="Message actions">${actions}</div>`
+      : `<div class="chat-menu" id="chat-menu-${m.id}" role="group" aria-label="Message actions"><span class="small muted">No actions for your own message.</span></div>`) : '';
+    return `<div class="chat-item"><button type="button" class="chat-line ${m.channel === 'whisper' ? 'whisper' : ''}" data-c="menu" data-v="${m.id}"
+        tabindex="-1" aria-expanded="${open}" ${open ? `aria-controls="chat-menu-${m.id}"` : ''}><span class="t">${time(m.created_at)}</span> ${who}: ${body}</button>${menu}</div>`;
   }
 
   function latestLine() {
@@ -134,14 +170,15 @@ export function setupChat({ sb, api, getChar, toast, esc, zoneName }) {
   }
 
   function paintBar() {
-    if (!st.visible || !st.started) { bar.innerHTML = ''; return; }
+    if (!st.visible || !st.started) { setHtml(bar, ''); return; }
+    const unreadTotal = TABS.reduce((n, [k]) => n + st.unread[k], 0);
     const unread = TABS.filter(([k]) => st.unread[k]).map(([k, l]) => `${l} ${st.unread[k]}`).join(', ');
-    bar.innerHTML = `<button class="chatbar" data-c="toggle" aria-label="Open chat">
-      <span class="chatbar-text">${latestLine()}</span>${unread ? `<span class="chatbar-unread">${unread}</span>` : ''}</button>`;
+    setHtml(bar, `<button class="chatbar" data-c="toggle" aria-haspopup="dialog" aria-label="Open chat${unreadTotal ? `, ${unreadTotal} unread` : ''}">
+      <span class="chatbar-text">${latestLine()}</span>${unread ? `<span class="chatbar-unread">${unread}</span>` : ''}</button>`);
   }
 
   function tabsHtml() {
-    return TABS.map(([k, l]) => `<button data-c="tab" data-v="${k}" class="${st.tab === k ? 'on' : ''}">${l}${st.unread[k] ? ` <span class="count">${st.unread[k]}</span>` : ''}</button>`).join('');
+    return TABS.map(([k, l]) => `<button type="button" data-c="tab" data-v="${k}" class="${st.tab === k ? 'on' : ''}" aria-pressed="${st.tab === k}">${l}${st.unread[k] ? ` <span class="count" aria-label="${st.unread[k]} unread">${st.unread[k]}</span>` : ''}</button>`).join('');
   }
 
   function listHtml() {
@@ -152,15 +189,53 @@ export function setupChat({ sb, api, getChar, toast, esc, zoneName }) {
     return ignoreList + (st.msgs[st.tab].map(lineHtml).join('') || `<p class="empty">${empty}</p>`);
   }
 
+  // Roving tab stop: exactly one message is reachable with Tab; arrows move between them.
+  function syncRoving(preferId) {
+    const lines = [...drawer.querySelectorAll('.chat-line[data-c="menu"]')];
+    if (!lines.length) return;
+    let current = preferId != null && lines.find((l) => l.dataset.v === String(preferId));
+    if (!current) current = lines.find((l) => l.tabIndex === 0) || lines[lines.length - 1];
+    for (const l of lines) l.tabIndex = l === current ? 0 : -1;
+  }
+
+  function errorHtml() {
+    return st.error ? `<div class="chat-error" role="alert" id="chat-error"><span>${esc(st.error)}</span>
+      <button type="button" class="textbtn" data-c="clearError">Dismiss</button></div>` : '';
+  }
+
+  let opener = null;
+  function closeDrawer() {
+    st.open = false;
+    st.menuFor = null;
+    paint();
+  }
+
   function paintDrawer() {
-    if (!st.open || !st.visible) { drawer.innerHTML = ''; drawer.className = ''; return; }
-    // Same tab already showing: refresh the list and tabs only, so typing isn't interrupted.
+    if (!st.open || !st.visible) {
+      if (drawer.open) {
+        drawer.close();
+        body.innerHTML = '';
+        const back = opener && opener.isConnected && opener.getClientRects().length ? opener : bar.querySelector('.chatbar');
+        back?.focus({ preventScroll: true });
+        opener = null;
+      }
+      return;
+    }
+    // Same tab already showing: refresh the list, tabs and error only, keeping focus and typing intact.
     const panel = drawer.querySelector('.chat-panel');
-    if (panel && panel.dataset.tab === st.tab) {
+    if (panel && panel.dataset.tab === st.tab && drawer.open) {
       const el = drawer.querySelector('#chat-list');
+      const active = document.activeElement;
+      // The message that owns the focus: the focused line itself, or the line whose menu is focused.
+      const ownLine = active && el.contains(active)
+        ? (active.dataset.c === 'menu' ? active.dataset.v : active.closest('.chat-item')?.querySelector('.chat-line')?.dataset.v)
+        : null;
       const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
-      el.innerHTML = listHtml();
-      drawer.querySelector('.chat-tabs').innerHTML = tabsHtml();
+      const tabsEl = drawer.querySelector('.chat-tabs');
+      setHtml(el, listHtml(), () => el.querySelector('.chat-line[tabindex="0"]') || el.querySelector('.chat-line'));
+      syncRoving(ownLine);
+      setHtml(tabsEl, tabsHtml(), () => tabsEl.querySelector('button.on'));
+      setHtml(drawer.querySelector('#chat-error-slot'), errorHtml(), () => drawer.querySelector('#chat-input'));
       if (atBottom) el.scrollTop = el.scrollHeight;
       return;
     }
@@ -172,22 +247,32 @@ export function setupChat({ sb, api, getChar, toast, esc, zoneName }) {
     // Default the whisper target to whoever whispered you last.
     const lastFrom = [...st.msgs.whisper].reverse().find((m) => m.sender_id && m.sender_id !== st.myId);
     const keepTo = drawer.querySelector('#chat-to')?.value || st.whisperTo || lastFrom?.sender_name || '';
-    drawer.className = 'open';
-    drawer.innerHTML = `<div class="chat-panel" data-tab="${st.tab}">
+    const placeholder = canChat ? (st.tab === 'zone' ? `Say to ${zoneName(st.zone)}` : isWhisper ? 'Whisper' : 'Say to everyone') : `Reach level ${CHAT_LEVEL} to chat`;
+    body.innerHTML = `<div class="chat-panel" data-tab="${st.tab}">
       <div class="chat-head" id="chat-head">
-        <div class="chat-tabs">${tabsHtml()}</div>
-        <button class="textbtn" data-c="toggle">Close</button>
+        <div class="chat-tabs" role="group" aria-label="Channel">${tabsHtml()}</div>
+        <button type="button" class="textbtn" data-c="toggle">Close</button>
       </div>
-      <div class="chat-list" id="chat-list">${listHtml()}</div>
-      <form class="chat-form" id="chat-form">
-        ${isWhisper ? `<input id="chat-to" class="chat-to" placeholder="To" maxlength="18" autocomplete="off" value="${esc(keepTo)}">` : ''}
+      <div class="chat-list" id="chat-list" role="log" aria-label="${TABS.find(([k]) => k === st.tab)[1]} messages" aria-live="off">${listHtml()}</div>
+      <div id="chat-error-slot">${errorHtml()}</div>
+      <form class="chat-form" id="chat-form" novalidate>
+        ${isWhisper ? `<label class="sr-only" for="chat-to">Whisper to</label><input id="chat-to" class="chat-to" placeholder="To" maxlength="18" autocomplete="off" value="${esc(keepTo)}">` : ''}
+        <label class="sr-only" for="chat-input">Message</label>
         <input id="chat-input" maxlength="${CHAT_MAX_LEN}" autocomplete="off" enterkeyhint="send" ${canChat ? '' : 'disabled'}
-          placeholder="${canChat ? (st.tab === 'zone' ? `Say to ${esc(zoneName(st.zone))}` : isWhisper ? 'Whisper' : 'Say to everyone') : `Reach level ${CHAT_LEVEL} to chat`}" value="${esc(keep)}">
+          ${st.error ? 'aria-invalid="true" aria-describedby="chat-error"' : ''}
+          placeholder="${esc(placeholder)}" value="${esc(keep)}">
         <button class="btn primary sm" type="submit" ${canChat ? '' : 'disabled'}>Send</button>
       </form>
     </div>`;
+    syncRoving();
     const el = drawer.querySelector('#chat-list');
     el.scrollTop = el.scrollHeight;
+    if (!drawer.open) {
+      opener = opener || document.activeElement;
+      drawer.showModal();
+      const input = drawer.querySelector('#chat-input');
+      (input && !input.disabled ? input : drawer.querySelector('.chat-tabs button.on'))?.focus();
+    }
   }
 
   function paint() {
@@ -196,6 +281,8 @@ export function setupChat({ sb, api, getChar, toast, esc, zoneName }) {
       st.unread[st.tab] = 0;
       paintDrawer();
       paintBar();
+    } else {
+      paintDrawer();
     }
   }
 
@@ -207,63 +294,95 @@ export function setupChat({ sb, api, getChar, toast, esc, zoneName }) {
   }
 
   function openWhisper(name) {
+    opener = document.activeElement;
     st.open = true;
     st.tab = 'whisper';
     st.whisperTo = name;
-    drawer.innerHTML = '';
+    if (drawer.open) drawer.querySelector('.chat-panel')?.removeAttribute('data-tab');
+    const to = drawer.querySelector('#chat-to');
+    if (to) to.value = name;
     paint();
-    drawer.querySelector('#chat-input')?.focus();
+    const toEl = drawer.querySelector('#chat-to');
+    if (toEl) toEl.value = name;
+    drawer.querySelector('#chat-input:not([disabled])')?.focus();
   }
 
   // ------------------------------------------------------------ events
+  function setError(msg) {
+    st.error = msg;
+    const slot = drawer.querySelector('#chat-error-slot');
+    if (slot) setHtml(slot, errorHtml(), () => drawer.querySelector('#chat-input'));
+    const input = drawer.querySelector('#chat-input');
+    if (input) {
+      if (msg) { input.setAttribute('aria-invalid', 'true'); input.setAttribute('aria-describedby', 'chat-error'); }
+      else { input.removeAttribute('aria-invalid'); input.removeAttribute('aria-describedby'); }
+    }
+  }
+
   async function send() {
     const input = drawer.querySelector('#chat-input');
     const text = input?.value || '';
     const clean = cleanChatText(text);
-    if (!clean.ok) { toast(clean.reason, 'bad'); return; }
+    if (!clean.ok) { setError(clean.reason); return; }
     const args = { channel: st.tab, text: clean.text };
     if (st.tab === 'whisper') {
       args.to = (drawer.querySelector('#chat-to')?.value || '').trim();
-      if (!args.to) { toast('Who should get this whisper?', 'bad'); return; }
+      if (!args.to) { setError('Who should get this whisper? Type a name in the To box.'); drawer.querySelector('#chat-to')?.focus(); return; }
       st.whisperTo = args.to;
     }
     input.value = '';
     try {
       await api('chat', args);
+      setError(null); // the condition is resolved once a message goes through
     } catch (err) {
       input.value = text;
-      toast(err.message, 'bad');
+      setError(err.message);
+      input.focus();
     }
   }
 
   async function onAction(c, v) {
     switch (c) {
-      case 'toggle': st.open = !st.open; st.menuFor = null; drawer.innerHTML = ''; paint(); return;
-      case 'tab': st.tab = v; st.menuFor = null; drawer.innerHTML = ''; paint(); return;
-      case 'menu': st.menuFor = st.menuFor === Number(v) ? null : Number(v); paintDrawer(); return;
-      case 'whisper': openWhisper(v); return;
+      case 'toggle':
+        if (st.open) { closeDrawer(); return; }
+        opener = document.activeElement;
+        st.open = true; st.menuFor = null; paint(); return;
+      case 'tab':
+        st.tab = v; st.menuFor = null;
+        drawer.querySelector('.chat-panel')?.removeAttribute('data-tab');
+        paint();
+        drawer.querySelector(`.chat-tabs [data-v="${v}"]`)?.focus();
+        return;
+      case 'menu':
+        st.menuFor = st.menuFor === Number(v) ? null : Number(v);
+        paintDrawer();
+        drawer.querySelector(`.chat-line[data-v="${v}"]`)?.focus();
+        return;
+      case 'clearError': setError(null); drawer.querySelector('#chat-input')?.focus(); return;
+      case 'whisper': st.menuFor = null; openWhisper(v); return;
       case 'ignore':
         if (!confirm(`Ignore ${v}? You won't see their messages or whispers.`)) return;
-        try { await api('ignore', { name: v }); await loadMeta(); toast(`Ignoring ${v}.`); } catch (err) { toast(err.message, 'bad'); }
+        try { await api('ignore', { name: v }); await loadMeta(); toast(`Ignoring ${v}.`); } catch (err) { setError(err.message); }
         st.menuFor = null; paint(); return;
       case 'unignore':
-        try { await api('unignore', { name: v }); await loadMeta(); toast(`No longer ignoring ${v}.`); } catch (err) { toast(err.message, 'bad'); }
+        try { await api('unignore', { name: v }); await loadMeta(); toast(`No longer ignoring ${v}.`); } catch (err) { setError(err.message); }
         paint(); return;
       case 'report': {
         const reason = prompt('Why are you reporting this message? (optional)');
         if (reason === null) return;
-        try { await api('report', { messageId: v, reason }); toast('Thanks. A moderator will take a look.'); } catch (err) { toast(err.message, 'bad'); }
-        st.menuFor = null; paint(); return;
+        try { await api('report', { messageId: v, reason }); toast('Thanks. A moderator will take a look.'); } catch (err) { setError(err.message); }
+        st.menuFor = null; paint(); drawer.querySelector(`.chat-line[data-v="${v}"]`)?.focus(); return;
       }
       case 'delete':
         if (!confirm('Remove this message for everyone?')) return;
-        try { await api('modDelete', { messageId: v }); toast('Removed.'); } catch (err) { toast(err.message, 'bad'); }
-        st.menuFor = null; paint(); return;
+        try { await api('modDelete', { messageId: v }); toast('Removed.'); } catch (err) { setError(err.message); }
+        st.menuFor = null; paint(); drawer.querySelector(`.chat-line[data-v="${v}"]`)?.focus(); return;
       default:
     }
   }
 
   document.addEventListener('click', (e) => {
+    if (e.target === drawer) { closeDrawer(); return; } // backdrop tap
     const el = e.target.closest('[data-c]');
     if (!el || !(bar.contains(el) || drawer.contains(el))) return;
     e.preventDefault();
@@ -274,11 +393,36 @@ export function setupChat({ sb, api, getChar, toast, esc, zoneName }) {
     e.preventDefault();
     send();
   });
+  // Escape closes an open message menu first, then the drawer.
+  drawer.addEventListener('cancel', (e) => {
+    e.preventDefault();
+    if (st.menuFor != null) {
+      const id = st.menuFor;
+      st.menuFor = null;
+      paintDrawer();
+      drawer.querySelector(`.chat-line[data-v="${id}"]`)?.focus();
+      return;
+    }
+    closeDrawer();
+  });
+  // Arrow keys move between messages.
+  drawer.addEventListener('keydown', (e) => {
+    const line = e.target.closest?.('.chat-line[data-c="menu"]');
+    if (!line || !['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(e.key)) return;
+    const lines = [...drawer.querySelectorAll('.chat-line[data-c="menu"]')];
+    const i = lines.indexOf(line);
+    const next = e.key === 'Home' ? lines[0] : e.key === 'End' ? lines[lines.length - 1]
+      : lines[Math.max(0, Math.min(lines.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1)))];
+    if (!next) return;
+    e.preventDefault();
+    for (const l of lines) l.tabIndex = l === next ? 0 : -1;
+    next.focus();
+  });
   // Swipe the header down to close.
   let touchY = null;
   drawer.addEventListener('touchstart', (e) => { if (e.target.closest('#chat-head')) touchY = e.touches[0].clientY; }, { passive: true });
   drawer.addEventListener('touchend', (e) => {
-    if (touchY != null && e.changedTouches[0].clientY - touchY > 60) { st.open = false; drawer.innerHTML = ''; paint(); }
+    if (touchY != null && e.changedTouches[0].clientY - touchY > 60) closeDrawer();
     touchY = null;
   });
 

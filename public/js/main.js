@@ -10,7 +10,7 @@ import { ZONES, MONSTERS, loadZones } from './data/zones.js';
 import { parseGem, extractCost } from './data/gems.js';
 import {
   maxHp, xpToNext, totalStats, gemBonuses, totalArmor, playerCombatant,
-  applyRegen, healCost, findItem, equippedItem, meetsRequirements,
+  applyRegen, healCost, findItem, equippedItem, meetsRequirements, NAME_RE,
 } from './engine/character.js';
 import { currentZone, featuresAt, inTown, monstersHere, directionTo } from './engine/world.js';
 import { monsterCombatant } from './engine/monster.js';
@@ -52,6 +52,9 @@ const ui = {
   lastMonster: null,
   sanctions: null,
   announcement: null,
+  errors: [], // persistent problems: { id, text, scope, count }
+  createError: null,
+  bankError: null,
   hunts: [],
 };
 
@@ -87,13 +90,71 @@ function difficulty(level) {
   return { cls, word };
 }
 
-let toastTimer;
-function toast(msg, kind = '') {
-  const el = $('#toast');
+// ---- Problems stay visible until dismissed or resolved; success messages are brief toasts.
+let nextErrorId = 1;
+function addError(text, scope = 'general') {
+  const same = ui.errors.find((e) => e.text === text);
+  if (same) { same.count += 1; same.scope = scope; ui.errors = [...ui.errors.filter((e) => e !== same), same]; }
+  else ui.errors.push({ id: nextErrorId++, text, scope, count: 1 });
+  renderAlerts();
+}
+// A successful action clears problems it caused, and any connection problem.
+function resolveErrors(scope) {
+  const before = ui.errors.length;
+  ui.errors = ui.errors.filter((e) => e.scope !== scope && e.scope !== 'connection');
+  if (ui.errors.length !== before) renderAlerts();
+}
+function ensureEl(id, attrs) {
+  let el = document.getElementById(id);
+  if (!el) {
+    el = document.createElement('div');
+    el.id = id;
+    for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+    document.body.appendChild(el);
+  }
+  return el;
+}
+
+// The toast and the problems area must sit inside an open modal dialog (or the backdrop
+// hides them) and back on the page once it closes. One owner decides where they live;
+// it runs when they're shown, after every render, and whenever any dialog closes.
+function placeOverlays() {
+  const host = document.querySelector('dialog[open]') || document.body;
+  for (const el of [document.getElementById('toast'), document.getElementById('alerts')]) {
+    if (el && el.parentNode !== host) host.appendChild(el);
+  }
+  return host;
+}
+for (const d of document.querySelectorAll('dialog')) d.addEventListener('close', () => { placeOverlays(); positionToast(); });
+
+function positionToast() {
+  const el = document.getElementById('toast');
+  if (!el) return;
   // Sit just above the bottom controls so it never covers the screen title.
-  const anchor = $('#dock:not(:empty)') || $('#nav:not(:empty)');
+  const anchor = el.parentNode === document.body && ($('#dock:not(:empty)') || $('#nav:not(:empty)'));
   el.style.top = 'auto';
   el.style.bottom = anchor ? `${window.innerHeight - anchor.getBoundingClientRect().top + 10}px` : '24px';
+}
+
+function renderAlerts() {
+  const el = ensureEl('alerts', { 'aria-label': 'Problems' });
+  const host = placeOverlays();
+  const top = $('#top');
+  el.style.top = host === document.body && top && top.offsetHeight ? `${Math.round(top.getBoundingClientRect().bottom) + 8}px` : 'calc(12px + env(safe-area-inset-top))';
+  const last = ui.errors.length - 1;
+  const html = ui.errors.map((e, i) => `<div class="alert"${i === last ? ' role="alert"' : ''}>
+      <p>${esc(e.text)}${e.count > 1 ? ` <span class="alert-count">(${e.count} times)</span>` : ''}</p>
+      <button type="button" class="textbtn" data-a="dismissError" data-v="${e.id}">Dismiss<span class="sr-only"> message: ${esc(e.text)}</span></button>
+    </div>`).join('');
+  if (el.innerHTML !== html) el.innerHTML = html;
+}
+
+let toastTimer;
+function toast(msg, kind = '') {
+  if (kind === 'bad') { addError(msg); return; }
+  const el = ensureEl('toast', { role: 'status', 'aria-live': 'polite' });
+  placeOverlays();
+  positionToast();
   el.textContent = msg;
   el.className = `show ${kind}`;
   clearTimeout(toastTimer);
@@ -155,7 +216,7 @@ function viewNav() {
   if (!char) return '';
   const tabs = [['explore', fighting() ? 'Battle' : 'Explore'], ['hero', 'Hero'], ['gear', 'Gear'], ['map', 'Map']];
   return `<div class="tabs">${tabs.map(([id, label]) =>
-    `<button data-a="tab" data-v="${id}" class="${ui.tab === id ? 'on' : ''}">${label}${id === 'hero' && char.pendingLevels ? `<span class="count">${char.pendingLevels}</span>` : ''}</button>`).join('')}</div>`;
+    `<button data-a="tab" data-v="${id}" class="${ui.tab === id ? 'on' : ''}"${ui.tab === id ? ' aria-current="page"' : ''}>${label}${id === 'hero' && char.pendingLevels ? `<span class="count"><span class="sr-only">, </span>${char.pendingLevels}<span class="sr-only"> level${char.pendingLevels > 1 ? 's' : ''} to spend</span></span>` : ''}</button>`).join('')}</div>`;
 }
 
 // ---------------------------------------------------------------- start screens
@@ -178,9 +239,9 @@ function viewAuth() {
     <div class="intro"><h1>ClickMonster</h1><p>A shared world of monsters, gold and glory.</p></div>
     <form id="authform" autocomplete="on">
       <h2>${signup ? 'Create an account' : 'Sign in'}</h2>
-      <label class="field">Email<input id="email" type="email" inputmode="email" autocomplete="email" required value="${esc(ui.email || '')}"></label>
-      <label class="field">Password<input id="password" type="password" autocomplete="${signup ? 'new-password' : 'current-password'}" minlength="6" required></label>
-      ${ui.authMsg ? `<p class="small ${ui.authMsgKind || 'muted'}" style="margin-top:12px">${esc(ui.authMsg)}</p>` : ''}
+      <label class="field">Email<input id="email" type="email" inputmode="email" autocomplete="email" required value="${esc(ui.email || '')}"${ui.authMsg && ui.authMsgKind === 'bad' ? ' aria-invalid="true" aria-describedby="auth-msg"' : ''}></label>
+      <label class="field">Password<input id="password" type="password" autocomplete="${signup ? 'new-password' : 'current-password'}" minlength="6" required${ui.authMsg && ui.authMsgKind === 'bad' ? ' aria-invalid="true" aria-describedby="auth-msg"' : ''}></label>
+      ${ui.authMsg ? `<p id="auth-msg" class="field-msg ${ui.authMsgKind || 'muted'}" ${ui.authMsgKind === 'bad' ? 'role="alert"' : 'role="status"'}>${esc(ui.authMsg)}</p>` : ''}
       <button type="submit" class="btn primary block" style="margin-top:18px">${signup ? 'Create account' : 'Sign in'}</button>
     </form>
     <p style="text-align:center;margin-top:14px"><button class="textbtn" data-a="authmode" data-v="${signup ? 'signin' : 'signup'}">${signup ? 'I already have an account' : 'New here? Create an account'}</button></p>`;
@@ -191,7 +252,8 @@ function viewCreate() {
   const bonuses = Object.entries(r.bonus).map(([s, n]) => `+${n} ${STAT_SHORT[s]}`).join(', ');
   return `
     <div class="intro"><h1>ClickMonster</h1><p>Who are you?</p></div>
-    <label class="field">Name<input id="name" type="text" maxlength="18" autocomplete="off" autocapitalize="words" placeholder="Your hero's name" value="${esc(ui.draftName || '')}"></label>
+    <label class="field">Name<input id="name" type="text" maxlength="18" autocomplete="off" autocapitalize="words" placeholder="Your hero's name" value="${esc(ui.draftName || '')}"${ui.createError ? ' aria-invalid="true" aria-describedby="name-error"' : ''}></label>
+    ${ui.createError ? `<p id="name-error" class="field-msg bad" role="alert">${esc(ui.createError)}</p>` : ''}
     <label class="field">Race</label>
     <div class="races">${Object.values(RACES).map((x) =>
       `<button data-a="race" data-v="${x.id}" class="btn ${x.id === ui.race ? 'on' : ''}">${x.name}<small>${affinityLabel(x)}</small></button>`).join('')}</div>
@@ -259,9 +321,9 @@ function viewExplore() {
       <p class="here">${lines.join('<br>')}</p>
       ${near.length ? `<div class="nearby">${near.map(([n, nx, ny]) => `<span><b>${esc(n)}</b> ${directionTo(char, nx, ny)}</span>`).join('')}</div>` : ''}
     </div>
-    <div class="seg">
-      <button data-a="list" data-v="monsters" class="${ui.list === 'monsters' ? 'on' : ''}">Monsters</button>
-      <button data-a="list" data-v="players" class="${ui.list === 'players' ? 'on' : ''}">Players${playersCount}</button>
+    <div class="seg" role="group" aria-label="Show">
+      <button data-a="list" data-v="monsters" class="${ui.list === 'monsters' ? 'on' : ''}" aria-pressed="${ui.list === 'monsters'}">Monsters</button>
+      <button data-a="list" data-v="players" class="${ui.list === 'players' ? 'on' : ''}" aria-pressed="${ui.list === 'players'}">Players${playersCount}</button>
     </div>
     ${ui.list === 'monsters' ? monsterRows() : playerRows(zone)}`;
 }
@@ -345,7 +407,7 @@ function dockExplore() {
 // ---------------------------------------------------------------- battle
 function logHtml(log) {
   const firstFresh = Math.max(0, log.length - 4);
-  return log.map((l, i) => `<p class="${l.kind}${i >= firstFresh ? ' fresh' : ''}${i === log.length - 1 ? ' latest' : ''}">${esc(l.text)}</p>`).join('');
+  return log.map((l, i) => `<p class="${l.kind}${i >= firstFresh ? ' fresh' : ' older'}${i === log.length - 1 ? ' latest' : ''}">${esc(l.text)}</p>`).join('');
 }
 
 function viewHuntBattle(b, you) {
@@ -355,7 +417,7 @@ function viewHuntBattle(b, you) {
         <div class="side-sub">World boss, level ${b.level}</div>
         ${meter('Shared HP', b.hp, b.maxHp, 'foe big')}</div></div>
     <div class="summary"><span>Your damage: ${fmt(b.myDamage || 0)}</span>${ended ? '' : '<span class="faint">Every hunter shares the reward</span>'}</div>
-    <div class="log" id="log">${logHtml(b.log)}</div>`;
+    <div class="log" id="log" tabindex="0" role="log" aria-label="Battle log" aria-live="off">${logHtml(b.log)}</div>`;
 }
 
 function viewBattle() {
@@ -365,7 +427,7 @@ function viewBattle() {
   if (b.pvp) {
     return `<div class="versus" id="versus">${you}<div class="vs">vs</div>
         <div class="side foe" id="fx-foe"><div class="side-name">${esc(b.opponent)}</div><div class="side-sub">${b.over === 'victory' ? 'Defeated' : 'Victorious'}</div></div></div>
-      <div class="log" id="log">${logHtml(b.log)}</div>`;
+      <div class="log" id="log" tabindex="0" role="log" aria-label="Battle log" aria-live="off">${logHtml(b.log)}</div>`;
   }
   const mon = monsterCombatant(b.monsterId, b.variant);
   const d = difficulty(mon.level);
@@ -379,7 +441,7 @@ function viewBattle() {
         <div class="side-sub"><span class="${d.cls}">Lv ${mon.level} ${d.word}</span>${mon.element ? `, ${ELEMENT_LABEL[mon.element]}` : ''}</div>
         ${meter('HP', b.hp, b.maxHp, 'foe big')}</div></div>
     ${summary}
-    <div class="log" id="log">${logHtml(b.log)}</div>`;
+    <div class="log" id="log" tabindex="0" role="log" aria-label="Battle log" aria-live="off">${logHtml(b.log)}</div>`;
 }
 
 function dockBattle() {
@@ -511,13 +573,20 @@ function viewMap() {
     for (let x = 1; x <= zone.size; x++) {
       let cls = '';
       let label = '';
+      const says = [];
       for (const f of featuresAt(zone, x, y)) {
-        if (f.type === 'town') { cls = 'town'; label = 'T'; }
-        if (f.type === 'portal') { const locked = char.level < f.minLevel; cls = locked ? 'locked' : 'portal'; label = locked ? 'X' : 'P'; }
-        if (f.type === 'lair') { cls = 'lair'; label = 'B'; }
+        if (f.type === 'town') { cls = 'town'; label = 'T'; says.push(`Town: ${f.name}`); }
+        if (f.type === 'portal') {
+          const locked = char.level < f.minLevel;
+          cls = locked ? 'locked' : 'portal'; label = locked ? 'X' : 'P';
+          says.push(`${f.label}${locked ? `, requires level ${f.minLevel}` : ''}`);
+        }
+        if (f.type === 'lair') { cls = 'lair'; label = 'B'; says.push(`Boss lair${zone.boss ? `: ${zone.boss.name}` : ''}`); }
       }
-      if (x === char.loc.x && y === char.loc.y) { cls += ' me'; label = 'You'; }
-      cells.push(`<button class="${cls}" data-a="walk" data-v="${x},${y}" aria-label="${x}, ${y}">${label}</button>`);
+      const here = x === char.loc.x && y === char.loc.y;
+      if (here) { cls += ' me'; label = 'You'; says.unshift('You are here'); }
+      const name = `${says.length ? `${says.join('. ')}. ` : ''}Square ${x}, ${y}${here ? '' : '. Walk here'}`;
+      cells.push(`<button class="${cls}" data-a="walk" data-v="${x},${y}" aria-label="${esc(name)}"${here ? ' aria-current="location"' : ''}>${label}</button>`);
     }
   }
   const dests = zone.features.filter((f) => f.type === 'portal').map((f) => {
@@ -531,7 +600,7 @@ function viewMap() {
   return `
     <div class="place-row"><h2>${esc(zone.name)}</h2><span class="coords">${char.loc.x}, ${char.loc.y}</span></div>
     <p class="small muted" style="margin-top:6px">${esc(zone.desc)}</p>
-    <div class="map ${zone.pvp ? 'pvp' : ''}" style="grid-template-columns:repeat(${zone.size},1fr)">${cells.join('')}</div>
+    <div class="map ${zone.pvp ? 'pvp' : ''}" role="group" aria-label="Map of ${esc(zone.name)}, ${zone.size} by ${zone.size} squares" style="grid-template-columns:repeat(${zone.size},1fr)">${cells.join('')}</div>
     <div class="legend"><span><b>T</b> Town</span><span><b>P</b> Path</span><span><b>X</b> Locked path</span><span><b>B</b> Boss</span><span>Tap any square to walk there.</span></div>
     ${dests.length ? `<h3>Paths</h3><div class="rows">${dests.join('')}</div>` : ''}`;
 }
@@ -557,7 +626,7 @@ function sheetItem(uid) {
       ${g && town ? btn('extract', i, `Extract, ${extractCost(g.tier)} gold`, 'sm', char.gold < extractCost(g.tier)) : ''}</div>`);
   }
   return `<div class="panel">
-    <div class="panel-head"><h2>${esc(base.name)}</h2>${btn('close', null, 'Close', 'sm ghost')}</div>
+    <div class="panel-head"><h2 id="sheet-title" tabindex="-1">${esc(base.name)}</h2>${btn('close', null, 'Close', 'sm ghost')}</div>
     <p class="small muted">${SLOT_LABEL[base.slot]}, Class ${tierRoman(base.tier)}, score ${base.score}${base.quality ? ', <span class="gem-topaz">rare relic</span>' : ''}${masteryNote(base) ? `, ${masteryNote(base)}` : ''}</p>
     <dl class="kv">
       <dt>${base.armor != null ? 'Armor' : 'Power'}</dt><dd>${base.armor ?? base.power}</dd>
@@ -603,11 +672,11 @@ function sheetShop() {
     </div>`;
   }).join('');
   return `<div class="panel">
-    <div class="panel-head"><h2>${esc(zone.town.name)} Shop</h2>${btn('close', null, 'Close', 'sm ghost')}</div>
+    <div class="panel-head"><h2 id="sheet-title" tabindex="-1">${esc(zone.town.name)} Shop</h2>${btn('close', null, 'Close', 'sm ghost')}</div>
     <p class="small muted">You have <span class="gold">${fmt(char.gold)} gold</span>.</p>
-    <div class="chips">
-      ${slots.map((s) => `<button class="chip ${s === ui.shopSlot ? 'on' : ''}" data-a="shopslot" data-v="${s}">${SLOT_LABEL[s]}</button>`).join('')}
-      <button class="chip ${ui.usableOnly ? 'on' : ''}" data-a="usable">Usable only</button>
+    <div class="chips" role="group" aria-label="Item type">
+      ${slots.map((s) => `<button class="chip ${s === ui.shopSlot ? 'on' : ''}" data-a="shopslot" data-v="${s}" aria-pressed="${s === ui.shopSlot}">${SLOT_LABEL[s]}</button>`).join('')}
+      <button class="chip ${ui.usableOnly ? 'on' : ''}" data-a="usable" aria-pressed="${ui.usableOnly}">Usable only</button>
     </div>
     ${wares || '<p class="empty">Nothing here you can use yet.</p>'}
   </div>`;
@@ -615,7 +684,7 @@ function sheetShop() {
 
 function sheetLevel() {
   return `<div class="panel">
-    <div class="panel-head"><h2>Level ${char.level}!</h2>${btn('later', null, 'Later', 'sm ghost')}</div>
+    <div class="panel-head"><h2 id="sheet-title" tabindex="-1">Level ${char.level}!</h2>${btn('later', null, 'Later', 'sm ghost')}</div>
     <p class="muted">You have ${char.pendingLevels} level${char.pendingLevels > 1 ? 's' : ''} to spend. Put all ${POINTS_PER_LEVEL} points into one stat, or ${POINTS_PER_LEVEL / STATS.length} into every stat.</p>
     ${levelChooser()}
   </div>`;
@@ -624,7 +693,7 @@ function sheetLevel() {
 function sheetBank() {
   if (!inTown(char)) return '';
   return `<div class="panel">
-    <div class="panel-head"><h2>Bank</h2>${btn('close', null, 'Close', 'sm ghost')}</div>
+    <div class="panel-head"><h2 id="sheet-title" tabindex="-1">Bank</h2>${btn('close', null, 'Close', 'sm ghost')}</div>
     <p class="muted small">Gold in the bank is safe. If you die or lose a duel, you lose everything you carry.</p>
     <dl class="kv" style="margin:12px 0">
       <dt>Carried</dt><dd class="gold">${fmt(char.gold)} gold</dd>
@@ -634,7 +703,8 @@ function sheetBank() {
       ${btn('deposit', 'all', 'Deposit all', 'primary', char.gold <= 0)}
       ${btn('withdraw', 'all', 'Withdraw all', '', !(char.bank > 0))}
     </div>
-    <label class="field">Amount<input id="amount" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="Gold"></label>
+    <label class="field">Amount<input id="amount" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="Gold"${ui.bankError ? ' aria-invalid="true" aria-describedby="amount-error"' : ''}></label>
+    ${ui.bankError ? `<p id="amount-error" class="field-msg bad" role="alert">${esc(ui.bankError)}</p>` : ''}
     <div class="choose" style="grid-template-columns:1fr 1fr;margin-top:8px">
       ${btn('deposit', 'amount', 'Deposit')}
       ${btn('withdraw', 'amount', 'Withdraw')}
@@ -672,7 +742,7 @@ function sheetQuests() {
   const news = ui.news?.length ? `<h3>News</h3><div class="news">${ui.news.map((e) =>
     `<p class="small"><span class="faint">${timeLeft(now - new Date(e.created_at).getTime())} ago</span> ${esc(e.text)}</p>`).join('')}</div>` : '';
   return `<div class="panel">
-    <div class="panel-head"><h2>Quest board</h2>${btn('close', null, 'Close', 'sm ghost')}</div>
+    <div class="panel-head"><h2 id="sheet-title" tabindex="-1">Quest board</h2>${btn('close', null, 'Close', 'sm ghost')}</div>
     <p class="small muted">New quests are posted every hour and last three hours. The first adventurer to finish one claims the reward.</p>
     ${active}${cooldown}${list}${news}
   </div>`;
@@ -700,12 +770,96 @@ function viewSheet() {
 }
 
 // ---------------------------------------------------------------- render
+// A stable selector for a control, so focus can move to its replacement after a re-render.
+function focusKey(el) {
+  if (!el || el === document.body || !el.closest) return null;
+  if (el.id) return `#${CSS.escape(el.id)}`;
+  const { a, c, v } = el.dataset;
+  const vSel = v != null ? `[data-v="${CSS.escape(v)}"]` : ':not([data-v])';
+  if (a) return `[data-a="${CSS.escape(a)}"]${vSel}`;
+  if (c) return `[data-c="${CSS.escape(c)}"]${vSel}`;
+  return null;
+}
+
+const isUsable = (el) => !!el && el.isConnected && !el.disabled && el.getClientRects().length > 0;
+
 const painted = {};
+let focusLost = false;
 function paint(id, html) {
   if (painted[id] === html) return false;
   painted[id] = html;
-  document.getElementById(id).innerHTML = html;
+  const root = document.getElementById(id);
+  const active = document.activeElement;
+  const hadFocus = active && active !== root && root.contains(active);
+  const key = hadFocus ? focusKey(active) : null;
+  const caret = hadFocus && 'selectionStart' in active ? [active.selectionStart, active.selectionEnd] : null;
+  root.innerHTML = html;
+  if (hadFocus) {
+    const next = key && root.querySelector(key);
+    if (isUsable(next)) {
+      next.focus({ preventScroll: true });
+      if (caret && 'setSelectionRange' in next) { try { next.setSelectionRange(...caret); } catch { /* not a text field */ } }
+    } else {
+      focusLost = true;
+    }
+  }
   return true;
+}
+
+// Where focus goes when the control it was on no longer exists.
+function focusFallback() {
+  const target = (char?.battle && !char.battle.over && $('[data-a="melee"]'))
+    || (char?.battle?.over && $('[data-a="again"]:not([disabled]), [data-a="done"]'))
+    || $('#screen-title')
+    || $('#main button, #main input');
+  target?.focus({ preventScroll: true });
+}
+
+// ---- Bottom sheet: a native modal <dialog> (focus containment, Escape, inert background).
+const sheetDlg = document.getElementById('sheet');
+let sheetOpener = null;
+
+function restoreFocus(opener) {
+  if (opener && isUsable(opener.el)) { opener.el.focus({ preventScroll: true }); return; }
+  const again = opener?.key && document.querySelector(opener.key);
+  if (isUsable(again)) { again.focus({ preventScroll: true }); return; }
+  focusFallback();
+}
+
+function syncSheet(html) {
+  if (html && !sheetDlg.open) {
+    const el = document.activeElement;
+    sheetOpener = { el, key: focusKey(el) };
+    paint('sheet-body', html);
+    sheetDlg.showModal();
+    (sheetDlg.querySelector('[data-autofocus]') || sheetDlg.querySelector('#sheet-title'))?.focus();
+  } else if (html) {
+    paint('sheet-body', html);
+  } else if (sheetDlg.open) {
+    sheetDlg.close();
+    painted['sheet-body'] = '';
+    document.getElementById('sheet-body').innerHTML = '';
+    restoreFocus(sheetOpener);
+    sheetOpener = null;
+  }
+}
+
+function dismissSheet() {
+  if (ui.sheet) ui.sheet = null;
+  else if (char) ui.levelSheetSnoozed = char.pendingLevels;
+}
+sheetDlg.addEventListener('cancel', (e) => { e.preventDefault(); dismissSheet(); render(); });
+
+function screenTitle() {
+  if (ui.phase === 'loading') return 'Loading';
+  if (ui.phase === 'auth') return ui.authMode === 'signup' ? 'Create an account' : 'Sign in';
+  if (char && ui.sanctions?.banned) return 'Banned';
+  if (!char) return 'Create your hero';
+  if (ui.tab === 'hero') return 'Hero';
+  if (ui.tab === 'gear') return 'Gear';
+  if (ui.tab === 'map') return `Map of ${currentZone(char)?.name || 'the world'}`;
+  if (char.battle) return char.battle.hunt ? `Hunt: ${char.battle.name}` : 'Battle';
+  return `Explore ${currentZone(char)?.name || ''}`;
 }
 
 let lastView = null;
@@ -725,13 +879,17 @@ function render() {
 
   const mainEl = $('#main');
   mainEl.classList.toggle('fill', fill);
-  const changed = paint('main', main);
+  focusLost = false;
+  const changed = paint('main', `<h1 class="sr-only" id="screen-title" tabindex="-1">${esc(screenTitle())}</h1>${main}`);
   const inGame = ui.phase === 'game' && !!char && !ui.sanctions?.banned;
   paint('top', inGame ? viewTop() : '');
   paint('dock', inGame ? dock : '');
   paint('nav', inGame ? viewNav() : '');
   chat.setVisible(inGame);
-  paint('sheet', viewSheet());
+  if (focusLost && !sheetDlg.open) focusFallback();
+  syncSheet(viewSheet());
+  renderAlerts(); // also re-homes the toast if a dialog just closed
+  positionToast();
 
   const viewKey = `${ui.phase}:${!!char}:${ui.tab}:${!!char?.battle}`;
   if (viewKey !== lastView) { mainEl.scrollTop = 0; lastView = viewKey; }
@@ -745,6 +903,7 @@ function floatText(sideId, text, cls) {
   if (!side) return;
   const el = document.createElement('span');
   el.className = `float ${cls}`;
+  el.setAttribute('aria-hidden', 'true'); // decorative: the battle log and announcements carry the same news
   el.textContent = text;
   side.appendChild(el);
   setTimeout(() => el.remove(), 900);
@@ -764,7 +923,17 @@ function buzz(pattern) {
 }
 
 // Turn new battle-log lines into floating numbers, shakes and buzzes.
+// Polite announcements for screen readers (the visible battle log itself is not live,
+// so lines are read once, as they happen).
+function announce(text) {
+  const el = document.getElementById('sr-status');
+  if (!el || !text) return;
+  el.textContent = '';
+  setTimeout(() => { el.textContent = text; }, 30);
+}
+
 function playEffects(entries) {
+  announce(entries.map((e) => e.text).join(' '));
   let delay = 0;
   for (const e of entries) {
     const dmg = Number((e.text.match(/for (\d+)/) || [])[1] || 0);
@@ -806,6 +975,13 @@ function handleLocal(a, v) {
     case 'later': ui.levelSheetSnoozed = char.pendingLevels; return true;
     case 'pref': prefs[v] = !prefs[v]; savePrefs(); if (v === 'vibrate' && prefs.vibrate) buzz(30); return true;
     case 'noop': return true;
+    case 'dismissError': {
+      ui.errors = ui.errors.filter((e) => String(e.id) !== v);
+      renderAlerts();
+      const next = document.querySelector('#alerts [data-a="dismissError"]');
+      if (next) next.focus(); else focusFallback();
+      return true;
+    }
     case 'whisper': chat.openWhisper(v); return true;
     case 'seenann': try { localStorage.setItem(SEEN_KEY, String(ui.announcement?.id || 0)); } catch { /* ignore */ } return true;
     default: return false;
@@ -815,7 +991,13 @@ function handleLocal(a, v) {
 // Actions the server performs: [action, args, successMessage?], or null to cancel.
 function remoteCall(a, v) {
   switch (a) {
-    case 'create': return ['create', { name: $('#name')?.value || '', race: ui.race }];
+    case 'create': {
+      const name = ($('#name')?.value || '').trim().replace(/\s+/g, ' ');
+      ui.draftName = name;
+      if (!NAME_RE.test(name)) { ui.createError = 'Names are 2 to 18 letters and can include spaces, hyphens and apostrophes.'; render(); $('#name')?.focus(); return null; }
+      ui.createError = null;
+      return ['create', { name, race: ui.race }];
+    }
     case 'move': return ['move', { dir: v }];
     case 'walk': { const [x, y] = v.split(',').map(Number); return x === char.loc.x && y === char.loc.y ? null : ['walk', { x, y }]; }
     case 'fight': ui.lastMonster = v; return ['fight', { monsterId: v }];
@@ -831,7 +1013,8 @@ function remoteCall(a, v) {
     case 'sell': return ['sell', { uid: Number(v) }, 'Sold.'];
     case 'deposit': case 'withdraw': {
       const amount = v === 'all' ? 'all' : ($('#amount')?.value || '').trim();
-      if (v !== 'all' && !amount) { toast('Enter an amount of gold.', 'bad'); return null; }
+      if (v !== 'all' && !/^\d+$/.test(amount)) { ui.bankError = 'Enter an amount of gold as a whole number.'; render(); $('#amount')?.focus(); return null; }
+      ui.bankError = null;
       return [a, { amount }, a === 'deposit' ? 'Deposited.' : 'Withdrawn.'];
     }
     case 'accept': return ['accept', { questId: v }, 'Quest accepted. Good hunting.'];
@@ -858,6 +1041,9 @@ async function runRemote(a, v, el) {
     const res = await api(action, args);
     char = res.char;
     if ('sanctions' in res) ui.sanctions = res.sanctions;
+    resolveErrors(action);
+    if (action === 'create') ui.createError = null;
+    if (action === 'deposit' || action === 'withdraw') ui.bankError = null;
     if (msg) toast(msg);
     if (action === 'create' && char) { ui.tab = 'explore'; toast(`Welcome to ${ZONES[char.loc.zone].name}, ${char.name}.`); chat.start(); }
     if (action === 'sell' || action === 'buyequip') ui.sheet = null;
@@ -870,7 +1056,9 @@ async function runRemote(a, v, el) {
     if (char && before && char.loc.zone !== before.zone && char.battle?.over !== 'defeat') toast(`You travel to ${ZONES[char.loc.zone].name}.`);
     if (action === 'accept' || action === 'abandon') loadBoard();
   } catch (err) {
-    toast(err.message || 'Something went wrong.', 'bad');
+    const message = err.message || 'Something went wrong.';
+    if (action === 'create') ui.createError = message; // shown next to the name field
+    else addError(err.status == null ? `Can't reach the game server. ${message}` : message, err.status == null ? 'connection' : action);
     if (err.status === 401) await sb.auth.signOut();
   } finally {
     ui.busy = false;
@@ -888,8 +1076,8 @@ async function runRemote(a, v, el) {
 }
 
 document.addEventListener('click', async (e) => {
-  if (e.target.id === 'sheet') {
-    if (ui.sheet) ui.sheet = null; else if (char) ui.levelSheetSnoozed = char.pendingLevels;
+  if (e.target === sheetDlg) { // a tap on the backdrop, outside the panel
+    dismissSheet();
     render();
     return;
   }
@@ -945,8 +1133,7 @@ document.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && e.target.id === 'name') $('[data-a="create"]')?.click();
     return;
   }
-  if (e.key === 'Escape' && ui.sheet) { ui.sheet = null; render(); return; }
-  if (KEY_DIRS[e.key] && char && !char.battle && ui.tab === 'explore' && !ui.sheet) {
+  if (KEY_DIRS[e.key] && char && !char.battle && ui.tab === 'explore' && !document.querySelector('dialog[open]')) {
     e.preventDefault();
     $(`[data-a="move"][data-v="${KEY_DIRS[e.key]}"]`)?.click();
   }
@@ -1054,6 +1241,7 @@ sb.auth.onAuthStateChange((event, newSession) => {
   session = newSession;
   if (!newSession) {
     chat.stop();
+    ui.errors = [];
     char = null;
     ui.phase = 'auth';
     ui.sheet = null;

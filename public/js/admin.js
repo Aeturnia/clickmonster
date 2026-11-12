@@ -35,10 +35,26 @@ function detailsText(action, d) {
 }
 const untilText = (t) => (new Date(t).getFullYear() > 9000 ? 'permanent' : `until ${when(t)}`);
 
-const st = { phase: 'loading', me: null, tab: 'dashboard', q: '', players: null, player: null, stats: null, log: null, events: null, staff: null, world: null, hunts: null, economy: null, zones: null, zoneEdit: null, chat: null, reports: null, chatQ: {} };
+const st = { phase: 'loading', me: null, tab: 'dashboard', q: '', players: null, player: null, stats: null, log: null, events: null, staff: null, world: null, hunts: null, economy: null, zones: null, zoneEdit: null, chat: null, reports: null, chatQ: {}, focusNext: null, returnFocus: null };
+
+// Problems stay until dismissed (or until the connection recovers); successes are brief.
+const problems = [];
+let nextProblem = 1;
+function renderProblems() {
+  const el = $('#alerts');
+  const last = problems.length - 1;
+  el.innerHTML = problems.map((p, i) => `<div class="alert"${i === last ? ' role="alert"' : ''}><p>${esc(p.text)}${p.count > 1 ? ` <span class="alert-count">(${p.count} times)</span>` : ''}</p>
+    <button type="button" class="textbtn" data-a="dismissProblem" data-v="${p.id}">Dismiss<span class="sr-only"> message: ${esc(p.text)}</span></button></div>`).join('');
+}
+function addProblem(text, kind = /^Can't reach the server/.test(text) ? 'connection' : 'action') {
+  const same = problems.find((p) => p.text === text);
+  if (same) same.count += 1; else problems.push({ id: nextProblem++, text, kind, count: 1 });
+  renderProblems();
+}
 
 let toastTimer;
 function toast(msg, bad = false) {
+  if (bad) { addProblem(msg); return; }
   const el = $('#toast');
   el.textContent = msg;
   el.className = `show ${bad ? 'bad' : ''}`;
@@ -52,9 +68,15 @@ async function call(action, args = {}) {
   const { data, error } = await sb.functions.invoke('admin', { body: { action, args } });
   if (error) {
     let msg = 'Request failed.';
+    let status = error.context?.status;
     try { msg = (await error.context.json()).error || msg; } catch { /* not json */ }
+    if (status == null) throw new Error(`Can't reach the server. ${msg}`);
     throw new Error(msg);
   }
+  // A successful request clears connection problems.
+  const before = problems.length;
+  for (let i = problems.length - 1; i >= 0; i--) if (problems[i].kind === 'connection') problems.splice(i, 1);
+  if (problems.length !== before) renderProblems();
   return data;
 }
 
@@ -92,8 +114,8 @@ function header() {
   return `<div class="a-head"><h1>ClickMonster Admin</h1>
       <span class="who">${esc(st.me.email)} <span class="pill ${st.me.role}">${st.me.role}</span>
       <button class="textbtn" data-a="signout">Sign out</button></span></div>
-    <div class="a-tabs">${tabs.map(([id, l]) => `<button class="chip ${st.tab === id ? 'on' : ''}" data-a="tab" data-v="${id}">${l}</button>`).join('')}
-      <a class="chip" href="./" style="text-decoration:none;display:inline-flex;align-items:center">Open game</a></div>`;
+    <nav class="a-tabs" aria-label="Admin sections">${tabs.map(([id, l]) => `<button class="chip ${st.tab === id ? 'on' : ''}" data-a="tab" data-v="${id}"${st.tab === id ? ' aria-current="page"' : ''}>${l}</button>`).join('')}
+      <a class="chip" href="./" style="text-decoration:none;display:inline-flex;align-items:center">Open game</a></nav>`;
 }
 
 function barList(obj, label = (k) => k) {
@@ -116,7 +138,7 @@ function viewDashboard() {
       <div class="box"><h2>Races</h2>${barList(s.byRace, (k) => RACES[k]?.name || k)}</div>
       <div class="box"><h2>Where players are</h2>${barList(s.byZone, (k) => ZONES[k]?.name || k)}</div>
       <div class="box"><h2>Top heroes</h2><table>${(s.top || []).map((p) =>
-        `<tr class="click" data-a="open" data-v="${p.id}"><td>${esc(p.name)}</td><td>${RACES[p.race]?.name || ''}</td><td class="num">Lv ${p.level}</td></tr>`).join('')}</table></div>
+        `<tr class="click" data-a="open" data-v="${p.id}"><td><button type="button" class="textbtn row-link" data-a="open" data-v="${p.id}">${esc(p.name)}</button></td><td>${RACES[p.race]?.name || ''}</td><td class="num">Lv ${p.level}</td></tr>`).join('')}</table></div>
     </div>
     <button class="btn sm" data-a="refresh">Refresh</button>`;
 }
@@ -130,7 +152,7 @@ function viewPlayers() {
     ${!list ? '<p class="muted">Loading.</p>' : !list.length ? '<p class="muted">No heroes found.</p>' : `<table style="margin-top:12px">
       <tr><th>Hero</th><th>Race</th><th class="num">Lv</th><th>Where</th><th>Last seen</th></tr>
       ${list.map((p) => `<tr class="click" data-a="open" data-v="${p.id}">
-        <td>${esc(p.name)} ${sanctionPills(p)}${p.strikes ? `<span class="small faint">${p.strikes} strikes</span>` : ''}</td>
+        <td><button type="button" class="textbtn row-link" data-a="open" data-v="${p.id}">${esc(p.name)}</button> ${sanctionPills(p)}${p.strikes ? `<span class="small faint">${p.strikes} strikes</span>` : ''}</td>
         <td>${RACES[p.race]?.name || p.race}</td><td class="num">${p.level}</td>
         <td>${esc(ZONES[p.zone]?.name || p.zone)} ${p.x},${p.y}</td><td>${ago(p.updated_at)}</td></tr>`).join('')}</table>`}`;
 }
@@ -177,13 +199,13 @@ function editBox(p) {
     </div>
     <h3>Give item</h3>
     <form id="give-item" class="acts" style="margin-top:0">
-      <select id="gi-base" class="a-input" style="flex:1;min-width:200px;margin:0">${itemOpts}</select>
-      <select id="gi-q" class="a-input" style="width:auto;margin:0"><option value="">Normal</option><option value="relic">Relic</option></select>
+      <select id="gi-base" aria-label="Item to give" class="a-input" style="flex:1;min-width:200px;margin:0">${itemOpts}</select>
+      <select id="gi-q" aria-label="Quality" class="a-input" style="width:auto;margin:0"><option value="">Normal</option><option value="relic">Relic</option></select>
       <button class="btn" type="submit">Give</button></form>
     <h3>Give gems</h3>
     <form id="give-gem" class="acts" style="margin-top:0">
-      <select id="gg-key" class="a-input" style="flex:1;min-width:200px;margin:0">${gemOpts}</select>
-      <input id="gg-n" class="a-input" type="number" min="1" value="1" style="width:80px;margin:0">
+      <select id="gg-key" aria-label="Gem to give" class="a-input" style="flex:1;min-width:200px;margin:0">${gemOpts}</select>
+      <input id="gg-n" aria-label="Number of gems" class="a-input" type="number" min="1" value="1" style="width:80px;margin:0">
       <button class="btn" type="submit">Give</button></form>
     <h3>Inventory (${c.inventory.length})</h3>
     <table>${c.inventory.map((i) => {
@@ -199,7 +221,7 @@ function viewPlayer() {
   const { player: p, history, actions, email } = st.player;
   const c = p.data;
   return `<button class="btn sm" data-a="back">Back to search</button>
-    <div class="box" style="margin-top:12px"><h2>${esc(p.name)} ${sanctionPills(p)}</h2>
+    <div class="box" style="margin-top:12px"><h2 id="player-title" tabindex="-1">${esc(p.name)} ${sanctionPills(p)}</h2>
       <p class="small muted">Level ${c.level} ${RACES[c.race]?.name || ''}, in ${esc(ZONES[c.loc.zone]?.name || c.loc.zone)} at ${c.loc.x}, ${c.loc.y}. Last seen ${ago(p.updated_at)}. Created ${when(p.created_at)}.${email ? ` Email: ${esc(email)}.` : ''}</p>
       <p class="small">Gold ${fmt(c.gold)} carried, ${fmt(c.bank)} banked. Kills ${fmt(c.kills)}, deaths ${fmt(c.deaths)}, quests ${fmt(c.questsDone || 0)}, duels won ${fmt(c.pvpWins || 0)}.</p>
     </div>
@@ -365,16 +387,56 @@ function viewChat() {
     </form>`;
 }
 
+// ---- Keyboard focus across full re-renders.
+// A stable selector for the focused control, so focus can move to its replacement.
+function focusKey(el) {
+  if (!el || el === document.body || !el.dataset) return null;
+  if (el.id) return `#${CSS.escape(el.id)}`;
+  const d = el.dataset;
+  const v = d.v != null ? `[data-v="${CSS.escape(d.v)}"]` : ':not([data-v])';
+  if (d.a) return `[data-a="${CSS.escape(d.a)}"]${v}`;
+  if (d.f) return `[data-f="${CSS.escape(d.f)}"]`;
+  if (d.toggle) return `[data-toggle="${CSS.escape(d.toggle)}"]`;
+  if (d.list) return `[data-list="${CSS.escape(d.list)}"][value="${CSS.escape(el.value)}"]`;
+  if (d.owpick) return `[data-owpick="${CSS.escape(d.owpick)}"]`;
+  if (el.name && el.form?.id) return `#${CSS.escape(el.form.id)} [name="${CSS.escape(el.name)}"]`;
+  return null;
+}
+const usable = (el) => !!el && el.isConnected && !el.disabled && el.getClientRects().length > 0;
+const SECTION_LABEL = { dashboard: 'Dashboard', players: 'Players', world: 'World', hunts: 'Hunts', economy: 'Economy', zones: 'Zones', chat: 'Chat moderation', announce: 'Announcements', log: 'Audit log', staff: 'Staff' };
+
 function render() {
+  const root = $('#admin');
+  const active = document.activeElement;
+  const hadFocus = active && root.contains(active);
+  const key = hadFocus ? focusKey(active) : null;
+  const caret = hadFocus && 'selectionStart' in active ? [active.selectionStart, active.selectionEnd] : null;
   let html;
   if (st.phase === 'loading') html = '<div class="intro"><h1>ClickMonster Admin</h1><p>Loading</p></div>';
   else if (st.phase === 'login') html = viewLogin();
   else if (st.phase === 'denied') html = viewDenied();
   else {
     const body = { dashboard: viewDashboard, players: viewPlayers, world: viewWorld, hunts: viewHunts, economy: viewEconomy, zones: zones.view, chat: viewChat, announce: viewAnnounce, log: viewLog, staff: viewStaff }[st.tab]();
-    html = header() + body;
+    const section = st.tab === 'players' && st.player ? `Player: ${st.player.player.name}` : SECTION_LABEL[st.tab] || st.tab;
+    html = `${header()}<h2 class="sr-only" id="section-title" tabindex="-1">${esc(section)}</h2>${body}`;
   }
-  $('#admin').innerHTML = html;
+  root.innerHTML = html;
+
+  // 1. An explicit target (e.g. a record that just loaded) waits until it exists.
+  if (st.focusNext) {
+    const target = $(st.focusNext);
+    if (usable(target)) { target.focus({ preventScroll: true }); st.focusNext = null; return; }
+  }
+  if (!hadFocus) return;
+  // 2. The same control after the re-render.
+  const again = key && root.querySelector(key);
+  if (usable(again)) {
+    again.focus({ preventScroll: true });
+    if (caret && 'setSelectionRange' in again) { try { again.setSelectionRange(...caret); } catch { /* not a text field */ } }
+    return;
+  }
+  // 3. Otherwise the section heading, so focus never drops to the page body.
+  $('#section-title')?.focus({ preventScroll: true });
 }
 
 // ---------------------------------------------------------------- loading
@@ -399,10 +461,15 @@ async function load(tab = st.tab) {
 }
 
 async function openPlayer(id) {
+  // Remember how we got here so "Back to search" can return focus to this player's link.
+  st.returnFocus = `.row-link[data-v="${CSS.escape(id)}"]`;
   st.tab = 'players';
   st.player = null;
   render();
-  try { st.player = await call('player', { id }); } catch (e) { toast(e.message, true); }
+  try {
+    st.player = await call('player', { id });
+    st.focusNext = '#player-title';
+  } catch (e) { toast(e.message, true); }
   render();
   window.scrollTo(0, 0);
 }
@@ -429,11 +496,18 @@ document.addEventListener('click', async (e) => {
   const a = el.dataset.a;
   const v = el.dataset.v;
   if (a.startsWith('zone') && await zones.onClick(a, v)) return;
+  if (a === 'dismissProblem') {
+    const i = problems.findIndex((p) => String(p.id) === v);
+    if (i >= 0) problems.splice(i, 1);
+    renderProblems();
+    ($('#alerts [data-a="dismissProblem"]') || $('.a-tabs [aria-current]'))?.focus();
+    return;
+  }
   if (a === 'signout') { await sb.auth.signOut(); return; }
   if (a === 'tab') { st.tab = v; st.player = null; render(); load(v); }
   if (a === 'refresh') load();
   if (a === 'open') openPlayer(v);
-  if (a === 'back') { st.player = null; render(); load('players'); }
+  if (a === 'back') { st.player = null; st.focusNext = st.returnFocus || null; render(); load('players'); }
   if (a === 'quick') editPlayer({ [v]: true });
   if (a === 'removeItem' && confirm('Remove this item from the hero?')) editPlayer({ removeItem: Number(v) }, 'Item removed.');
   if (a === 'deleteEvent' && confirm('Delete this news item?')) {

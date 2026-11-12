@@ -13,15 +13,17 @@
 </head>
 <body>
   <div id="app">
-    <header id="top"></header>
+    <header id="top" aria-label="Your hero"></header>
     <main id="main"></main>
-    <div id="chatbar"></div>
-    <div id="dock"></div>
-    <nav id="nav"></nav>
+    <aside id="chatbar" aria-label="Chat"></aside>
+    <div id="dock" role="region" aria-label="Actions"></div>
+    <nav id="nav" aria-label="Screens"></nav>
   </div>
-  <div id="sheet"></div>
-  <div id="chat"></div>
+  <dialog id="sheet" aria-labelledby="sheet-title"><div id="sheet-body"></div></dialog>
+  <dialog id="chat" aria-label="Chat"><div id="chat-body"></div></dialog>
   <div id="toast" role="status" aria-live="polite"></div>
+  <div id="sr-status" class="sr-only" aria-live="polite"></div>
+  <div id="alerts" aria-label="Problems"></div>
   <noscript>ClickMonster needs JavaScript to run.</noscript>
   <script type="module" src="js/main.js"></script>
 </body>

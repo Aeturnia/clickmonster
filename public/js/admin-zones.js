@@ -95,13 +95,13 @@ export function setupZones({ st, call, toast, render, esc, isAdmin }) {
     if (!zones) return '<p class="muted">Loading.</p>';
     return `${isAdmin() ? '<div class="acts" style="margin:0 0 12px"><button class="btn primary" data-a="zoneNew">New zone</button></div>' : ''}
       <div class="box"><h2>Zones</h2><table>
-      <tr><th>Zone</th><th class="num">Size</th><th class="num">Levels</th><th class="num">Heroes</th><th></th></tr>
+      <tr><th>Zone</th><th class="num">Size</th><th class="num">Levels</th><th class="num">Heroes</th><th><span class="sr-only">Actions</span></th></tr>
       ${zones.map((r) => {
         const z = ZONES[r.id];
         const tags = [r.data.starter ? 'starter' : '', r.data.pvp ? 'PvP' : '', r.data.overworld ? `Overworld ${r.data.overworld.join(',')}` : r.id === OVERWORLD_ID ? '' : 'not on Overworld', r.builtin ? '' : 'custom'].filter(Boolean).join(', ');
         return `<tr class="click" data-a="zoneEdit" data-v="${esc(r.id)}"><td><b>${esc(r.data.name)}</b><br><span class="small faint">${esc(r.id)}${tags ? `, ${tags}` : ''}</span></td>
           <td class="num">${r.data.size}</td><td class="num">${z ? `${z.levelRange[0]}-${z.levelRange[1]}` : ''}</td><td class="num">${r.players}</td>
-          <td class="num"><span class="textbtn">${isAdmin() ? 'Edit' : 'View'}</span></td></tr>`;
+          <td class="num"><button type="button" class="textbtn" data-a="zoneEdit" data-v="${esc(r.id)}">${isAdmin() ? 'Edit' : 'View'}<span class="sr-only"> ${esc(r.data.name)}</span></button></td></tr>`;
       }).join('')}</table>
       <p class="small faint" style="margin-top:8px">Changes reach players within about two minutes. Heroes in a removed area are moved somewhere safe; fights against removed monsters end.</p></div>`;
   }

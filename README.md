@@ -96,11 +96,15 @@ tools/sim.mjs        ← balance simulator
 
 ## Development
 
-No build step and no dependencies. Requires Node 18+ for tests.
+No build step and no runtime dependencies. Requires Node 18+ for tests. The UI tests need the dev
+dependencies (`npm install`) and a Playwright Chromium (`npx playwright install chromium`). They never
+contact the live Supabase project: every request is answered by a fake backend in
+`tests/ui/harness.mjs` built on the real game engine, and any unexpected request fails the test.
 
 ```
 npm test        # run engine tests
 npm run sim     # print balance tables (win rates, fight length by build/level)
+npm run test:ui            # browser UI tests (Playwright + axe-core) against a fake backend
 npm run deploy:functions   # deploy the game and admin servers (needs SUPABASE_ACCESS_TOKEN)
 npx serve public   # or any static server, then open http://localhost:3000
 ```
