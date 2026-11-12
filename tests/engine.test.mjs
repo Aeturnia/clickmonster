@@ -352,3 +352,17 @@ test('zone definitions: compile, validate, live reload, and safety moves', async
   ensureCharacter(c);
   assert.equal(c.loc.zone, 'cogwhistle');
 });
+
+test('chat rules: level gate, length, links, rate limit and repeats', async () => {
+  const chat = await import('../public/js/engine/chat.js');
+  const now = Date.now();
+  assert.match(chat.canSend(4, 'hi', null, now).reason, /level 5/);
+  assert.equal(chat.canSend(5, '  hello   there  ', null, now).text, 'hello there');
+  assert.match(chat.canSend(5, '   ', null, now).reason, /Type/);
+  assert.match(chat.canSend(5, 'x'.repeat(201), null, now).reason, /200/);
+  for (const t of ['visit http://x.co', 'go to www.scam', 'free gold at goldz.gg now']) assert.match(chat.canSend(5, t, null, now).reason, /Links/);
+  assert.equal(chat.canSend(5, 'meet at 4.5 on the map, e.g. near town', null, now).ok, true, 'normal punctuation is fine');
+  assert.match(chat.canSend(5, 'again', { text: 'hi', created_at: new Date(now - 500).toISOString() }, now).reason, /too fast/);
+  assert.match(chat.canSend(5, 'Hi', { text: 'hi', created_at: new Date(now - 5000).toISOString() }, now).reason, /just said/);
+  assert.equal(chat.canSend(5, 'hi', { text: 'hi', created_at: new Date(now - 60000).toISOString() }, now).ok, true);
+});

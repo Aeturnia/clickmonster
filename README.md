@@ -26,6 +26,21 @@ across devices, and other players in the same zone cell show up under **Players*
 - **Quest board**: six quests posted every hour, each lasting three hours. First player to finish claims it.
   Public news feed announces quest wins, duels and rare finds.
 
+## Chat
+
+A slide-up drawer available on every screen (a slim bar above the controls shows the latest
+message and unread counts). Channels: **Global**, **Zone** (players in your zone) and **Whispers**.
+News (quest wins, boss kills, duels, announcements) appears in Global.
+
+- Level 5 to send; anyone can read. 200 characters, one message per 2 seconds, no repeats, no links.
+- Tap a message to whisper, ignore or report the sender. Ignored players' messages are hidden and
+  their whispers are refused.
+- Muted players can't send. Staff names carry a Mod/Admin tag and staff can remove messages in game.
+- Admin console → Chat: report queue and 14 days of searchable history (removed messages keep their
+  original text for staff).
+- Messages are written only by the game server; row-level security limits Zone messages to that
+  zone and whispers to the two people involved, including over Supabase Realtime.
+
 ## Multiplayer architecture
 
 - **Supabase Auth** for accounts (email + password).

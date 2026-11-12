@@ -7,6 +7,7 @@ import { move, walkTo, usePortal, heal } from './js/engine/world.js';
 import { startBattle, battleAction, randomRelic, MAX_INVENTORY } from './js/engine/battle.js';
 import { setWorld } from './js/engine/world-config.js';
 import { loadZones } from './js/data/zones.js';
+import { canSend, CHAT_CHANNELS } from './js/engine/chat.js';
 import { startHuntBattle, huntExchange, huntShares } from './js/engine/hunt.js';
 import { buy, buyAndEquip, sell, equip, unequip, socketGem, extractGem, deposit, withdraw } from './js/engine/inventory.js';
 import { duel } from './js/engine/pvp.js';
@@ -185,6 +186,93 @@ async function huntAction(row: Row, char: any, action: string): Promise<number> 
   return 0;
 }
 
+// ---------------------------------------------------------------- chat
+const untilWhen = (t: string) => (new Date(t).getFullYear() > 9000 ? 'permanently' : `until ${new Date(t).toUTCString().replace(':00 GMT', ' UTC')}`);
+
+async function staffRole(userId: string) {
+  const { data } = await admin.from('staff').select('role').eq('user_id', userId).maybeSingle();
+  return data?.role || null;
+}
+
+async function findCharacterByName(name: string) {
+  const clean = String(name || '').trim();
+  if (!clean) return null;
+  const { data } = await admin.from('characters').select('id, name').ilike('name', clean.replace(/[%_]/g, '')).limit(1);
+  return data?.[0] || null;
+}
+
+async function chatAction(userId: string, row: Row, action: string, args: any) {
+  const char = row.data;
+  if (action === 'chat') {
+    const s = sanctionsOf(row);
+    if (s.muted) throw new GameError(`You are muted ${untilWhen(s.muted)}.${s.reason ? ` Reason: ${s.reason}` : ''}`, 403);
+    const channel = String(args.channel || '');
+    if (!CHAT_CHANNELS.includes(channel)) throw new GameError('Unknown channel.');
+    const { data: last } = await admin.from('chat_messages').select('text, created_at')
+      .eq('sender_id', row.id).order('created_at', { ascending: false }).limit(1);
+    const check = canSend(char.level, args.text, last?.[0] || null);
+    if (!check.ok) throw new GameError(check.reason, 400);
+    const msg: any = {
+      channel, sender_id: row.id, sender_name: char.name, sender_role: await staffRole(userId), text: check.text,
+    };
+    if (channel === 'zone') msg.zone = char.loc.zone;
+    if (channel === 'whisper') {
+      const to = await findCharacterByName(args.to);
+      if (!to) throw new GameError('No hero by that name.');
+      if (to.id === row.id) throw new GameError('You can’t whisper to yourself.');
+      const { data: ignored } = await admin.from('chat_ignores').select('owner_id').eq('owner_id', to.id).eq('ignored_id', row.id).maybeSingle();
+      if (ignored) throw new GameError(`${to.name} isn’t accepting your messages.`);
+      msg.recipient_id = to.id;
+      msg.recipient_name = to.name;
+    }
+    const { data, error } = await admin.from('chat_messages').insert(msg).select('id').single();
+    if (error) throw error;
+    // Now and then, clear out messages older than 14 days.
+    if (Math.random() < 0.02) {
+      await admin.from('chat_messages').delete().lt('created_at', new Date(Date.now() - 14 * 86400000).toISOString());
+    }
+    return { ok: true, id: data.id };
+  }
+  if (action === 'ignore' || action === 'unignore') {
+    const target = await findCharacterByName(args.name);
+    if (!target) throw new GameError('No hero by that name.');
+    if (target.id === row.id) throw new GameError('You can’t ignore yourself.');
+    if (action === 'ignore') {
+      const { error } = await admin.from('chat_ignores').upsert({ owner_id: row.id, ignored_id: target.id, ignored_name: target.name });
+      if (error) throw error;
+    } else {
+      await admin.from('chat_ignores').delete().eq('owner_id', row.id).eq('ignored_id', target.id);
+    }
+    return { ok: true, name: target.name };
+  }
+  if (action === 'report') {
+    const id = Number(args.messageId);
+    const { data: m } = await admin.from('chat_messages').select('id, sender_id').eq('id', id).maybeSingle();
+    if (!m) throw new GameError('That message is gone.');
+    if (m.sender_id === row.id) throw new GameError('You can’t report your own message.');
+    const { error } = await admin.from('chat_reports').upsert(
+      { message_id: id, reporter_id: row.id, reporter_name: char.name, reason: String(args.reason || '').slice(0, 200) || null },
+      { onConflict: 'message_id,reporter_id', ignoreDuplicates: true },
+    );
+    if (error) throw error;
+    return { ok: true };
+  }
+  if (action === 'modDelete') {
+    const role = await staffRole(userId);
+    if (!role) throw new GameError('Only staff can remove messages.', 403);
+    const id = Number(args.messageId);
+    const { data: m } = await admin.from('chat_messages').select('text, deleted_at, sender_name').eq('id', id).maybeSingle();
+    if (!m || m.deleted_at) throw new GameError('That message is already gone.');
+    const { error } = await admin.from('chat_messages').update({ original_text: m.text, text: '', deleted_at: new Date().toISOString(), deleted_by: char.name }).eq('id', id);
+    if (error) throw error;
+    await admin.from('admin_log').insert({ actor: userId, actor_name: char.name, action: 'chat:delete', target_name: m.sender_name, details: { id, text: m.text } });
+    return { ok: true };
+  }
+  throw new GameError('Unknown action.');
+}
+
+const CHAT_ACTIONS = new Set(['chat', 'ignore', 'unignore', 'report', 'modDelete']);
+
 // ---------------------------------------------------------------- sanctions
 const active = (t?: string | null) => !!t && new Date(t).getTime() > Date.now();
 const untilText = (t: string) => (new Date(t).getFullYear() > 9000 ? 'permanently' : `until ${new Date(t).toUTCString().replace(':00 GMT', ' UTC')}`);
@@ -352,6 +440,10 @@ async function handle(userId: string, action: string, args: any) {
 
   const row = await loadRow({ user_id: userId });
   if (!row) throw new GameError('Create a hero first.', 404);
+  if (CHAT_ACTIONS.has(action)) {
+    if (sanctionsOf(row).banned) enforceSanctions(row, action);
+    return await chatAction(userId, row, action, args || {});
+  }
   enforceSanctions(row, action);
   const char = row.data;
   await claimRewards(row, char);

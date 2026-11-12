@@ -35,7 +35,7 @@ function detailsText(action, d) {
 }
 const untilText = (t) => (new Date(t).getFullYear() > 9000 ? 'permanent' : `until ${when(t)}`);
 
-const st = { phase: 'loading', me: null, tab: 'dashboard', q: '', players: null, player: null, stats: null, log: null, events: null, staff: null, world: null, hunts: null, economy: null, zones: null, zoneEdit: null };
+const st = { phase: 'loading', me: null, tab: 'dashboard', q: '', players: null, player: null, stats: null, log: null, events: null, staff: null, world: null, hunts: null, economy: null, zones: null, zoneEdit: null, chat: null, reports: null, chatQ: {} };
 
 let toastTimer;
 function toast(msg, bad = false) {
@@ -87,7 +87,7 @@ function viewDenied() {
 }
 
 function header() {
-  const tabs = [['dashboard', 'Dashboard'], ['players', 'Players'], ['world', 'World'], ['hunts', 'Hunts'], ['economy', 'Economy'], ['zones', 'Zones'], ['announce', 'Announce'], ['log', 'Log']];
+  const tabs = [['dashboard', 'Dashboard'], ['players', 'Players'], ['world', 'World'], ['hunts', 'Hunts'], ['economy', 'Economy'], ['zones', 'Zones'], ['chat', 'Chat'], ['announce', 'Announce'], ['log', 'Log']];
   if (isAdmin()) tabs.push(['staff', 'Staff']);
   return `<div class="a-head"><h1>ClickMonster Admin</h1>
       <span class="who">${esc(st.me.email)} <span class="pill ${st.me.role}">${st.me.role}</span>
@@ -334,13 +334,44 @@ function viewEconomy() {
     }).join('')}</table>` : '<p class="small muted">No activity recorded yet.</p>'}</div>`;
 }
 
+function chatLine(m, withActions = true) {
+  const where = m.channel === 'zone' ? `zone ${esc(ZONES[m.zone]?.name || m.zone)}` : m.channel === 'whisper' ? `whisper to ${esc(m.recipient_name)}` : 'global';
+  return `<tr><td><span class="small faint">${ago(m.created_at)}, ${where}</span><br>
+    ${m.sender_id ? `<button class="textbtn" data-a="open" data-v="${m.sender_id}">${esc(m.sender_name)}</button>` : esc(m.sender_name)}${m.sender_role ? ` <span class="pill ${m.sender_role}">${m.sender_role}</span>` : ''}:
+    ${m.deleted_at ? `<span class="faint">[removed by ${esc(shortName(m.deleted_by))}]</span> <span class="small faint">${esc(m.original_text || '')}</span>` : esc(m.text)}</td>
+    <td class="num">${withActions && !m.deleted_at ? `<button class="btn sm danger" data-a="chatDelete" data-v="${m.id}">Remove</button>` : ''}</td></tr>`;
+}
+
+function viewChat() {
+  const reports = st.reports;
+  const msgs = st.chat;
+  const q = st.chatQ;
+  return `<div class="box"><h2>Reports${reports ? ` (${reports.length})` : ''}</h2>
+      ${!reports ? '<p class="muted">Loading.</p>' : !reports.length ? '<p class="small muted">No open reports.</p>' : `<table>${reports.map((r) => `
+        <tr><td>${r.message ? chatLine(r.message, false).replace(/^<tr><td>|<\/td><td class="num"><\/td><\/tr>$/g, '') : '<span class="faint">message gone</span>'}
+          <br><span class="small muted">Reported by ${esc(r.reporter_name || '')} ${ago(r.created_at)}${r.reason ? `: ${esc(r.reason)}` : ''}</span></td>
+          <td class="num"><div class="acts" style="justify-content:flex-end;margin:0">
+            ${r.message && !r.message.deleted_at ? `<button class="btn sm danger" data-a="chatDelete" data-v="${r.message.id}">Remove</button>` : ''}
+            ${r.message?.sender_id ? `<button class="btn sm" data-a="open" data-v="${r.message.sender_id}">Sanction</button>` : ''}
+            <button class="btn sm" data-a="resolveReport" data-v="${r.id}">Dismiss</button></div></td></tr>`).join('')}</table>`}</div>
+    <form id="chatsearch" class="box"><h2>Chat history</h2>
+      <p class="small muted">The last 14 days, including whispers. Removed messages keep their original text here.</p>
+      <div class="form-grid">
+        <label>Channel<select name="channel"><option value="">All</option>${['global', 'zone', 'whisper'].map((c) => `<option value="${c}" ${q.channel === c ? 'selected' : ''}>${c}</option>`).join('')}</select></label>
+        <label>Sender<input name="sender" value="${esc(q.sender || '')}"></label>
+        <label>Text contains<input name="q" value="${esc(q.q || '')}"></label>
+        <button class="btn primary" type="submit" style="align-self:end">Search</button></div>
+      ${!msgs ? '<p class="muted">Loading.</p>' : !msgs.length ? '<p class="small muted">No messages.</p>' : `<table style="margin-top:10px">${msgs.map((m) => chatLine(m)).join('')}</table>`}
+    </form>`;
+}
+
 function render() {
   let html;
   if (st.phase === 'loading') html = '<div class="intro"><h1>ClickMonster Admin</h1><p>Loading</p></div>';
   else if (st.phase === 'login') html = viewLogin();
   else if (st.phase === 'denied') html = viewDenied();
   else {
-    const body = { dashboard: viewDashboard, players: viewPlayers, world: viewWorld, hunts: viewHunts, economy: viewEconomy, zones: zones.view, announce: viewAnnounce, log: viewLog, staff: viewStaff }[st.tab]();
+    const body = { dashboard: viewDashboard, players: viewPlayers, world: viewWorld, hunts: viewHunts, economy: viewEconomy, zones: zones.view, chat: viewChat, announce: viewAnnounce, log: viewLog, staff: viewStaff }[st.tab]();
     html = header() + body;
   }
   $('#admin').innerHTML = html;
@@ -355,6 +386,11 @@ async function load(tab = st.tab) {
     if (tab === 'log') st.log = (await call('log')).log;
     if (tab === 'staff') st.staff = (await call('staff')).staff;
     if (tab === 'zones') { st.zoneEdit = null; await zones.load(); return; }
+    if (tab === 'chat') {
+      const [log, rep] = await Promise.all([call('chatLog', st.chatQ), call('chatReports')]);
+      st.chat = log.messages;
+      st.reports = rep.reports;
+    }
     if (tab === 'world') st.world = await call('world');
     if (tab === 'hunts') st.hunts = (await call('hunts')).hunts;
     if (tab === 'economy') { st.economy = await call('economy'); if (!st.stats) st.stats = await call('stats'); }
@@ -404,6 +440,12 @@ document.addEventListener('click', async (e) => {
     try { await call('deleteEvent', { id: v }); toast('Deleted.'); } catch (err) { toast(err.message, true); }
     load('announce');
   }
+  if (a === 'chatDelete' && confirm('Remove this message for everyone?')) {
+    try { await call('chatDelete', { id: v }); toast('Removed.'); load('chat'); } catch (err) { toast(err.message, true); }
+  }
+  if (a === 'resolveReport') {
+    try { await call('resolveReport', { id: v }); toast('Report dismissed.'); load('chat'); } catch (err) { toast(err.message, true); }
+  }
   if (a === 'endEvent' && confirm('End this event now?')) {
     try { st.world = await call('endEvent', { id: v }); toast('Event ended.'); render(); } catch (err) { toast(err.message, true); }
   }
@@ -422,6 +464,12 @@ document.addEventListener('submit', async (e) => {
   if (id === 'login') {
     const { error } = await sb.auth.signInWithPassword({ email: $('#email').value.trim(), password: $('#password').value });
     if (error) { st.loginMsg = error.message; render(); }
+    return;
+  }
+  if (id === 'chatsearch') {
+    const f = new FormData(e.target);
+    st.chatQ = { channel: f.get('channel') || undefined, sender: f.get('sender') || undefined, q: f.get('q') || undefined };
+    st.chat = null; render(); load('chat');
     return;
   }
   if (id === 'search') { st.q = $('#q').value; st.players = null; render(); load('players'); }

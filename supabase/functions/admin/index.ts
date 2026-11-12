@@ -455,6 +455,45 @@ async function resetZone(staff: Staff, id: string) {
   return await listZones();
 }
 
+// ---------------------------------------------------------------- chat moderation
+async function chatLog(a: any) {
+  let q = db.from('chat_messages').select('*').order('created_at', { ascending: false }).limit(200);
+  if (a.channel) q = q.eq('channel', String(a.channel));
+  if (a.sender) q = q.ilike('sender_name', `%${String(a.sender).replace(/[%_]/g, '')}%`);
+  if (a.q) q = q.ilike('text', `%${String(a.q).replace(/[%_]/g, '')}%`);
+  const { data, error } = await q;
+  if (error) throw error;
+  return { messages: data };
+}
+
+async function chatDelete(staff: Staff, id: number) {
+  const { data: m } = await db.from('chat_messages').select('text, deleted_at, sender_id, sender_name').eq('id', id).maybeSingle();
+  if (!m) throw new AdminError('No such message.');
+  if (m.deleted_at) throw new AdminError('Already removed.');
+  const { error } = await db.from('chat_messages').update({ original_text: m.text, text: '', deleted_at: new Date().toISOString(), deleted_by: staff.email }).eq('id', id);
+  if (error) throw error;
+  await log(staff, 'chat:delete', { id: m.sender_id, name: m.sender_name }, { id, text: m.text });
+  return { ok: true };
+}
+
+async function chatReports() {
+  const { data, error } = await db.from('chat_reports').select('*, message:chat_messages(*)')
+    .is('resolved_at', null).order('created_at', { ascending: false }).limit(100);
+  if (error) throw error;
+  return { reports: data };
+}
+
+async function resolveReport(staff: Staff, id: number, note: string) {
+  const { data: r } = await db.from('chat_reports').select('message_id').eq('id', id).maybeSingle();
+  if (!r) throw new AdminError('No such report.');
+  // Resolve every open report about the same message.
+  const { error } = await db.from('chat_reports').update({ resolved_at: new Date().toISOString(), resolved_by: staff.email })
+    .eq('message_id', r.message_id).is('resolved_at', null);
+  if (error) throw error;
+  await log(staff, 'chat:resolveReport', null, { message: r.message_id, note: note || null });
+  return { ok: true };
+}
+
 // ---------------------------------------------------------------- dispatch
 async function handle(staff: Staff, action: string, a: any) {
   switch (action) {
@@ -526,6 +565,10 @@ async function handle(staff: Staff, action: string, a: any) {
     case 'cancelHunt': requireAdmin(staff); return await cancelHunt(staff, String(a.id));
     case 'economy': return await economy(Number(a.days) || 14);
     case 'zones': return await listZones();
+    case 'chatLog': return await chatLog(a);
+    case 'chatDelete': return await chatDelete(staff, Number(a.id));
+    case 'chatReports': return await chatReports();
+    case 'resolveReport': return await resolveReport(staff, Number(a.id), String(a.note || ''));
     case 'saveZone': return await saveZone(staff, a.zone, !!a.isNew);
     case 'deleteZone': return await deleteZone(staff, String(a.id));
     case 'resetZone': return await resetZone(staff, String(a.id));
