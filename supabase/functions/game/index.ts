@@ -2,11 +2,12 @@
 // authority on all rolls, gold and stats. Rules are the shared engine in ./js
 // (a symlink to public/js), the exact same code the browser uses for display.
 import { createClient } from 'npm:@supabase/supabase-js@2.45.4';
-import { createCharacter, applyRegen, spendLevel } from './js/engine/character.js';
+import { createCharacter, ensureCharacter, applyRegen, spendLevel } from './js/engine/character.js';
 import { move, walkTo, usePortal, heal } from './js/engine/world.js';
 import { startBattle, battleAction } from './js/engine/battle.js';
-import { buy, buyAndEquip, sell, equip, unequip, socketGem, extractGem } from './js/engine/inventory.js';
+import { buy, buyAndEquip, sell, equip, unequip, socketGem, extractGem, deposit, withdraw } from './js/engine/inventory.js';
 import { duel } from './js/engine/pvp.js';
+import { hourBucket, generateQuests, accept, questMatches, grantQuestReward, questTitle } from './js/engine/quests.js';
 
 const admin = createClient(
   Deno.env.get('SUPABASE_URL')!,
@@ -39,6 +40,7 @@ async function loadRow(filter: { user_id?: string; id?: string }): Promise<Row |
   if (filter.id) q = q.eq('id', filter.id);
   const { data, error } = await q.maybeSingle();
   if (error) throw error;
+  if (data) ensureCharacter((data as Row).data);
   return data as Row | null;
 }
 
@@ -56,6 +58,71 @@ async function saveRow(row: Row, char: any) {
   row.version += 1;
 }
 
+async function announce(kind: string, text: string) {
+  const { error } = await admin.from('events').insert({ kind, text });
+  if (error) console.error('announce failed', error);
+}
+
+// ---------------------------------------------------------------- quests
+const toQuest = (r: any) => ({
+  id: r.id, bucket: r.bucket, slot: r.slot, zone: r.zone, variant: r.variant,
+  minLevel: r.min_level, maxLevel: r.max_level, reward: r.reward,
+  expiresAt: new Date(r.expires_at).getTime(), completedBy: r.completed_by_name || null,
+});
+
+// Make sure this hour's batch exists (idempotent; unique on bucket+slot).
+async function ensureQuests(now: number) {
+  const bucket = hourBucket(now);
+  const { count, error } = await admin.from('quests').select('id', { count: 'exact', head: true }).eq('bucket', bucket);
+  if (error) throw error;
+  if (count) return;
+  const rows = generateQuests(bucket).map((q: any) => ({
+    bucket: q.bucket, slot: q.slot, zone: q.zone, variant: q.variant,
+    min_level: q.minLevel, max_level: q.maxLevel, reward: q.reward, expires_at: new Date(q.expiresAt).toISOString(),
+  }));
+  const { error: insErr } = await admin.from('quests').upsert(rows, { onConflict: 'bucket,slot', ignoreDuplicates: true });
+  if (insErr) throw insErr;
+}
+
+async function questBoard(now: number) {
+  await ensureQuests(now);
+  const { data, error } = await admin.from('quests').select('*')
+    .gt('expires_at', new Date(now - 30 * 60000).toISOString())
+    .order('expires_at', { ascending: true }).limit(30);
+  if (error) throw error;
+  return data.map(toQuest);
+}
+
+// Drop the hero's quest if it expired or someone else finished it. Returns a notice or null.
+async function checkQuestStillOpen(char: any, now: number) {
+  if (!char.quest) return null;
+  const { data } = await admin.from('quests').select('completed_by_name, expires_at').eq('id', char.quest.id).maybeSingle();
+  if (!data) { char.quest = null; return 'Your quest is no longer on the board.'; }
+  if (data.completed_by_name) { char.quest = null; return `${data.completed_by_name} finished your quest first.`; }
+  if (new Date(data.expires_at).getTime() <= now) { char.quest = null; return 'Your quest expired.'; }
+  return null;
+}
+
+// After a won fight: if it satisfies the hero's quest, try to claim it (first one wins).
+async function tryCompleteQuest(row: Row, char: any, now: number) {
+  if (!questMatches(char, char.battle)) return;
+  const q = char.quest;
+  const { data, error } = await admin.from('quests')
+    .update({ completed_by: row.id, completed_by_name: char.name, completed_at: new Date(now).toISOString() })
+    .eq('id', q.id).is('completed_by_name', null).gt('expires_at', new Date(now).toISOString())
+    .select('id');
+  if (error) throw error;
+  if (!data?.length) {
+    char.quest = null;
+    char.battle.log.push({ kind: 'bad', text: 'Someone else finished your quest first.' });
+    return;
+  }
+  const r = grantQuestReward(char, now);
+  char.battle.log.push({ kind: 'win', text: `Quest complete! You earn ${r.xp} experience and ${r.gold} gold${r.gem ? ' and a gem' : ''}.` });
+  await announce('quest', `${char.name} completed a quest: ${questTitle(q)}.`);
+}
+
+// ---------------------------------------------------------------- actions
 const FAST_ACTIONS = new Set(['melee', 'cast', 'flee', 'fight', 'again', 'move', 'walk']);
 const MIN_ACTION_MS = 150;
 
@@ -83,6 +150,9 @@ const ACTIONS: Record<string, (c: any, a: any) => unknown> = {
   socket: (c, a) => socketGem(c, Number(a.uid), String(a.gem)),
   extract: (c, a) => extractGem(c, Number(a.uid), Number(a.index)),
   level: (c, a) => spendLevel(c, String(a.stat)),
+  deposit: (c, a) => deposit(c, a.amount),
+  withdraw: (c, a) => withdraw(c, a.amount),
+  abandon: (c) => { c.quest = null; },
   dismiss: (c) => { c.notices = []; },
 };
 
@@ -93,6 +163,11 @@ async function handle(userId: string, action: string, args: any) {
     const row = await loadRow({ user_id: userId });
     if (!row) return { char: null };
     applyRegen(row.data, now);
+    const notice = await checkQuestStillOpen(row.data, now);
+    if (notice) {
+      row.data.notices = [...(row.data.notices || []).slice(-9), { at: now, text: notice }];
+      await saveRow(row, row.data);
+    }
     return { char: row.data };
   }
 
@@ -114,6 +189,10 @@ async function handle(userId: string, action: string, args: any) {
     return { char: null };
   }
 
+  if (action === 'quests') {
+    return { quests: await questBoard(now) };
+  }
+
   const row = await loadRow({ user_id: userId });
   if (!row) throw new GameError('Create a hero first.', 404);
   const char = row.data;
@@ -124,19 +203,37 @@ async function handle(userId: string, action: string, args: any) {
   }
   applyRegen(char, now);
 
+  if (action === 'accept') {
+    await ensureQuests(now);
+    const { data, error } = await admin.from('quests').select('*').eq('id', String(args.questId)).maybeSingle();
+    if (error) throw error;
+    if (!data) throw new GameError('That quest is gone.');
+    accept(char, toQuest(data), now);
+    await saveRow(row, char);
+    return { char };
+  }
+
   if (action === 'attack') {
     const target = await loadRow({ id: String(args.targetId) });
     if (!target || target.id === row.id) throw new GameError('They are no longer here.');
     applyRegen(target.data, now);
-    duel(char, target.data);
+    const res = duel(char, target.data);
     await saveRow(target, target.data);
     await saveRow(row, char);
+    const [w, l] = res.winner === 'attacker' ? [char, target.data] : [target.data, char];
+    await announce('pvp', `${w.name} defeated ${l.name} in a duel${res.goldTaken ? ` and took ${res.goldTaken} gold` : ''}.`);
     return { char };
   }
 
   const fn = ACTIONS[action];
   if (!fn) throw new GameError('Unknown action.');
   fn(char, args || {});
+
+  const b = char.battle;
+  if ((action === 'melee' || action === 'cast') && b?.over === 'victory') {
+    if (char.quest) await tryCompleteQuest(row, char, now);
+    if (b.rewards?.relic) await announce('relic', `${char.name} found a rare ${b.rewards.relic}.`);
+  }
   await saveRow(row, char);
   return { char };
 }

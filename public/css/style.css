@@ -187,7 +187,7 @@ p { margin: 0 0 8px; }
 .log .info.fresh { color: #b9cdea; }
 
 .float {
-  position: absolute; top: 26px; pointer-events: none; z-index: 3;
+  position: absolute; top: 46px; pointer-events: none; z-index: 3;
   font-weight: 800; font-size: 22px; font-variant-numeric: tabular-nums; white-space: nowrap;
   text-shadow: 0 2px 4px #000; animation: float-up .8s ease-out forwards;
 }
@@ -295,3 +295,17 @@ input:focus { outline: 2px solid var(--gold); outline-offset: 1px; }
   .float { animation: fade .8s forwards !important; animation-duration: .8s !important; }
   @keyframes fade { to { opacity: 0; } }
 }
+
+/* ---------------------------------------------------------------- systems */
+.ctx-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.ctx-grid .btn { min-height: 46px; padding: 4px 6px; font-size: 15px; }
+.ctx-grid .btn small { font-size: 11px; }
+.elite-name { color: #f2b45c; }
+.log .elite.fresh { color: #f2b45c; font-weight: 600; }
+.nm.relic { color: #f0c04c; }
+.notice.quest { border-left-color: var(--gold); }
+.masteries { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; }
+.mastery .meter-track i { background: var(--gold); }
+.quest-row { align-items: flex-start; }
+.quest-row .nm { font-size: 15px; }
+.news p { margin: 0 0 6px; }

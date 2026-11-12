@@ -1,7 +1,7 @@
 // Player-vs-player duels. Only allowed in PvP zones, outside towns.
 // The defender doesn't need to be online: the duel resolves automatically, with each
 // side using whichever attack (melee or cast) is expected to do more damage.
-import { playerCombatant, maxHp } from './character.js';
+import { playerCombatant, maxHp, deathPenalty } from './character.js';
 import { resolveAttack, meleeChance, spellChance, meleeBase, spellBase } from './combat.js';
 import { currentZone, inTown, respawnPoint } from './world.js';
 
@@ -62,13 +62,12 @@ export function duel(attacker, defender, rng = Math.random) {
   const winner = attackerWins ? attacker : defender;
   const loser = attackerWins ? defender : attacker;
   winner.hp = Math.max(1, attackerWins ? aHp : dHp);
-  const goldTaken = Math.floor(loser.gold * 0.1);
-  loser.gold -= goldTaken;
+  // The loser drops everything they carry to the winner (banked gold is safe).
+  const { goldLost: goldTaken } = deathPenalty(loser);
   winner.gold += goldTaken;
   loser.hp = Math.ceil(maxHp(loser) * 0.3);
   loser.loc = respawnPoint(loser);
   loser.battle = null;
-  loser.deaths += 1;
   winner.pvpWins = (winner.pvpWins || 0) + 1;
 
   log.push(attackerWins

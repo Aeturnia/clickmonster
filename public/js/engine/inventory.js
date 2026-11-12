@@ -1,5 +1,5 @@
 // Buying, selling, equipping and socketing gems.
-import { ITEMS, SELL_RATE, shopStock } from '../data/items.js';
+import { ITEMS, SELL_RATE, shopStock, itemDef } from '../data/items.js';
 import { parseGem, extractCost } from '../data/gems.js';
 import { addItem, findItem, meetsRequirements, maxHp } from './character.js';
 import { currentZone, inTown } from './world.js';
@@ -30,7 +30,7 @@ export function isEquipped(char, uid) {
 }
 
 export function sellPrice(item) {
-  return Math.floor(ITEMS[item.base].price * SELL_RATE);
+  return Math.floor(itemDef(item).price * SELL_RATE);
 }
 
 export function sell(char, uid) {
@@ -56,8 +56,8 @@ export function equip(char, uid) {
   requireOutOfBattle(char);
   const item = findItem(char, uid);
   if (!item) throw new Error('No such item.');
-  const base = ITEMS[item.base];
-  const check = meetsRequirements(char, item.base);
+  const base = itemDef(item);
+  const check = meetsRequirements(char, item);
   if (!check.ok) throw new Error('You don’t meet the requirements for that.');
   char.equipment[base.slot] = uid;
   clampHp(char);
@@ -73,7 +73,7 @@ export function socketGem(char, uid, gemKey) {
   requireOutOfBattle(char);
   const item = findItem(char, uid);
   if (!item) throw new Error('No such item.');
-  const base = ITEMS[item.base];
+  const base = itemDef(item);
   if (item.gems.length >= base.sockets) throw new Error('No empty sockets.');
   if (!parseGem(gemKey) || !char.gems[gemKey]) throw new Error('You don’t have that gem.');
   char.gems[gemKey] -= 1;
@@ -104,4 +104,32 @@ export function buyAndEquip(char, baseId) {
   const item = buy(char, baseId);
   equip(char, item.uid);
   return item;
+}
+
+// ---- Bank. Only in towns. Banked gold is safe from death and from other players.
+function cleanAmount(amount, max) {
+  if (amount === 'all') return max;
+  const n = Math.floor(Number(amount));
+  if (!Number.isFinite(n) || n <= 0) throw new Error('Enter an amount of gold.');
+  return n;
+}
+
+export function deposit(char, amount) {
+  requireTown(char);
+  const n = cleanAmount(amount, char.gold);
+  if (n <= 0) throw new Error('You have no gold to deposit.');
+  if (n > char.gold) throw new Error('You aren’t carrying that much.');
+  char.gold -= n;
+  char.bank += n;
+  return n;
+}
+
+export function withdraw(char, amount) {
+  requireTown(char);
+  const n = cleanAmount(amount, char.bank);
+  if (n <= 0) throw new Error('Your bank is empty.');
+  if (n > char.bank) throw new Error('You don’t have that much in the bank.');
+  char.bank -= n;
+  char.gold += n;
+  return n;
 }

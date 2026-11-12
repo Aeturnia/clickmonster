@@ -8,8 +8,10 @@ fight turn-based battles, collect gold and gems, and build your stats however yo
 Sign in with email + password. Your hero lives on the server (Supabase), so it follows you
 across devices, and other players in the same zone cell show up under **Players**.
 
-- **6 races**, each with a weapon or magic-element proficiency (+25% damage, +5% hit):
-  Human (swords), Elf (frost), Dwarf (axes + armor), Orc (maces), Gnome (fire), Halfling (daggers).
+- **6 races**, each with a specialty: Human (swords), Elf (frost), Dwarf (axes and armor),
+  Orc (maces), Gnome (fire), Halfling (daggers).
+- **Masteries** for every weapon type, element and armor grow as you fight and boost damage,
+  accuracy and crits. Races start ahead in their specialty and have per-mastery caps.
 - **5 stats**, no caps: Strength (melee damage), Dexterity (hit & dodge), Intelligence (spell damage),
   Wisdom (cast chance & spell resist), Vitality (health).
 - **Leveling**: each level gives 10 points — all into one stat, or +2 into every stat.
@@ -17,7 +19,12 @@ across devices, and other players in the same zone cell show up under **Players*
   leading to 5 adventure zones (levels 22–75), two of them flagged PvP.
   Every cell in a zone shares the zone's monster list; towns, paths and boss lairs sit on specific cells.
 - **Gear**: shared by all races, Class I–X, with stat requirements and gem sockets. Different towns sell different gear.
-- **Monsters drop gold and gems only.** Gems socket into gear for stat bonuses.
+- **Monsters drop gold, gems and (rarely) relic gear.** Ten gem kinds in five grades: stat
+  percentages, bonus gold, bonus XP, life steal, critical chance and armor.
+- **Elite variants**: about 1 in 10 fights is a Gilded, Mighty, Ancient (etc.) monster with its own rewards.
+- **Bank**: dying or losing a duel costs all carried gold (and some XP, never a level). Banked gold is safe.
+- **Quest board**: six quests posted every hour, each lasting three hours. First player to finish claims it.
+  Public news feed announces quest wins, duels and rare finds.
 
 ## Multiplayer architecture
 
