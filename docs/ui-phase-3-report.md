@@ -165,9 +165,9 @@ The review accepted the design and the confirmation tiers, and approved not conf
 **Validation after the corrections:**
 - All three new tests fail against the reviewed commit (2cd0553) for the reasons above, and pass now.
 - `npm test`: 24 of 24 pass.
-- `npm run test:ui`: CORRECTION_RUNS.
+- `npm run test:ui`: **55 of 55 pass in each of 3 consecutive full runs** (52 + the 3 correction tests).
 - Cancelling sends no destructive action: every confirmation test asserts zero calls for the action after Cancel, Escape or a tap outside.
-- axe passes on the new nested-dialog state and the duel result (in the tests above), and on the interaction-state sweep (CORRECTION_AXE).
+- axe passes on the new nested-dialog state and the duel result (in the tests above), and on the interaction-state sweep (26 states at 320 and 390: 0 violations of any impact, 0 native dialogs (`docs/ui-audit/phase-3/axe-states-after.json`, refreshed)).
 
 ## Not verified
 
