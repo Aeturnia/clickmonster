@@ -8,7 +8,7 @@ It keeps the vanilla JS architecture and the game's design language. All admin p
 
 | Priority | Result |
 |---|---|
-| 1. Shared design system | The 45-line `<style>` block in `admin.html` moved into `style.css` on the shared tokens (colours, type scale, spacing, radius, focus ring). **Inline styles on rendered admin screens: up to 87 → 0.** Only data values remain inline (`--w` bar widths, `--n` map sizes). Density is kept: 14px tables, compact forms. |
+| 1. Shared design system | The 45-line `<style>` block in `admin.html` moved into `style.css` on the shared tokens (colours, type scale, spacing, radius, focus ring). **Presentational inline styles on rendered admin screens: up to 18 per screen → 0.** Only data values remain inline (`--w` bar widths, `--n` map sizes). Density is kept: 14px tables, compact forms. |
 | 2. Navigation | Four labelled groups: Players and moderation, World, Content, Staff (admins only). **From 768px:** a sticky sidebar listing every section. **On phones:** a group switcher plus the current group's sections. The open-report count shows in the navigation. **Deep links:** `#chat`, `#player/<id>`, `#zone/<id>`, and the browser's Back button works. **Content start:** 285 → 197–239px at 320, and 157 → 59–67px from 768. |
 | 3. Tables | Every table has `<thead>` with `scope="col"` headers (before: 0 scoped headers; most tables had no header row). **Clickable rows → 0** (up to 12 mouse-only `tr.click` rows per screen before); row actions are real buttons. When the content column is narrow, rows become labelled cards, so no column is hidden. **Words broken mid-word to fit: 104 at 320 and 38 at 390 → 0 at all five widths.** |
 | 4. Forms | Every control has a visible label. Hints and errors are tied with `aria-describedby`. Inline validation explains the server's rules before anything is sent. Submit buttons show pending (`aria-busy`) and allow one request at a time. Server errors stay inside the form (`role="alert"`) with the values kept. Typed values, focus and caret survive data arriving. |
@@ -18,18 +18,21 @@ It keeps the vanilla JS architecture and the game's design language. All admin p
 ## Acceptance criteria
 
 All measured with `tools/admin-shots.mjs`: 12 screens at 320, 390, 768, 1024 and 1440 (60 captures), fake backend.
+- Both columns use the same final metric definitions:
+  - **Inline styles:** only presentational ones count. CSS custom properties carrying data, such as `--w` and `--n`, don't.
+  - **Targets:** a checkbox counts by its label's size.
 - "Before" is `main` at a45095b.
 - Raw data: `docs/ui-audit/phase-4/summary-before.json` and `summary-after.json`.
 
 | AC | Criterion | Before | After |
 |---|---|---|---|
-| AC4-1 | No admin-only stylesheet; no presentational inline styles | 45-line `<style>` block; inline styles up to 87 per screen | none; 0 on all 60 captures |
+| AC4-1 | No admin-only stylesheet; no presentational inline styles | 45-line `<style>` block; presentational inline styles up to 18 per screen | none; 0 on all 60 captures |
 | AC4-2 | Grouped, labelled navigation; current section marked; every section reachable by keyboard; content start | 11 flat chips; content at 285px (320) / 157px (768+) | 4 groups; content at 197–239px (320) / 59–67px (768+) |
 | AC4-3 | Tables: scoped headers, no mouse-only rows, no squeezed words, no page overflow, nothing hidden on narrow screens | 0 of 70 headers scoped; up to 12 clickable rows; 104 words broken mid-word at 320, 38 at 390 | 310 of 310 headers scoped; 0 clickable rows; 0 broken words at all 5 widths; cards keep every column |
 | AC4-4 | Forms: labels, hints, inline validation, pending, persistent server errors, values and focus preserved | labels only; server errors as toasts; values lost on re-render | all present (tests below) |
 | AC4-5 | Report → message → player → sanction without leaving the report; explicit; permission-gated; confirmed | 2 section changes; report context lost | 0 section changes; inline |
 | AC4-6 | Zone editor: section hierarchy, visible validation, usable preview, sticky where room allows | one long form; problems only in the preview box | index with counts, summary, a slim sticky save bar (at most a fifth of the screen; Restore and Delete in their own section); sticky preview from a 720px content column |
-| AC4-7 | Accessibility: axe (all impacts) 0 violations on all captures; tap targets ≥ 24px | AXE_BEFORE | AXE_AFTER |
+| AC4-7 | Accessibility: axe (all impacts) 0 violations on all captures; tap targets ≥ 24px | 0 violations; 12 targets under 24px (the zone list's Edit links at 320 and 390) | 0 violations and 0 targets under 24px on all 60 captures |
 
 ### Deviations and judgement calls
 
@@ -74,8 +77,8 @@ All measured with `tools/admin-shots.mjs`: 12 screens at 320, 390, 768, 1024 and
 
 ## Tests
 
-- `npm test`: RESULT_ENGINE.
-- `npm run test:ui`: RESULT_UI.
+- `npm test`: 24 of 24 pass.
+- `npm run test:ui`: **68 of 68 pass in each of 3 consecutive full runs**.
   - All earlier tests kept. One Phase 1 admin test selector changed from `tr[data-v] [data-a="zoneEdit"]` to the row's real button, because rows are no longer clickable.
   - **13 new tests** in `tests/ui/admin-console.test.mjs`:
     - grouped navigation on desktop and phone (keyboard only), and moderator visibility;
@@ -97,7 +100,22 @@ All measured with `tools/admin-shots.mjs`: 12 screens at 320, 390, 768, 1024 and
 
 ## Accessibility results
 
-AXE_SECTION
+axe-core 4.10.2, all impacts including minor:
+
+| Sweep | Before | After |
+|---|---|---|
+| Admin console: 12 screens × 320, 390, 768, 1024, 1440 (60 captures, `tools/admin-shots.mjs`) | 0 violations | **0 violations** |
+| Game screens: 17 × 5 sizes (`tools/ui-shots.mjs`, includes the older admin captures) | 0 (Phase 3) | **0** (85 screens) |
+| Game interaction states: 13 × 320, 390 (`tools/ui-states.mjs`) | 0 (Phase 3) | **0**, and no native dialogs |
+
+- The new tests also run axe on the phone navigation, the dashboard with the sidebar, a form with an inline error, the report review panel and the zone editor with a problem.
+- axe found nothing to fix on the old console. The improvements it doesn't measure are covered by the tests and metrics above:
+  - grouping and current-section semantics;
+  - scoped table headers;
+  - labelled hints and errors (`aria-describedby`, `aria-invalid`);
+  - named overworld squares;
+  - a polite live save note;
+  - focus moved to new content (records, reviews, zone sections, problems).
 
 ## Evidence
 
