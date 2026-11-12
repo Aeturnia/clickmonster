@@ -18,6 +18,7 @@ import { meleeChance, spellChance, meleeBase, spellBase } from './engine/combat.
 import { shopItems, isEquipped, sellPrice } from './engine/inventory.js';
 import { PVP_LEVEL_GAP } from './engine/pvp.js';
 import { sb, api, playersAt, recentEvents, fetchZoneDefs } from './net.js';
+import { setupChat } from './chat-ui.js';
 import { questTitle, canAccept } from './engine/quests.js';
 import { setWorld, activeEvents, MULT_LABEL, MULT_KEYS } from './engine/world-config.js';
 import { huntCombatant } from './engine/hunt.js';
@@ -56,6 +57,11 @@ const ui = {
 
 const SEEN_KEY = 'clickmonster.seenAnnouncement';
 const seenAnnouncement = () => { try { return Number(localStorage.getItem(SEEN_KEY) || 0); } catch { return 0; } };
+
+const chat = setupChat({
+  sb, api, getChar: () => char, toast: (m, k) => toast(m, k), esc: (s) => esc(s),
+  zoneName: (id) => ZONES[id]?.name || 'this zone',
+});
 
 // ---------------------------------------------------------------- helpers
 const $ = (s) => document.querySelector(s);
@@ -295,6 +301,7 @@ function playerRows(zone) {
     return `<div class="row static">
       <span class="lv ${d.cls}">Lv ${p.level}</span>
       <span class="nm">${esc(p.name)}<small>${RACES[p.race]?.name || ''}</small></span>
+      ${btn('whisper', p.name, 'Whisper', 'sm ghost')}
       ${canHit ? btn('attack', p.id, 'Attack', 'sm danger') : ''}
     </div>`;
   }).join('')}</div>`;
@@ -723,6 +730,7 @@ function render() {
   paint('top', inGame ? viewTop() : '');
   paint('dock', inGame ? dock : '');
   paint('nav', inGame ? viewNav() : '');
+  chat.setVisible(inGame);
   paint('sheet', viewSheet());
 
   const viewKey = `${ui.phase}:${!!char}:${ui.tab}:${!!char?.battle}`;
@@ -798,6 +806,7 @@ function handleLocal(a, v) {
     case 'later': ui.levelSheetSnoozed = char.pendingLevels; return true;
     case 'pref': prefs[v] = !prefs[v]; savePrefs(); if (v === 'vibrate' && prefs.vibrate) buzz(30); return true;
     case 'noop': return true;
+    case 'whisper': chat.openWhisper(v); return true;
     case 'seenann': try { localStorage.setItem(SEEN_KEY, String(ui.announcement?.id || 0)); } catch { /* ignore */ } return true;
     default: return false;
   }
@@ -850,7 +859,7 @@ async function runRemote(a, v, el) {
     char = res.char;
     if ('sanctions' in res) ui.sanctions = res.sanctions;
     if (msg) toast(msg);
-    if (action === 'create' && char) { ui.tab = 'explore'; toast(`Welcome to ${ZONES[char.loc.zone].name}, ${char.name}.`); }
+    if (action === 'create' && char) { ui.tab = 'explore'; toast(`Welcome to ${ZONES[char.loc.zone].name}, ${char.name}.`); chat.start(); }
     if (action === 'sell' || action === 'buyequip') ui.sheet = null;
     if (action === 'fight' || action === 'attack' || action === 'hunt') ui.tab = 'explore';
     if (char?.battle?.hunt && ['melee', 'cast'].includes(action)) {
@@ -874,7 +883,7 @@ async function runRemote(a, v, el) {
     const start = b.monsterId && b.monsterId === before?.battleId ? before.battleLog : 0;
     playEffects(b.log.slice(start));
   }
-  if (char && before && locKey() !== before.loc) { ui.players = null; refreshPlayers(); }
+  if (char && before && locKey() !== before.loc) { ui.players = null; refreshPlayers(); chat.setZone(char.loc.zone); }
   if (action === 'attack' || action === 'done') refreshPlayers();
 }
 
@@ -1028,6 +1037,7 @@ async function loadHero() {
     char = res.char;
     ui.sanctions = res.sanctions || null;
     ui.phase = 'game';
+    if (char) chat.start().then(() => chat.setZone(char.loc.zone));
     loadAnnouncement();
     loadWorldConfig();
     loadHunts();
@@ -1043,6 +1053,7 @@ sb.auth.onAuthStateChange((event, newSession) => {
   const wasSignedIn = !!session;
   session = newSession;
   if (!newSession) {
+    chat.stop();
     char = null;
     ui.phase = 'auth';
     ui.sheet = null;
