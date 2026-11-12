@@ -32,10 +32,13 @@ class GameError extends Error {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...CORS, 'Content-Type': 'application/json' } });
 
-type Row = { id: string; data: any; version: number };
+type Row = {
+  id: string; data: any; version: number;
+  banned_until?: string | null; jailed_until?: string | null; muted_until?: string | null; sanction_reason?: string | null;
+};
 
 async function loadRow(filter: { user_id?: string; id?: string }): Promise<Row | null> {
-  let q = admin.from('characters').select('id, data, version');
+  let q = admin.from('characters').select('id, data, version, banned_until, jailed_until, muted_until, sanction_reason');
   if (filter.user_id) q = q.eq('user_id', filter.user_id);
   if (filter.id) q = q.eq('id', filter.id);
   const { data, error } = await q.maybeSingle();
@@ -61,6 +64,28 @@ async function saveRow(row: Row, char: any) {
 async function announce(kind: string, text: string) {
   const { error } = await admin.from('events').insert({ kind, text });
   if (error) console.error('announce failed', error);
+}
+
+// ---------------------------------------------------------------- sanctions
+const active = (t?: string | null) => !!t && new Date(t).getTime() > Date.now();
+const untilText = (t: string) => (new Date(t).getFullYear() > 9000 ? 'permanently' : `until ${new Date(t).toUTCString().replace(':00 GMT', ' UTC')}`);
+
+function sanctionsOf(row: Row) {
+  return {
+    banned: active(row.banned_until) ? row.banned_until : null,
+    jailed: active(row.jailed_until) ? row.jailed_until : null,
+    muted: active(row.muted_until) ? row.muted_until : null,
+    reason: row.sanction_reason || null,
+  };
+}
+
+// Jailed heroes can look around and spend level points, nothing else.
+const JAIL_ALLOWED = new Set(['level', 'dismiss', 'done']);
+function enforceSanctions(row: Row, action: string) {
+  const s = sanctionsOf(row);
+  const why = s.reason ? ` Reason: ${s.reason}` : '';
+  if (s.banned) throw new GameError(`This hero is banned ${untilText(s.banned)}.${why}`, 403);
+  if (s.jailed && !JAIL_ALLOWED.has(action)) throw new GameError(`You are in jail ${untilText(s.jailed)}.${why}`, 403);
 }
 
 // ---------------------------------------------------------------- quests
@@ -162,13 +187,14 @@ async function handle(userId: string, action: string, args: any) {
   if (action === 'state') {
     const row = await loadRow({ user_id: userId });
     if (!row) return { char: null };
+    if (sanctionsOf(row).banned) return { char: row.data, sanctions: sanctionsOf(row) };
     applyRegen(row.data, now);
     const notice = await checkQuestStillOpen(row.data, now);
     if (notice) {
       row.data.notices = [...(row.data.notices || []).slice(-9), { at: now, text: notice }];
       await saveRow(row, row.data);
     }
-    return { char: row.data };
+    return { char: row.data, sanctions: sanctionsOf(row) };
   }
 
   if (action === 'create') {
@@ -184,6 +210,8 @@ async function handle(userId: string, action: string, args: any) {
   }
 
   if (action === 'delete') {
+    const existing = await loadRow({ user_id: userId });
+    if (existing) enforceSanctions(existing, 'delete');
     const { error } = await admin.from('characters').delete().eq('user_id', userId);
     if (error) throw error;
     return { char: null };
@@ -195,6 +223,7 @@ async function handle(userId: string, action: string, args: any) {
 
   const row = await loadRow({ user_id: userId });
   if (!row) throw new GameError('Create a hero first.', 404);
+  enforceSanctions(row, action);
   const char = row.data;
 
   if (FAST_ACTIONS.has(action)) {
@@ -210,12 +239,14 @@ async function handle(userId: string, action: string, args: any) {
     if (!data) throw new GameError('That quest is gone.');
     accept(char, toQuest(data), now);
     await saveRow(row, char);
-    return { char };
+    return { char, sanctions: sanctionsOf(row) };
   }
 
   if (action === 'attack') {
     const target = await loadRow({ id: String(args.targetId) });
     if (!target || target.id === row.id) throw new GameError('They are no longer here.');
+    const ts = sanctionsOf(target);
+    if (ts.banned || ts.jailed) throw new GameError('They are no longer here.');
     applyRegen(target.data, now);
     const res = duel(char, target.data);
     await saveRow(target, target.data);
@@ -235,7 +266,7 @@ async function handle(userId: string, action: string, args: any) {
     if (b.rewards?.relic) await announce('relic', `${char.name} found a rare ${b.rewards.relic}.`);
   }
   await saveRow(row, char);
-  return { char };
+  return { char, sanctions: sanctionsOf(row) };
 }
 
 Deno.serve(async (req) => {

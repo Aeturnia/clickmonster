@@ -38,6 +38,17 @@ across devices, and other players in the same zone cell show up under **Players*
 - **PvP**: in PvP zones (not in towns) you can attack players at most 10 levels below you.
   The duel auto-resolves; the loser drops 10% gold to the winner and wakes up in town.
 
+## Admin console
+
+`/admin` (public/admin.html) is the staff console, backed by the `admin` edge function, which checks
+the `staff` table on every request and records every action in `admin_log`.
+
+- **Moderators**: dashboard, player search and profiles, warn/mute/jail/ban up to 7 days,
+  announcements, audit log.
+- **Admins**: everything above, plus permanent sanctions, the hero editor (level, XP, gold, bank,
+  stats, masteries, location, items, gems), player emails, deleting news, and managing staff.
+- Jailed heroes can look around but not act; banned heroes can't play. Both see the reason.
+
 ## Project layout
 
 ```
@@ -52,6 +63,7 @@ public/              ← deployed site (Netlify publishes this folder)
 supabase/
   migrations/        ← database schema
   functions/game/    ← game server (edge function)
+  functions/admin/   ← staff API (edge function)
 tests/               ← engine tests (node --test)
 tools/sim.mjs        ← balance simulator
 ```
@@ -63,7 +75,7 @@ No build step and no dependencies. Requires Node 18+ for tests.
 ```
 npm test        # run engine tests
 npm run sim     # print balance tables (win rates, fight length by build/level)
-npm run deploy:functions   # deploy the game server (needs SUPABASE_ACCESS_TOKEN)
+npm run deploy:functions   # deploy the game and admin servers (needs SUPABASE_ACCESS_TOKEN)
 npx serve public   # or any static server, then open http://localhost:3000
 ```
 

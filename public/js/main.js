@@ -47,7 +47,12 @@ const ui = {
   playersKey: null,
   levelSheetSnoozed: 0,
   lastMonster: null,
+  sanctions: null,
+  announcement: null,
 };
+
+const SEEN_KEY = 'clickmonster.seenAnnouncement';
+const seenAnnouncement = () => { try { return Number(localStorage.getItem(SEEN_KEY) || 0); } catch { return 0; } };
 
 // ---------------------------------------------------------------- helpers
 const $ = (s) => document.querySelector(s);
@@ -145,6 +150,15 @@ function viewNav() {
 }
 
 // ---------------------------------------------------------------- start screens
+function viewBanned() {
+  const s = ui.sanctions;
+  const when = new Date(s.banned).getFullYear() > 9000 ? 'permanently' : `until ${new Date(s.banned).toLocaleString()}`;
+  return `<div class="intro"><h1>ClickMonster</h1></div>
+    <div class="notice bad"><p><b>${esc(char.name)} is banned ${when}.</b></p>${s.reason ? `<p class="small">Reason: ${esc(s.reason)}</p>` : ''}
+    <p class="small muted" style="margin:0">If you think this is a mistake, contact the game staff.</p></div>
+    ${btn('signout', null, 'Sign out', 'block')}`;
+}
+
 function viewLoading() {
   return '<div class="intro"><h1>ClickMonster</h1><p>Loading</p></div>';
 }
@@ -215,7 +229,15 @@ function viewExplore() {
   const playersCount = ui.playersKey === locKey() && ui.players ? ` (${ui.players.length})` : '';
   const q = char.quest;
   const questLine = q ? `<div class="notice quest"><p class="small" style="margin:0"><b>Quest:</b> ${esc(questTitle(q))}. ${timeLeft(q.expiresAt - Date.now())} left.</p></div>` : '';
+  const s = ui.sanctions;
+  const untilText = (t) => (new Date(t).getFullYear() > 9000 ? 'permanently' : `until ${new Date(t).toLocaleString()}`);
+  const jail = s?.jailed ? `<div class="notice bad"><p class="small" style="margin:0"><b>You are in jail ${untilText(s.jailed)}.</b>${s.reason ? ` Reason: ${esc(s.reason)}.` : ''} You can look around but not act.</p></div>` : '';
+  const mute = s?.muted ? `<div class="notice"><p class="small" style="margin:0">You are muted ${untilText(s.muted)}.${s.reason ? ` Reason: ${esc(s.reason)}` : ''}</p></div>` : '';
+  const ann = ui.announcement && ui.announcement.id > seenAnnouncement() ? `<div class="notice announce">
+      <p class="small" style="margin:0 0 4px"><b>Announcement</b></p><p class="small" style="margin:0">${esc(ui.announcement.text)}</p>
+      <button class="textbtn" data-a="seenann">Dismiss</button></div>` : '';
   return `
+    ${jail}${mute}${ann}
     ${notices}
     ${questLine}
     <div class="place">
@@ -643,6 +665,7 @@ function render() {
   let fill = false;
   if (ui.phase === 'loading') main = viewLoading();
   else if (ui.phase === 'auth') main = viewAuth();
+  else if (char && ui.sanctions?.banned) main = viewBanned();
   else if (!char) main = viewCreate();
   else if (ui.tab === 'hero') main = viewHero();
   else if (ui.tab === 'gear') main = viewGear();
@@ -653,7 +676,7 @@ function render() {
   const mainEl = $('#main');
   mainEl.classList.toggle('fill', fill);
   const changed = paint('main', main);
-  const inGame = ui.phase === 'game' && !!char;
+  const inGame = ui.phase === 'game' && !!char && !ui.sanctions?.banned;
   paint('top', inGame ? viewTop() : '');
   paint('dock', inGame ? dock : '');
   paint('nav', inGame ? viewNav() : '');
@@ -732,6 +755,7 @@ function handleLocal(a, v) {
     case 'later': ui.levelSheetSnoozed = char.pendingLevels; return true;
     case 'pref': prefs[v] = !prefs[v]; savePrefs(); if (v === 'vibrate' && prefs.vibrate) buzz(30); return true;
     case 'noop': return true;
+    case 'seenann': try { localStorage.setItem(SEEN_KEY, String(ui.announcement?.id || 0)); } catch { /* ignore */ } return true;
     default: return false;
   }
 }
@@ -780,6 +804,7 @@ async function runRemote(a, v, el) {
   try {
     const res = await api(action, args);
     char = res.char;
+    if ('sanctions' in res) ui.sanctions = res.sanctions;
     if (msg) toast(msg);
     if (action === 'create' && char) { ui.tab = 'explore'; toast(`Welcome to ${ZONES[char.loc.zone].name}, ${char.name}.`); }
     if (action === 'sell' || action === 'buyequip') ui.sheet = null;
@@ -894,10 +919,23 @@ setInterval(() => {
 
 setInterval(() => { if (document.visibilityState === 'visible') refreshPlayers(); }, 15000);
 
+async function loadAnnouncement() {
+  try {
+    const { data } = await sb.from('events').select('id, text, created_at').eq('kind', 'announce')
+      .gt('created_at', new Date(Date.now() - 3 * 86400000).toISOString())
+      .order('created_at', { ascending: false }).limit(1);
+    ui.announcement = data?.[0] || null;
+    render();
+  } catch { /* not important */ }
+}
+
 async function loadHero() {
   try {
-    char = (await api('state')).char;
+    const res = await api('state');
+    char = res.char;
+    ui.sanctions = res.sanctions || null;
     ui.phase = 'game';
+    loadAnnouncement();
   } catch (err) {
     toast(err.message, 'bad');
     ui.phase = 'auth';
