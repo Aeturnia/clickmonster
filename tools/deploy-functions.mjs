@@ -5,10 +5,30 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
+
+const env = process.env;
+const proxy = env.HTTPS_PROXY || env.https_proxy || env.HTTP_PROXY || env.http_proxy;
+
+// Behind a proxy (the cloud sandbox), fetch only honours it when Node starts with
+// NODE_USE_ENV_PROXY=1. Relaunch with it set, so the npm script needs no shell syntax
+// and runs the same in cmd, PowerShell and bash.
+if (proxy && !env.NODE_USE_ENV_PROXY) {
+  const r = spawnSync(process.execPath, [fileURLToPath(import.meta.url), ...process.argv.slice(2)], {
+    stdio: 'inherit',
+    env: { ...env, NODE_USE_ENV_PROXY: '1' },
+  });
+  process.exit(r.status ?? 1);
+}
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const PROJECT_REF = process.env.SUPABASE_PROJECT_REF || 'janiqspmhkbsyemkknpv';
-const token = process.env.SUPABASE_ACCESS_TOKEN || 'proxy-injected';
+const PROJECT_REF = env.SUPABASE_PROJECT_REF || 'janiqspmhkbsyemkknpv';
+// The cloud proxy injects the token itself; anywhere else it must be set.
+if (!env.SUPABASE_ACCESS_TOKEN && !proxy) {
+  console.error('Set SUPABASE_ACCESS_TOKEN to a Supabase personal access token (sbp_...) first.');
+  process.exit(1);
+}
+const token = env.SUPABASE_ACCESS_TOKEN || 'proxy-injected';
 
 const slugs = process.argv.slice(2).length ? process.argv.slice(2) : ['game', 'admin'];
 let failed = false;
