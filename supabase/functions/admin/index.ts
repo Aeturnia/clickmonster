@@ -5,7 +5,8 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.45.4';
 import { ensureCharacter, maxHp, addItem } from './js/engine/character.js';
 import { ITEMS, QUALITY } from './js/data/items.js';
-import { ZONES } from './js/data/zones.js';
+import { ZONES, DEFAULT_ZONES, loadZones } from './js/data/zones.js';
+import { validateZone, deleteBlockers } from './js/engine/zone-validate.js';
 import { STATS } from './js/data/stats.js';
 import { MASTERIES, masteryCap } from './js/data/masteries.js';
 import { parseGem } from './js/data/gems.js';
@@ -336,6 +337,124 @@ async function economy(days = 14) {
   return { rows: data };
 }
 
+// ---------------------------------------------------------------- zones
+async function zoneDefs() {
+  const { data, error } = await db.from('zones').select('id, data, sort, updated_at, updated_by').order('sort');
+  if (error) throw error;
+  return data;
+}
+
+// Tell game servers to reload zones on their next request.
+async function bumpZonesVersion() {
+  const { data } = await db.from('world_config').select('data').eq('id', 1).single();
+  const next = { ...(data?.data || {}), zonesVersion: Date.now() };
+  await db.from('world_config').update({ data: next, updated_at: new Date().toISOString() }).eq('id', 1);
+}
+
+async function refreshZones() {
+  const rows = await zoneDefs();
+  if (rows.length) loadZones(rows.map((r: any) => r.data));
+  return rows;
+}
+
+async function listZones() {
+  const rows = await refreshZones();
+  const { data: chars } = await db.from('characters').select('zone').limit(10000);
+  const counts: Record<string, number> = {};
+  for (const c of chars || []) counts[c.zone] = (counts[c.zone] || 0) + 1;
+  return {
+    zones: rows.map((r: any) => ({ ...r, players: counts[r.id] || 0, builtin: DEFAULT_ZONES.some((d: any) => d.id === r.id) })),
+  };
+}
+
+// Normalize what the editor sends into a clean definition.
+function cleanZone(z: any) {
+  const int = (v: any, d = 0) => (Number.isFinite(Number(v)) ? Math.floor(Number(v)) : d);
+  const pt = (p: any) => (p ? { x: int(p.x), y: int(p.y) } : null);
+  const mon = (m: any) => {
+    const out: any = { name: String(m.name || '').trim().slice(0, 40), level: int(m.level, 1), arch: String(m.arch || ''), verb: String(m.verb || '').trim().slice(0, 30) };
+    if (m.element) out.element = String(m.element);
+    if (m.proper) out.proper = true;
+    return out;
+  };
+  return {
+    id: String(z.id || '').trim().toLowerCase(),
+    name: String(z.name || '').trim().slice(0, 50),
+    desc: String(z.desc || '').trim().slice(0, 300),
+    size: int(z.size, 10),
+    starter: !!z.starter,
+    pvp: !!z.pvp,
+    minLevel: int(z.minLevel),
+    exitLevel: int(z.exitLevel),
+    overworld: Array.isArray(z.overworld) ? [int(z.overworld[0]), int(z.overworld[1])] : null,
+    entry: pt(z.entry) || { x: 1, y: 1 },
+    town: z.town ? { ...pt(z.town), name: String(z.town.name || '').trim().slice(0, 40) } : null,
+    shop: z.shop ? {
+      tiers: (z.shop.tiers || []).map((t: any) => int(t)),
+      weapons: (z.shop.weapons || []).map(String),
+      elements: (z.shop.elements || []).map(String),
+      armor: !!z.shop.armor,
+    } : null,
+    lairs: (z.lairs || []).map(pt),
+    portals: (z.portals || []).map((p: any) => ({
+      x: int(p.x), y: int(p.y), to: String(p.to || ''), tx: int(p.tx), ty: int(p.ty), minLevel: int(p.minLevel),
+      label: String(p.label || '').trim().slice(0, 50) || 'A path',
+    })),
+    monsters: (z.monsters || []).map(mon),
+    boss: z.boss ? mon(z.boss) : null,
+  };
+}
+
+async function saveZone(staff: Staff, input: any, isNew: boolean) {
+  requireAdmin(staff);
+  const def = cleanZone(input);
+  const rows = await zoneDefs();
+  const exists = rows.some((r: any) => r.id === def.id);
+  if (isNew && exists) throw new AdminError('A zone with that id already exists.');
+  if (!isNew && !exists) throw new AdminError('That zone no longer exists.');
+  const all = [...rows.filter((r: any) => r.id !== def.id).map((r: any) => r.data), def];
+  const errors = validateZone(def, all);
+  if (errors.length) throw new AdminError(errors.join(' '));
+  const sort = exists ? rows.find((r: any) => r.id === def.id).sort : Math.max(0, ...rows.map((r: any) => r.sort)) + 1;
+  const { error } = await db.from('zones').upsert({ id: def.id, data: def, sort, updated_at: new Date().toISOString(), updated_by: staff.email });
+  if (error) throw error;
+  await bumpZonesVersion();
+  await log(staff, isNew ? 'zone:create' : 'zone:edit', { name: def.name }, { id: def.id });
+  return { zone: def, ...(await listZones()) };
+}
+
+async function deleteZone(staff: Staff, id: string) {
+  requireAdmin(staff);
+  const rows = await zoneDefs();
+  const row = rows.find((r: any) => r.id === id);
+  if (!row) throw new AdminError('No such zone.');
+  const blockers = deleteBlockers(id, rows.map((r: any) => r.data));
+  if (blockers.length) throw new AdminError(blockers.join(' '));
+  const { error } = await db.from('zones').delete().eq('id', id);
+  if (error) throw error;
+  await db.from('hunts').update({ status: 'cancelled' }).eq('zone', id).eq('status', 'active');
+  await bumpZonesVersion();
+  await log(staff, 'zone:delete', { name: row.data.name }, { id, definition: row.data });
+  return await listZones();
+}
+
+async function resetZone(staff: Staff, id: string) {
+  requireAdmin(staff);
+  const def = DEFAULT_ZONES.find((d: any) => d.id === id);
+  if (!def) throw new AdminError('That zone has no built-in version.');
+  const rows = await zoneDefs();
+  const existing = rows.find((r: any) => r.id === id);
+  const all = [...rows.filter((r: any) => r.id !== id).map((r: any) => r.data), def];
+  const errors = validateZone(def, all);
+  if (errors.length) throw new AdminError(`Can't restore: ${errors.join(' ')}`);
+  const sort = existing ? existing.sort : DEFAULT_ZONES.indexOf(def);
+  const { error } = await db.from('zones').upsert({ id, data: def, sort, updated_at: new Date().toISOString(), updated_by: staff.email });
+  if (error) throw error;
+  await bumpZonesVersion();
+  await log(staff, 'zone:reset', { name: def.name }, { id, previous: existing?.data || null });
+  return await listZones();
+}
+
 // ---------------------------------------------------------------- dispatch
 async function handle(staff: Staff, action: string, a: any) {
   switch (action) {
@@ -406,6 +525,10 @@ async function handle(staff: Staff, action: string, a: any) {
     case 'startHunt': requireAdmin(staff); return await startHunt(staff, a);
     case 'cancelHunt': requireAdmin(staff); return await cancelHunt(staff, String(a.id));
     case 'economy': return await economy(Number(a.days) || 14);
+    case 'zones': return await listZones();
+    case 'saveZone': return await saveZone(staff, a.zone, !!a.isNew);
+    case 'deleteZone': return await deleteZone(staff, String(a.id));
+    case 'resetZone': return await resetZone(staff, String(a.id));
     case 'setStaff': return await setStaff(staff, a.email, a.role ?? null);
     case 'meta': return {
       zones: Object.values(ZONES).map((z: any) => ({ id: z.id, name: z.name, size: z.size })),
@@ -428,6 +551,7 @@ Deno.serve(async (req) => {
   let body: any;
   try { body = await req.json(); } catch { return json({ error: 'Bad request' }, 400); }
   try {
+    await refreshZones();
     return json(await handle(staff, String(body?.action || ''), body?.args || {}));
   } catch (err) {
     if (err instanceof AdminError) return json({ error: err.message }, err.status);

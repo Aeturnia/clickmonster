@@ -1,5 +1,6 @@
 // Movement, zones, features and towns.
 import { ZONES } from '../data/zones.js';
+import { RACES } from '../data/races.js';
 import { healCost, maxHp } from './character.js';
 
 export const DIRS = { n: [0, -1], s: [0, 1], e: [1, 0], w: [-1, 0] };
@@ -79,7 +80,9 @@ export function heal(char) {
 // Where you wake up after being defeated.
 export function respawnPoint(char) {
   const zone = currentZone(char);
-  return { zone: zone.id, x: zone.town.x, y: zone.town.y };
+  if (zone?.town) return { zone: zone.id, x: zone.town.x, y: zone.town.y };
+  const home = ZONES[RACES[char.race]?.startZone] || ZONES.overworld;
+  return { zone: home.id, x: home.town.x, y: home.town.y };
 }
 
 // Direction hint from the player to a cell, e.g. "2E 3S" or "here".

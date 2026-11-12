@@ -53,6 +53,10 @@ the `staff` table on every request and records every action in `admin_log`.
 - **Hunts** (admins): world bosses with one shared health pool in a zone. Damage is scaled by level so
   everyone can contribute; rewards are split by damage (2% minimum) and the killing blow adds a relic.
   Rewards are delivered through `pending_rewards`, so offline hunters get them next time they play.
+- **Zones** (admins): create, edit, delete or restore zones: size, level gates, town and shop
+  stock, monsters, boss and lairs, extra paths, and placement on the Overworld (paths in and out are
+  generated). Live map preview and validation. Changes apply to the game immediately; heroes in a
+  removed area are moved somewhere safe.
 - **Economy**: a daily ledger of gold created (loot, quests, hunts, selling, admin edits) and removed
   (shops, healer, jeweler, deaths).
 
@@ -86,8 +90,9 @@ npm run deploy:functions   # deploy the game and admin servers (needs SUPABASE_A
 npx serve public   # or any static server, then open http://localhost:3000
 ```
 
-Adding content is mostly data entry: new monsters and zones go in `public/js/data/zones.js`,
-gear tiers in `public/js/data/items.js`.
+Zones live in the database (`zones` table) and are edited in the admin console. The built-in zones in
+`public/js/data/zones.js` seed it (`node tools/seed-zones.mjs`) and are the fallback if it can't be
+loaded. Gear tiers are in `public/js/data/items.js`.
 
 ## Deploying
 

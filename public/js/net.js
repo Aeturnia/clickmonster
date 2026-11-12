@@ -36,6 +36,13 @@ export async function playersAt(loc, myName) {
   return data.filter((p) => p.name !== myName);
 }
 
+// The editable world. Falls back to the built-in zones if this fails.
+export async function fetchZoneDefs() {
+  const { data, error } = await sb.from('zones').select('data').order('sort');
+  if (error || !data?.length) return null;
+  return data.map((r) => r.data);
+}
+
 // Latest public announcements (quest wins, duels, rare finds).
 export async function recentEvents(limit = 12) {
   const { data, error } = await sb.from('events').select('id, kind, text, created_at')

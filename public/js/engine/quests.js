@@ -47,7 +47,7 @@ export function questReward(level, kind, rng) {
 // The quests for one hour. Deterministic for a given bucket.
 export function generateQuests(bucket) {
   const rng = seeded(bucket * 7919 + 17);
-  const zones = Object.values(ZONES).filter((z) => z.monsters.length);
+  const zones = Object.values(ZONES).filter((z) => z.monsters.length && z.id !== 'overworld');
   const out = [];
   for (let slot = 0; slot < QUESTS_PER_HOUR; slot++) {
     // Favor starter zones; most players are there early on.
@@ -69,7 +69,7 @@ export function generateQuests(bucket) {
 
 export function questTitle(q) {
   const v = VARIANTS[q.variant].name;
-  return `Slay ${/^[AEIOU]/.test(v) ? 'an' : 'a'} ${v} creature of level ${q.minLevel} to ${q.maxLevel} in ${ZONES[q.zone].name}`;
+  return `Slay ${/^[AEIOU]/.test(v) ? 'an' : 'a'} ${v} creature of level ${q.minLevel} to ${q.maxLevel} in ${ZONES[q.zone]?.name || 'a lost land'}`;
 }
 
 export const QUEST_UNDERLEVEL = 5; // can't take quests whose bottom level is this far above yours
@@ -78,6 +78,7 @@ export const QUEST_UNDERLEVEL = 5; // can't take quests whose bottom level is th
 // the wider world are past the level-20 road; adventure zones have their own gate.
 export function zoneAccessLevel(char, zoneId) {
   const z = ZONES[zoneId];
+  if (!z) return Infinity;
   if (z.starter) return zoneId === RACES[char.race]?.startZone ? 1 : 20;
   return z.minLevel || 20;
 }
