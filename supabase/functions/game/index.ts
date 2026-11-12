@@ -3,9 +3,9 @@
 // (a symlink to public/js), the exact same code the browser uses for display.
 import { createClient } from 'npm:@supabase/supabase-js@2.45.4';
 import { createCharacter, applyRegen, spendLevel } from './js/engine/character.js';
-import { move, usePortal, heal } from './js/engine/world.js';
+import { move, walkTo, usePortal, heal } from './js/engine/world.js';
 import { startBattle, battleAction } from './js/engine/battle.js';
-import { buy, sell, equip, unequip, socketGem, extractGem } from './js/engine/inventory.js';
+import { buy, buyAndEquip, sell, equip, unequip, socketGem, extractGem } from './js/engine/inventory.js';
 import { duel } from './js/engine/pvp.js';
 
 const admin = createClient(
@@ -56,11 +56,12 @@ async function saveRow(row: Row, char: any) {
   row.version += 1;
 }
 
-const FAST_ACTIONS = new Set(['melee', 'cast', 'flee', 'fight', 'again', 'move']);
+const FAST_ACTIONS = new Set(['melee', 'cast', 'flee', 'fight', 'again', 'move', 'walk']);
 const MIN_ACTION_MS = 150;
 
 const ACTIONS: Record<string, (c: any, a: any) => unknown> = {
   move: (c, a) => move(c, a.dir),
+  walk: (c, a) => walkTo(c, a.x, a.y),
   fight: (c, a) => startBattle(c, a.monsterId),
   melee: (c) => battleAction(c, 'melee'),
   cast: (c) => battleAction(c, 'cast'),
@@ -75,6 +76,7 @@ const ACTIONS: Record<string, (c: any, a: any) => unknown> = {
   portal: (c) => usePortal(c),
   heal: (c) => heal(c),
   buy: (c, a) => buy(c, String(a.itemId)),
+  buyequip: (c, a) => buyAndEquip(c, String(a.itemId)),
   sell: (c, a) => sell(c, Number(a.uid)),
   equip: (c, a) => equip(c, Number(a.uid)),
   unequip: (c, a) => unequip(c, String(a.slot)),

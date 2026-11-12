@@ -1,4 +1,5 @@
-// UI layer. All game rules live in ./engine — this file only renders and dispatches.
+// UI layer. Game rules live in ./engine (the server runs the same code); this file
+// renders the screen and sends actions. Text only by design: no icons or emoji.
 import { RACES, affinityLabel } from './data/races.js';
 import { STATS, STAT_LABEL, STAT_SHORT, STAT_DESC, POINTS_PER_LEVEL } from './data/stats.js';
 import { ITEMS, SLOTS, SLOT_LABEL, WEAPON_TYPES, tierRoman } from './data/items.js';
@@ -16,15 +17,33 @@ import { shopItems, isEquipped, sellPrice } from './engine/inventory.js';
 import { PVP_LEVEL_GAP } from './engine/pvp.js';
 import { sb, api, playersAt } from './net.js';
 
-// The server owns the real character; `char` is the latest copy it sent us.
-// Game rules run here only to display numbers (hit chances, costs, requirements).
+// ---------------------------------------------------------------- state
+const PREFS_KEY = 'clickmonster.prefs';
+const prefs = (() => {
+  const defaults = { leftHanded: false, vibrate: true };
+  try { return { ...defaults, ...JSON.parse(localStorage.getItem(PREFS_KEY) || '{}') }; } catch { return defaults; }
+})();
+function savePrefs() {
+  try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch { /* storage unavailable */ }
+}
+
 let session = null;
-let char = null;
+let char = null; // the server's copy of our hero
 const ui = {
   phase: 'loading', // loading | auth | game
   authMode: 'signin',
-  tab: 'explore', list: 'monsters', race: 'human', modal: null, shopSlot: 'weapon',
-  nextActionAt: 0, busy: false, players: null, playersKey: null,
+  tab: 'explore',
+  list: 'monsters',
+  race: 'human',
+  sheet: null, // { type: 'item', uid } | { type: 'shop' }
+  shopSlot: 'weapon',
+  usableOnly: false,
+  busy: false,
+  nextActionAt: 0,
+  players: null,
+  playersKey: null,
+  levelSheetSnoozed: 0,
+  lastMonster: null,
 };
 
 // ---------------------------------------------------------------- helpers
@@ -33,55 +52,49 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&
 const pct = (n) => `${Math.round(n * 100)}%`;
 const fmt = (n) => Math.round(n).toLocaleString();
 const btn = (a, v, label, cls = '', disabled = false) =>
-  `<button data-a="${a}" ${v != null ? `data-v="${esc(v)}"` : ''} class="${cls}" ${disabled ? 'disabled' : ''}>${label}</button>`;
+  `<button data-a="${a}"${v != null ? ` data-v="${esc(v)}"` : ''} class="btn ${cls}"${disabled ? ' disabled' : ''}>${label}</button>`;
 
-function bar(cur, max, cls = '') {
+function meter(label, cur, max, cls = '') {
   const w = max > 0 ? Math.max(0, Math.min(100, (cur / max) * 100)) : 0;
-  return `<div class="bar ${cls}"><i style="width:${w}%"></i><span>${fmt(cur)} / ${fmt(max)}</span></div>`;
+  return `<div class="meter ${cls}"><div class="meter-label"><span>${label}</span><b>${fmt(cur)} / ${fmt(max)}</b></div>
+    <div class="meter-track"><i style="width:${w}%"></i></div></div>`;
 }
 
-function conClass(monLevel) {
-  const d = monLevel - char.level;
-  if (d <= -6) return 'con-gray';
-  if (d <= -3) return 'con-green';
-  if (d <= 1) return 'con-white';
-  if (d <= 3) return 'con-yellow';
-  if (d <= 6) return 'con-orange';
-  return 'con-red';
+const DIFFICULTY = [
+  [-6, 'con-gray', 'Trivial'], [-3, 'con-green', 'Easy'], [1, 'con-white', 'Even'],
+  [3, 'con-yellow', 'Tough'], [6, 'con-orange', 'Hard'], [Infinity, 'con-red', 'Deadly'],
+];
+function difficulty(level) {
+  const d = level - char.level;
+  const [, cls, word] = DIFFICULTY.find(([max]) => d <= max);
+  return { cls, word };
 }
 
 let toastTimer;
 function toast(msg, kind = '') {
   const el = $('#toast');
+  // Sit just above the bottom controls so it never covers the screen title.
+  const anchor = $('#dock:not(:empty)') || $('#nav:not(:empty)');
+  el.style.top = 'auto';
+  el.style.bottom = anchor ? `${window.innerHeight - anchor.getBoundingClientRect().top + 10}px` : '24px';
   el.textContent = msg;
   el.className = `show ${kind}`;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { el.className = ''; }, 2600);
-}
-
-function socketsHtml(item) {
-  const base = ITEMS[item.base];
-  if (!base.sockets) return '';
-  let s = '<span class="sockets">';
-  for (let i = 0; i < base.sockets; i++) {
-    const g = item.gems[i] && parseGem(item.gems[i]);
-    s += `<span class="sock ${g ? g.type : ''}"></span>`;
-  }
-  return `${s}</span>`;
+  toastTimer = setTimeout(() => { el.className = ''; }, 2400);
 }
 
 function itemSummary(base) {
-  if (base.slot === 'weapon') return `${WEAPON_TYPES[base.type].label} · Power ${base.power}`;
-  if (base.slot === 'focus') return `${ELEMENT_LABEL[base.element]} focus · Power ${base.power}`;
+  if (base.slot === 'weapon') return `${WEAPON_TYPES[base.type].label}, power ${base.power}`;
+  if (base.slot === 'focus') return `${ELEMENT_LABEL[base.element]} focus, power ${base.power}`;
   return `Armor ${base.armor}`;
 }
 
 function reqHtml(baseId) {
   const base = ITEMS[baseId];
   const entries = Object.entries(base.req);
-  if (!entries.length) return '<span class="muted">No requirements</span>';
+  if (!entries.length) return 'No requirements';
   const stats = totalStats(char, base.slot);
-  return entries.map(([s, n]) => `<span class="${stats[s] < n ? 'req-bad' : ''}">${STAT_SHORT[s]} ${n}</span>`).join(' · ');
+  return 'Needs ' + entries.map(([s, n]) => `<span class="${stats[s] < n ? 'req-bad' : ''}">${STAT_SHORT[s]} ${n}</span>`).join(', ');
 }
 
 function isProficient(base) {
@@ -90,245 +103,235 @@ function isProficient(base) {
     || (base.slot === 'focus' && a.kind === 'element' && a.element === base.element);
 }
 
-// ---------------------------------------------------------------- header + nav
-function renderTop() {
-  if (!char) { $('#top').innerHTML = ''; return; }
+function gemText(key) {
+  const g = parseGem(key);
+  return g ? `<span class="gem-${g.type}">${esc(g.name)}</span> +${g.bonus} ${STAT_SHORT[g.stat]}` : '';
+}
+
+const fighting = () => !!(char && char.battle && !char.battle.over);
+const locKey = () => `${char.loc.zone}:${char.loc.x}:${char.loc.y}`;
+
+// ---------------------------------------------------------------- HUD, tabs
+function viewTop() {
+  if (!char) return '';
   const race = RACES[char.race];
-  const gemCount = Object.values(char.gems).reduce((a, b) => a + b, 0);
-  $('#top').innerHTML = `
-    <div class="who">
-      <b>${esc(char.name)}</b><span class="muted">Lv ${char.level} ${race.name}</span>
-      <span class="purse"><span class="gold">● ${fmt(char.gold)}</span><span title="Gems">◆ ${gemCount}</span></span>
+  const gems = Object.values(char.gems).reduce((a, b) => a + b, 0);
+  return `<div class="hud-row">
+      <span class="hud-name">${esc(char.name)}</span>
+      <span class="hud-sub">Lv ${char.level} ${race.name}</span>
+      <span class="hud-res"><b>${fmt(char.gold)}</b> gold <span class="gems"><b>${gems}</b> gems</span></span>
     </div>
-    <div class="bars">
-      ${bar(char.hp, maxHp(char))}
-      ${bar(char.xp, xpToNext(char.level), 'xp')}
-    </div>
-    ${char.pendingLevels && ui.tab !== 'hero' ? `<button class="levelup" data-a="tab" data-v="hero">Level up! Spend your points (${char.pendingLevels})</button>` : ''}`;
+    <div class="hud-bars">${meter('HP', char.hp, maxHp(char))}${meter('XP', char.xp, xpToNext(char.level), 'xp')}</div>`;
 }
 
-function renderNav() {
-  if (!char) { $('#nav').innerHTML = ''; return; }
-  const fighting = char.battle && !char.battle.over;
-  const tabs = [
-    ['explore', fighting ? '⚔' : '⌖', fighting ? 'Battle' : 'Explore'],
-    ['hero', '♜', 'Hero'],
-    ['gear', '⛨', 'Gear'],
-    ['map', '▦', 'Map'],
-  ];
-  const active = ui.tab === 'shop' ? 'explore' : ui.tab;
-  $('#nav').innerHTML = `<div class="in">${tabs.map(([id, ic, label]) =>
-    `<button data-a="tab" data-v="${id}" class="${active === id ? 'on' : ''}"><span class="ic">${ic}</span>${label}${id === 'hero' && char.pendingLevels ? '<span class="dot"></span>' : ''}</button>`).join('')}</div>`;
+function viewNav() {
+  if (!char) return '';
+  const tabs = [['explore', fighting() ? 'Battle' : 'Explore'], ['hero', 'Hero'], ['gear', 'Gear'], ['map', 'Map']];
+  return `<div class="tabs">${tabs.map(([id, label]) =>
+    `<button data-a="tab" data-v="${id}" class="${ui.tab === id ? 'on' : ''}">${label}${id === 'hero' && char.pendingLevels ? `<span class="count">${char.pendingLevels}</span>` : ''}</button>`).join('')}</div>`;
 }
 
-// ---------------------------------------------------------------- views
+// ---------------------------------------------------------------- start screens
 function viewLoading() {
-  return '<div class="hero-title"><h1>ClickMonster</h1><p>Loading…</p></div>';
+  return '<div class="intro"><h1>ClickMonster</h1><p>Loading</p></div>';
 }
 
 function viewAuth() {
   const signup = ui.authMode === 'signup';
   return `
-    <div class="hero-title">
-      <h1>ClickMonster</h1>
-      <p>A shared world of monsters, gold and glory.</p>
-    </div>
-    <form class="card" id="authform" autocomplete="on">
+    <div class="intro"><h1>ClickMonster</h1><p>A shared world of monsters, gold and glory.</p></div>
+    <form id="authform" autocomplete="on">
       <h2>${signup ? 'Create an account' : 'Sign in'}</h2>
-      <h3>Email</h3>
-      <input id="email" type="email" inputmode="email" autocomplete="email" required value="${esc(ui.email || '')}">
-      <h3>Password</h3>
-      <input id="password" type="password" autocomplete="${signup ? 'new-password' : 'current-password'}" minlength="6" required>
-      ${ui.authMsg ? `<p class="small ${ui.authMsgKind || 'muted'}" style="margin-top:10px">${esc(ui.authMsg)}</p>` : ''}
-      <button type="submit" class="primary block" style="margin-top:14px">${signup ? 'Create account' : 'Sign in'}</button>
+      <label class="field">Email<input id="email" type="email" inputmode="email" autocomplete="email" required value="${esc(ui.email || '')}"></label>
+      <label class="field">Password<input id="password" type="password" autocomplete="${signup ? 'new-password' : 'current-password'}" minlength="6" required></label>
+      ${ui.authMsg ? `<p class="small ${ui.authMsgKind || 'muted'}" style="margin-top:12px">${esc(ui.authMsg)}</p>` : ''}
+      <button type="submit" class="btn primary block" style="margin-top:18px">${signup ? 'Create account' : 'Sign in'}</button>
     </form>
-    ${btn('authmode', signup ? 'signin' : 'signup', signup ? 'I already have an account' : 'New here? Create an account', 'block')}`;
+    <p style="text-align:center;margin-top:14px"><button class="textbtn" data-a="authmode" data-v="${signup ? 'signin' : 'signup'}">${signup ? 'I already have an account' : 'New here? Create an account'}</button></p>`;
 }
 
 function viewCreate() {
   const r = RACES[ui.race];
-  const zone = ZONES[r.startZone];
   const bonuses = Object.entries(r.bonus).map(([s, n]) => `+${n} ${STAT_SHORT[s]}`).join(', ');
   return `
-    <div class="hero-title">
-      <h1>ClickMonster</h1>
-      <p>A world of monsters awaits. Who are you?</p>
-    </div>
-    <div class="card">
-      <h3 style="margin-top:0">Name</h3>
-      <input id="name" type="text" maxlength="18" autocomplete="off" autocapitalize="words" placeholder="Your hero's name" value="${esc(ui.draftName || '')}">
-      <h3>Race</h3>
-      <div class="races">
-        ${Object.values(RACES).map((x) => `<button data-a="race" data-v="${x.id}" class="${x.id === ui.race ? 'on' : ''}"><b>${x.name}</b><small>${affinityLabel(x)}</small></button>`).join('')}
-      </div>
-    </div>
-    <div class="card">
+    <div class="intro"><h1>ClickMonster</h1><p>Who are you?</p></div>
+    <label class="field">Name<input id="name" type="text" maxlength="18" autocomplete="off" autocapitalize="words" placeholder="Your hero's name" value="${esc(ui.draftName || '')}"></label>
+    <label class="field">Race</label>
+    <div class="races">${Object.values(RACES).map((x) =>
+      `<button data-a="race" data-v="${x.id}" class="btn ${x.id === ui.race ? 'on' : ''}">${x.name}<small>${affinityLabel(x)}</small></button>`).join('')}</div>
+    <div class="race-info">
       <h2>${r.name}</h2>
-      <p>${r.desc}</p>
-      <dl class="kv">
+      <p class="muted" style="margin-top:6px">${r.desc}</p>
+      <dl class="kv small">
         <dt>Proficiency</dt><dd>${affinityLabel(r)}</dd>
         <dt>Stat bonus</dt><dd>${bonuses}</dd>
-        <dt>Starting zone</dt><dd>${zone.name}</dd>
+        <dt>Starts in</dt><dd>${ZONES[r.startZone].name}</dd>
       </dl>
-      <p class="small muted" style="margin-top:10px">Proficiency gives +25% damage and +5% hit chance with that weapon or element. There are no classes — you choose where every point goes.</p>
+      <p class="small faint" style="margin:10px 0 0">Proficiency gives +25% damage and +5% hit chance with that weapon or element. There are no classes: you decide where every point goes.</p>
     </div>
     ${btn('create', null, 'Begin your adventure', 'primary block')}`;
 }
 
+// ---------------------------------------------------------------- explore
 function viewExplore() {
-  if (char.battle) return viewBattle();
   const zone = currentZone(char);
   const { x, y } = char.loc;
   const here = featuresAt(zone, x, y);
-  let featureHtml = '';
-
+  const lines = [];
   for (const f of here) {
-    if (f.type === 'town') {
-      const cost = healCost(char);
-      featureHtml += `<div class="card feature">
-        <h2>${esc(f.name)}</h2>
-        <p class="muted small">A safe haven with a merchant, a healer and a jeweler.</p>
-        <div class="grid2">
-          ${btn('tab', 'shop', 'Shop')}
-          ${btn('heal', null, cost > 0 ? `Healer · ${fmt(cost)}g` : 'Healer · Full HP', '', cost <= 0)}
-        </div>
-      </div>`;
-    } else if (f.type === 'portal') {
-      const locked = char.level < f.minLevel;
-      featureHtml += `<div class="card feature">
-        <h2>${esc(f.label)}</h2>
-        ${locked ? `<p class="warn small">Requires level ${f.minLevel}. The way is barred to you for now.</p>` : `<p class="muted small">Travel to ${esc(ZONES[f.to].name)}${ZONES[f.to].minLevel ? ` (level ${ZONES[f.to].minLevel}+)` : ''}.</p>`}
-        ${btn('portal', null, locked ? `Locked · Level ${f.minLevel}` : 'Travel', locked ? '' : 'primary block', locked)}
-      </div>`;
-    } else if (f.type === 'lair' && zone.boss) {
-      featureHtml += `<div class="card feature"><h2>A Lair</h2><p class="muted small">Something powerful dwells here. ${esc(zone.boss.name)} awaits challengers.</p></div>`;
-    }
+    if (f.type === 'town') lines.push(`You are in <b>${esc(f.name)}</b>. Shop, healer and jeweler are here, and it is safe from attack.`);
+    if (f.type === 'portal') lines.push(char.level < f.minLevel
+      ? `<b>${esc(f.label)}</b>. <span class="warn">Requires level ${f.minLevel}.</span>`
+      : `<b>${esc(f.label)}</b> leads to ${esc(ZONES[f.to].name)}.`);
+    if (f.type === 'lair' && zone.boss) lines.push(`A lair. <b>${esc(zone.boss.name)}</b> waits here.`);
   }
+  if (!lines.length) lines.push(zone.pvp ? '<span class="warn">Lawless ground. Other players may attack you here.</span>' : 'Open ground.');
 
-  const pois = [];
-  if (zone.town) pois.push([zone.town.name, zone.town.x, zone.town.y]);
+  const near = [];
+  if (zone.town && !(zone.town.x === x && zone.town.y === y)) near.push([zone.town.name, zone.town.x, zone.town.y]);
   for (const f of zone.features) {
-    if (f.type === 'portal') pois.push([f.label + (char.level < f.minLevel ? ` (Lv ${f.minLevel})` : ''), f.x, f.y]);
-    if (f.type === 'lair' && zone.boss) pois.push(['Boss lair', f.x, f.y]);
+    if (f.x === x && f.y === y) continue;
+    if (f.type === 'portal' && zone.id !== 'overworld') near.push([f.label, f.x, f.y]);
+    if (f.type === 'lair' && zone.boss) near.push(['Boss lair', f.x, f.y]);
   }
 
-  const list = ui.list === 'monsters' ? monsterListHtml() : playersHtml(zone);
-  const notices = (char.notices || []).length ? `<div class="card feature">
+  const notices = (char.notices || []).length ? `<div class="notice">
       ${char.notices.map((n) => `<p class="small">${esc(n.text)}</p>`).join('')}
-      ${btn('dismiss', null, 'Dismiss', 'sm')}
-    </div>` : '';
+      <button class="textbtn" data-a="dismiss">Dismiss</button></div>` : '';
 
+  const playersCount = ui.playersKey === locKey() && ui.players ? ` (${ui.players.length})` : '';
   return `
     ${notices}
-    <div class="card">
-      <div class="loc-title">
-        <h2 style="margin:0">${esc(zone.name)}</h2>
-        <span class="coords">x:${x} y:${y}</span>
-        ${zone.pvp ? '<span class="badge pvp">PvP</span>' : ''}
-        <span class="badge">Lv ${zone.levelRange[0]}–${zone.levelRange[1]}</span>
-      </div>
-      <p class="muted small" style="margin-top:6px">${esc(zone.desc)}</p>
-      <ul class="pois">${pois.map(([n, px, py]) => `<li><b>${esc(n)}</b><span>${directionTo(char, px, py)}</span></li>`).join('')}</ul>
-    </div>
-    ${featureHtml}
-    <div class="dpad">
-      ${btn('move', 'n', '▲', 'n', y <= 1)}
-      ${btn('move', 'w', '◀', 'w', x <= 1)}
-      <div class="c">${x},${y}</div>
-      ${btn('move', 'e', '▶', 'e', x >= zone.size)}
-      ${btn('move', 's', '▼', 's', y >= zone.size)}
+    <div class="place">
+      <div class="place-row"><h2>${esc(zone.name)}</h2><span class="coords">${x}, ${y}</span></div>
+      <div class="tags"><span class="tag">Level ${zone.levelRange[0]} to ${zone.levelRange[1]}</span>${zone.pvp ? '<span class="tag pvp">PvP</span>' : ''}</div>
+      <p class="here">${lines.join('<br>')}</p>
+      ${near.length ? `<div class="nearby">${near.map(([n, nx, ny]) => `<span><b>${esc(n)}</b> ${directionTo(char, nx, ny)}</span>`).join('')}</div>` : ''}
     </div>
     <div class="seg">
-      ${btn('list', 'monsters', 'Monsters', ui.list === 'monsters' ? 'on' : '')}
-      ${btn('list', 'players', 'Players', ui.list === 'players' ? 'on' : '')}
+      <button data-a="list" data-v="monsters" class="${ui.list === 'monsters' ? 'on' : ''}">Monsters</button>
+      <button data-a="list" data-v="players" class="${ui.list === 'players' ? 'on' : ''}">Players${playersCount}</button>
     </div>
-    ${list}`;
+    ${ui.list === 'monsters' ? monsterRows() : playerRows(zone)}`;
 }
 
-function monsterListHtml() {
+function monsterRows() {
   const mons = monstersHere(char);
-  if (!mons.length) return '<p class="muted">No monsters roam here.</p>';
-  return `<div class="list">${mons.map((m) => `
-    <button class="mon ${m.boss ? 'boss' : ''}" data-a="fight" data-v="${m.id}">
-      <span class="lvl ${conClass(m.level)}">Lv ${m.level}</span>
-      <span class="nm">${esc(m.name)}${m.boss ? ' <span class="badge">Boss</span>' : ''}<small>${m.element ? `${ELEMENT_LABEL[m.element]} · ` : ''}${m.arch}</small></span>
+  if (!mons.length) return '<p class="empty">No monsters roam here.</p>';
+  return `<div class="rows">${mons.map((m) => {
+    const d = difficulty(m.level);
+    return `<button class="row ${m.boss ? 'boss' : ''}" data-a="fight" data-v="${m.id}">
+      <span class="lv ${d.cls}">Lv ${m.level}</span>
+      <span class="nm">${esc(m.name)}<small><span class="${d.cls}">${d.word}</span>${m.boss ? ', boss' : ''}${m.element ? `, ${ELEMENT_LABEL[m.element]}` : ''}</small></span>
       <span class="go">Fight</span>
-    </button>`).join('')}</div>`;
+    </button>`;
+  }).join('')}</div>`;
 }
 
-function playersHtml(zone) {
+function playerRows(zone) {
   const players = ui.playersKey === locKey() ? ui.players : null;
+  if (!players) return '<p class="empty">Looking around.</p>';
+  if (!players.length) return '<p class="empty">No other adventurers are here right now.</p>';
   const safe = inTown(char);
-  const pvpNote = zone.pvp
-    ? `<p class="small ${safe ? 'muted' : 'warn'}" style="margin:0 0 8px">${safe ? 'Towns are safe, even in lawless lands.' : 'Lawless land: players here may attack you, and you them.'}</p>`
-    : '';
-  if (!players) return `${pvpNote}<p class="muted">Looking around…</p>`;
-  if (!players.length) return `${pvpNote}<div class="card"><p style="margin:0">No other adventurers are here right now.</p></div>`;
-  return `${pvpNote}<div class="list">${players.map((p) => {
+  return `<div class="rows">${players.map((p) => {
+    const d = difficulty(p.level);
     const canHit = zone.pvp && !safe && p.level >= char.level - PVP_LEVEL_GAP;
-    return `<div class="mon card" style="margin:0">
-      <span class="lvl ${conClass(p.level)}">Lv ${p.level}</span>
+    return `<div class="row static">
+      <span class="lv ${d.cls}">Lv ${p.level}</span>
       <span class="nm">${esc(p.name)}<small>${RACES[p.race]?.name || ''}</small></span>
       ${canHit ? btn('attack', p.id, 'Attack', 'sm danger') : ''}
     </div>`;
   }).join('')}</div>`;
 }
 
-const locKey = () => `${char.loc.zone}:${char.loc.x}:${char.loc.y}`;
-
-async function refreshPlayers() {
-  if (!char || ui.list !== 'players' || ui.tab !== 'explore' || char.battle) return;
-  const key = locKey();
-  try {
-    const list = await playersAt(char.loc, char.name);
-    if (key !== locKey()) return;
-    ui.players = list;
-    ui.playersKey = key;
-    render();
-  } catch (err) {
-    toast(err.message, 'bad');
+function dockExplore() {
+  const zone = currentZone(char);
+  const { x, y } = char.loc;
+  const here = featuresAt(zone, x, y);
+  const ctx = [];
+  for (const f of here) {
+    if (f.type === 'town') {
+      const cost = healCost(char);
+      ctx.push(btn('shop', null, 'Shop'));
+      ctx.push(btn('heal', null, cost > 0 ? `Heal <small>${fmt(cost)} gold</small>` : 'Heal <small>Full health</small>', '', cost <= 0));
+    }
+    if (f.type === 'portal') {
+      const locked = char.level < f.minLevel;
+      ctx.push(btn('portal', null, locked ? `Travel <small>Level ${f.minLevel} needed</small>` : `Travel <small>${esc(ZONES[f.to].name)}</small>`, locked ? '' : 'primary', locked));
+    }
   }
+  if (!ctx.length && ui.lastMonster && monstersHere(char).some((m) => m.id === ui.lastMonster)) {
+    ctx.push(btn('fight', ui.lastMonster, `Fight <small>${esc(MONSTERS[ui.lastMonster].name)}</small>`, 'primary'));
+  }
+  if (!ctx.length) ctx.push(`<span class="ctx-label">${esc(zone.name)}</span><span class="small muted">Use the arrows or tap the map to travel.</span>`);
+  return `<div class="dock-explore ${prefs.leftHanded ? 'left' : ''}">
+    <div class="ctx">${ctx.join('')}</div>
+    <div class="pad">
+      ${btn('move', 'n', 'N', 'n', y <= 1)}
+      ${btn('move', 'w', 'W', 'w', x <= 1)}
+      ${btn('move', 's', 'S', 's', y >= zone.size)}
+      ${btn('move', 'e', 'E', 'e', x >= zone.size)}
+    </div>
+  </div>`;
+}
+
+// ---------------------------------------------------------------- battle
+function logHtml(log) {
+  const firstFresh = Math.max(0, log.length - 4);
+  return log.map((l, i) => `<p class="${l.kind}${i >= firstFresh ? ' fresh' : ''}${i === log.length - 1 ? ' latest' : ''}">${esc(l.text)}</p>`).join('');
 }
 
 function viewBattle() {
   const b = char.battle;
+  const you = `<div class="side you" id="fx-you"><div class="side-name">${esc(char.name)}</div><div class="side-sub">Lv ${char.level}</div>${meter('HP', char.hp, maxHp(char), 'big')}</div>`;
   if (b.pvp) {
-    return `
-      <div class="card foe"><h2>Duel: ${esc(b.opponent)}</h2>
-        <p class="muted small">${b.over === 'victory' ? 'You won the duel.' : 'You lost the duel.'}</p></div>
-      <div class="log" id="log">${b.log.map((l) => `<p class="${l.kind}">${esc(l.text)}</p>`).join('')}</div>
-      <div class="actions">${btn('done', null, 'Continue', 'big primary full')}</div>`;
+    return `<div class="versus" id="versus">${you}<div class="vs">vs</div>
+        <div class="side foe" id="fx-foe"><div class="side-name">${esc(b.opponent)}</div><div class="side-sub">${b.over === 'victory' ? 'Defeated' : 'Victorious'}</div></div></div>
+      <div class="log" id="log">${logHtml(b.log)}</div>`;
   }
   const mon = monsterCombatant(b.monsterId);
-  const player = playerCombatant(char);
-  const logHtml = b.log.map((l) => `<p class="${l.kind}">${esc(l.text)}</p>`).join('');
-  let actions;
+  const d = difficulty(mon.level);
+  const r = b.rewards;
+  const gem = r?.gem && parseGem(r.gem);
+  const summary = b.over === 'victory' && r ? `<div class="summary">
+      <span>+${fmt(r.xp)} XP</span><span>+${fmt(r.gold)} gold</span>${gem ? `<span class="gem">Found ${esc(gem.name)}</span>` : ''}${r.levels ? `<span class="gem">Level ${char.level}!</span>` : ''}
+    </div>` : '';
+  return `<div class="versus" id="versus">${you}<div class="vs">vs</div>
+      <div class="side foe" id="fx-foe"><div class="side-name">${esc(mon.name)}</div>
+        <div class="side-sub"><span class="${d.cls}">Lv ${mon.level} ${d.word}</span>${mon.element ? `, ${ELEMENT_LABEL[mon.element]}` : ''}</div>
+        ${meter('HP', b.hp, b.maxHp, 'foe big')}</div></div>
+    ${summary}
+    <div class="log" id="log">${logHtml(b.log)}</div>`;
+}
+
+function dockBattle() {
+  const b = char.battle;
   if (!b.over) {
-    const mHit = meleeChance(player, mon);
-    const sHit = spellChance(player, mon);
-    const wName = player.melee.type === 'fists' ? 'Fists' : WEAPON_TYPES[player.melee.type].label;
-    const sName = ELEMENT_LABEL[player.spell.element];
-    actions = `
-      ${btn('melee', null, `Melee<small>${wName} · ${pct(mHit)} hit · ~${fmt(meleeBase(player))}</small>`, 'big primary')}
-      ${btn('cast', null, `Cast<small>${sName} · ${pct(sHit)} cast · ~${fmt(spellBase(player))}</small>`, 'big')}
-      ${btn('flee', null, 'Flee', 'full')}`;
-  } else if (b.over === 'victory') {
-    const stillHere = monstersHere(char).some((m) => m.id === b.monsterId);
-    actions = `
-      ${btn('again', null, 'Fight again', 'big primary', !stillHere)}
-      ${btn('done', null, 'Continue', 'big')}`;
-  } else {
-    actions = btn('done', null, 'Continue', 'big primary full');
+    const mon = monsterCombatant(b.monsterId);
+    const p = playerCombatant(char);
+    const wName = p.melee.type === 'fists' ? 'Fists' : WEAPON_TYPES[p.melee.type].label;
+    return `<div class="dock-battle">
+      ${btn('melee', null, `Melee<small>${wName}, ${pct(meleeChance(p, mon))} hit, about ${fmt(meleeBase(p))}</small>`, 'big primary')}
+      ${btn('cast', null, `Cast<small>${ELEMENT_LABEL[p.spell.element]}, ${pct(spellChance(p, mon))} cast, about ${fmt(spellBase(p))}</small>`, 'big')}
+      ${btn('flee', null, 'Flee', 'wide flee ghost')}
+    </div>`;
   }
-  const gem = b.rewardGem && parseGem(b.rewardGem);
-  return `
-    <div class="card foe">
-      <h2>${esc(mon.name)}</h2>
-      <p class="muted small"><span class="${conClass(mon.level)}">Level ${mon.level}</span>${mon.element ? ` · ${ELEMENT_LABEL[mon.element]}` : ''} · ${mon.def.arch}</p>
-      ${bar(b.hp, b.maxHp, 'mon')}
-    </div>
-    <div class="log" id="log">${logHtml}${gem ? `<p class="win">You found a ${esc(gem.name)}! (+${gem.bonus} ${STAT_SHORT[gem.stat]})</p>` : ''}</div>
-    <div class="actions">${actions}</div>`;
+  if (b.over === 'victory' && !b.pvp) {
+    const stillHere = monstersHere(char).some((m) => m.id === b.monsterId);
+    return `<div class="dock-battle">
+      ${btn('again', null, 'Fight again', 'big primary wide', !stillHere)}
+      ${btn('done', null, 'Continue', 'wide flee ghost')}
+    </div>`;
+  }
+  return `<div class="dock-battle">${btn('done', null, 'Continue', 'big primary wide')}</div>`;
+}
+
+// ---------------------------------------------------------------- hero
+function levelChooser() {
+  return `<div class="choose">
+    ${STATS.map((s) => btn('level', s, `+${POINTS_PER_LEVEL} ${STAT_SHORT[s]}<small>${char.stats[s]} to ${char.stats[s] + POINTS_PER_LEVEL}</small>`)).join('')}
+    ${btn('level', 'all', `+${POINTS_PER_LEVEL / STATS.length} to every stat`, 'all')}
+  </div>`;
 }
 
 function viewHero() {
@@ -336,145 +339,101 @@ function viewHero() {
   const stats = totalStats(char);
   const bonus = gemBonuses(char);
   const p = playerCombatant(char);
-  let lvl = '';
-  if (char.pendingLevels) {
-    lvl = `<div class="card feature">
-      <h2>Level up! <span class="badge">${char.pendingLevels} to spend</span></h2>
-      <p class="muted small">Put all ${POINTS_PER_LEVEL} points into one stat, or spread ${POINTS_PER_LEVEL / STATS.length} into every stat.</p>
-      <div class="lvlgrid">
-        ${STATS.map((s) => btn('level', s, `+${POINTS_PER_LEVEL} ${STAT_SHORT[s]}<small>${char.stats[s]} → ${char.stats[s] + POINTS_PER_LEVEL}</small>`)).join('')}
-        ${btn('level', 'all', `+${POINTS_PER_LEVEL / STATS.length} to all stats`, 'all')}
-      </div>
-    </div>`;
-  }
   return `
-    ${lvl}
-    <div class="card">
-      <h2>${esc(char.name)}</h2>
-      <p class="muted">Level ${char.level} ${race.name} · <span class="badge prof">${affinityLabel(race)}</span></p>
-      ${STATS.map((s) => `<div class="stat"><span>${STAT_LABEL[s]}</span>
-        <span class="v">${fmt(stats[s])}${bonus[s] ? ` <span class="plus">(+${bonus[s]})</span>` : ''}</span>
-        <span class="d">${STAT_DESC[s]}</span></div>`).join('')}
+    ${char.pendingLevels ? `<h3 style="margin-top:0">Level up: ${char.pendingLevels} to spend</h3>
+      <p class="small muted">Put all ${POINTS_PER_LEVEL} points into one stat, or ${POINTS_PER_LEVEL / STATS.length} into every stat.</p>
+      ${levelChooser()}` : ''}
+    <h3${char.pendingLevels ? '' : ' style="margin-top:0"'}>${esc(char.name)}, level ${char.level} ${race.name}</h3>
+    <div class="tags"><span class="tag prof">Proficient: ${affinityLabel(race)}</span></div>
+    ${STATS.map((s) => `<div class="statrow"><span>${STAT_LABEL[s]}</span>
+      <span class="v">${fmt(stats[s])}${bonus[s] ? ` <small>+${bonus[s]} gems</small>` : ''}</span>
+      <span class="d">${STAT_DESC[s]}</span></div>`).join('')}
+    <h3>Combat</h3>
+    <dl class="kv">
+      <dt>Max health</dt><dd>${fmt(maxHp(char))}</dd>
+      <dt>Armor</dt><dd>${fmt(totalArmor(char))}</dd>
+      <dt>Melee damage</dt><dd>about ${fmt(meleeBase(p))}${p.melee.prof ? ', proficient' : ''}</dd>
+      <dt>Spell damage</dt><dd>about ${fmt(spellBase(p))} ${ELEMENT_LABEL[p.spell.element]}${p.spell.prof ? ', proficient' : ''}</dd>
+      <dt>Experience</dt><dd>${fmt(char.xp)} / ${fmt(xpToNext(char.level))}</dd>
+      <dt>Monsters slain</dt><dd>${fmt(char.kills)}</dd>
+      <dt>Duels won</dt><dd>${fmt(char.pvpWins || 0)}</dd>
+      <dt>Defeats</dt><dd>${fmt(char.deaths)}</dd>
+    </dl>
+    <h3>Settings</h3>
+    <div class="rows settings">
+      <button class="row" data-a="pref" data-v="leftHanded"><span class="nm">Left-handed controls<small>Moves the arrow pad to the left side</small></span><span class="go">${prefs.leftHanded ? 'On' : 'Off'}</span></button>
+      <button class="row" data-a="pref" data-v="vibrate"><span class="nm">Vibration<small>Buzz when you take a hit (Android)</small></span><span class="go">${prefs.vibrate ? 'On' : 'Off'}</span></button>
     </div>
-    <div class="card">
-      <h3 style="margin-top:0">Combat</h3>
-      <dl class="kv">
-        <dt>Max health</dt><dd>${fmt(maxHp(char))}</dd>
-        <dt>Armor</dt><dd>${fmt(totalArmor(char))}</dd>
-        <dt>Melee damage</dt><dd>~${fmt(meleeBase(p))}${p.melee.prof ? ' <span class="badge prof">Prof</span>' : ''}</dd>
-        <dt>Spell damage</dt><dd>~${fmt(spellBase(p))} ${ELEMENT_LABEL[p.spell.element]}${p.spell.prof ? ' <span class="badge prof">Prof</span>' : ''}</dd>
-        <dt>Experience</dt><dd>${fmt(char.xp)} / ${fmt(xpToNext(char.level))}</dd>
-        <dt>Monsters slain</dt><dd>${fmt(char.kills)}</dd>
-        <dt>Defeats</dt><dd>${fmt(char.deaths)}</dd>
-      </dl>
-    </div>
-    <div class="card">
-      <h3 style="margin-top:0">Account</h3>
-      <p class="muted small">Signed in as ${esc(session?.user?.email || '')}. Your hero is saved online.</p>
-      <div class="grid2">
-        ${btn('signout', null, 'Sign out')}
-        ${btn('delete', null, 'Delete hero', 'danger')}
-      </div>
-    </div>`;
+    <h3>Account</h3>
+    <p class="small muted">Signed in as ${esc(session?.user?.email || '')}. Your hero is saved online.</p>
+    <div class="choose" style="grid-template-columns:1fr 1fr">${btn('signout', null, 'Sign out')}${btn('delete', null, 'Delete hero', 'danger')}</div>`;
 }
 
-function itemRow(item, slotLabel) {
+// ---------------------------------------------------------------- gear
+function itemRow(item) {
   const base = ITEMS[item.base];
-  return `<button class="item" data-a="item" data-v="${item.uid}">
-    ${slotLabel ? `<span class="slot">${slotLabel}</span>` : ''}
-    <span class="nm">${esc(base.name)}${socketsHtml(item)}<small>${itemSummary(base)}</small></span>
-    <span class="sc">Class ${tierRoman(base.tier)}<br>${base.score}</span>
+  return `<button class="row item" data-a="item" data-v="${item.uid}">
+    <span class="slot">${SLOT_LABEL[base.slot]}</span>
+    <span class="nm">${esc(base.name)}<small>${itemSummary(base)}${base.sockets ? `, ${item.gems.length}/${base.sockets} sockets` : ''}</small></span>
+    <span class="sc"><b>${base.score}</b>Class ${tierRoman(base.tier)}</span>
   </button>`;
 }
 
 function viewGear() {
   const equipped = SLOTS.map((slot) => {
     const item = equippedItem(char, slot);
-    return item ? itemRow(item, SLOT_LABEL[slot])
-      : `<div class="item card" style="margin:0"><span class="slot">${SLOT_LABEL[slot]}</span><span class="nm muted">Empty</span></div>`;
+    return item ? itemRow(item)
+      : `<div class="row item static"><span class="slot">${SLOT_LABEL[slot]}</span><span class="nm faint">Empty</span></div>`;
   }).join('');
   const pack = char.inventory.filter((i) => !isEquipped(char, i.uid));
   const gems = Object.entries(char.gems).filter(([, n]) => n > 0)
     .map(([k, n]) => ({ ...parseGem(k), n })).filter((g) => g.name)
     .sort((a, b) => b.tier - a.tier || a.type.localeCompare(b.type));
   return `
-    <h3 style="margin-top:4px">Equipped</h3>
-    <div class="list">${equipped}</div>
-    <h3>Pack <span class="muted small">(${pack.length})</span></h3>
-    <div class="list">${pack.length ? pack.map((i) => itemRow(i, SLOT_LABEL[ITEMS[i.base].slot])).join('') : '<p class="muted small">Nothing in your pack. Buy gear from a town shop.</p>'}</div>
+    <h3 style="margin-top:0">Equipped</h3>
+    <div class="rows">${equipped}</div>
+    <h3>Pack (${pack.length})</h3>
+    ${pack.length ? `<div class="rows">${pack.map((i) => itemRow(i)).join('')}</div>` : '<p class="empty">Your pack is empty. Town shops sell gear.</p>'}
     <h3>Gems</h3>
-    <div class="card">${gems.length ? gems.map((g) => `<div class="gemrow"><span class="sock ${g.type}"></span><span style="flex:1">${g.name}</span><span class="muted">+${g.bonus} ${STAT_SHORT[g.stat]}</span><b>×${g.n}</b></div>`).join('')
-      : '<p class="muted small" style="margin:0">Monsters sometimes drop gems. Socket them into gear for stat bonuses. Bosses always drop one.</p>'}</div>`;
+    ${gems.length ? `<div class="rows">${gems.map((g) => `<div class="row static"><span class="nm">${gemText(g.key)}</span><span class="go">x${g.n}</span></div>`).join('')}</div>`
+      : '<p class="empty">Monsters sometimes drop gems, and bosses always do. Socket them into gear for stat bonuses.</p>'}`;
 }
 
-function viewShop() {
-  if (!inTown(char)) { ui.tab = 'explore'; return viewExplore(); }
-  const zone = currentZone(char);
-  const stock = shopItems(char);
-  const slots = SLOTS.filter((s) => stock.some((id) => ITEMS[id].slot === s));
-  if (!slots.includes(ui.shopSlot)) ui.shopSlot = slots[0];
-  const items = stock.filter((id) => ITEMS[id].slot === ui.shopSlot)
-    .sort((a, b) => ITEMS[a].tier - ITEMS[b].tier || ITEMS[a].name.localeCompare(ITEMS[b].name));
-  const current = equippedItem(char, ui.shopSlot);
-  const curScore = current ? ITEMS[current.base].score : 0;
-  return `
-    <div class="row" style="margin-bottom:10px">
-      ${btn('tab', 'explore', '← Back', 'sm')}
-      <h2 style="margin:0 0 0 4px">${esc(zone.town.name)} Shop</h2>
-    </div>
-    <div class="chips">${slots.map((s) => btn('shopslot', s, SLOT_LABEL[s], s === ui.shopSlot ? 'on' : '')).join('')}</div>
-    <div class="list">${items.map((id) => {
-      const base = ITEMS[id];
-      const ok = meetsRequirements(char, id).ok;
-      const diff = base.score - curScore;
-      return `<div class="card" style="margin:0">
-        <div class="row"><b style="flex:1">${esc(base.name)}</b><span class="badge">Class ${tierRoman(base.tier)}</span></div>
-        <p class="small muted" style="margin:4px 0">${itemSummary(base)} · Sockets ${base.sockets}${isProficient(base) ? ' · <span class="good">Proficient</span>' : ''}</p>
-        <p class="small" style="margin:0 0 8px">Score ${base.score} <span class="${diff > 0 ? 'good' : 'muted'}">(${diff >= 0 ? '+' : ''}${diff})</span> · ${reqHtml(id)}</p>
-        <div class="row"><span class="gold">● ${fmt(base.price)}</span><span class="spacer"></span>
-          ${!ok ? '<span class="small req-bad">Can’t equip yet</span>' : ''}
-          ${btn('buy', id, 'Buy', 'sm primary', char.gold < base.price)}</div>
-      </div>`;
-    }).join('')}</div>`;
-}
-
+// ---------------------------------------------------------------- map
 function viewMap() {
   const zone = currentZone(char);
   const cells = [];
   for (let y = 1; y <= zone.size; y++) {
     for (let x = 1; x <= zone.size; x++) {
-      const fs = featuresAt(zone, x, y);
-      let cls = zone.pvp ? 'pvp' : '';
+      let cls = '';
       let label = '';
-      for (const f of fs) {
-        if (f.type === 'town') { cls = 'town'; label = '⌂'; }
-        if (f.type === 'portal') { cls = `portal ${char.level < f.minLevel ? 'locked' : ''}`; label = char.level < f.minLevel ? '✕' : '⇄'; }
-        if (f.type === 'lair') { cls = 'lair'; label = '☠'; }
+      for (const f of featuresAt(zone, x, y)) {
+        if (f.type === 'town') { cls = 'town'; label = 'T'; }
+        if (f.type === 'portal') { const locked = char.level < f.minLevel; cls = locked ? 'locked' : 'portal'; label = locked ? 'X' : 'P'; }
+        if (f.type === 'lair') { cls = 'lair'; label = 'B'; }
       }
-      if (x === char.loc.x && y === char.loc.y) cls += ' me';
-      cells.push(`<div class="${cls}">${label}</div>`);
+      if (x === char.loc.x && y === char.loc.y) { cls += ' me'; label = 'You'; }
+      cells.push(`<button class="${cls}" data-a="walk" data-v="${x},${y}" aria-label="${x}, ${y}">${label}</button>`);
     }
   }
-  const legend = [];
-  if (zone.id === 'overworld') {
-    for (const f of zone.features) {
-      const z = ZONES[f.to];
-      legend.push(`<li>${char.level < f.minLevel ? '✕' : '⇄'} <b>${esc(z.name)}</b> <span class="muted">(${f.x},${f.y}) · Lv ${z.levelRange[0]}–${z.levelRange[1]}</span>${z.pvp ? ' <span class="badge pvp">PvP</span>' : ''}</li>`);
-    }
-  }
+  const dests = zone.features.filter((f) => f.type === 'portal').map((f) => {
+    const z = ZONES[f.to];
+    const locked = char.level < f.minLevel;
+    return `<button class="row" data-a="walk" data-v="${f.x},${f.y}">
+      <span class="lv num">${f.x}, ${f.y}</span>
+      <span class="nm">${esc(zone.id === 'overworld' ? z.name : f.label)}<small>Level ${z.levelRange[0]} to ${z.levelRange[1]}${z.pvp ? ', PvP' : ''}${locked ? `, requires level ${f.minLevel}` : ''}</small></span>
+      <span class="go">Go</span></button>`;
+  });
   return `
-    <div class="card">
-      <h2>${esc(zone.name)}</h2>
-      <p class="muted small">${zone.size}×${zone.size} · You are at <span class="coords">${char.loc.x},${char.loc.y}</span>. Every spot shares the zone’s monsters; special spots are marked.</p>
-      <div class="map" style="grid-template-columns:repeat(${zone.size},1fr)">${cells.join('')}</div>
-      <ul class="legend">
-        <li>⌂ Town · ⇄ Path · ✕ Locked path · ☠ Boss lair</li>
-        ${legend.join('')}
-      </ul>
-    </div>`;
+    <div class="place-row"><h2>${esc(zone.name)}</h2><span class="coords">${char.loc.x}, ${char.loc.y}</span></div>
+    <p class="small muted" style="margin-top:6px">${esc(zone.desc)}</p>
+    <div class="map ${zone.pvp ? 'pvp' : ''}" style="grid-template-columns:repeat(${zone.size},1fr)">${cells.join('')}</div>
+    <div class="legend"><span><b>T</b> Town</span><span><b>P</b> Path</span><span><b>X</b> Locked path</span><span><b>B</b> Boss</span><span>Tap any square to walk there.</span></div>
+    ${dests.length ? `<h3>Paths</h3><div class="rows">${dests.join('')}</div>` : ''}`;
 }
 
-function viewItemModal(uid) {
+// ---------------------------------------------------------------- sheets
+function sheetItem(uid) {
   const item = findItem(char, uid);
   if (!item) return '';
   const base = ITEMS[item.base];
@@ -483,62 +442,172 @@ function viewItemModal(uid) {
   const req = meetsRequirements(char, item.base);
   const free = base.sockets - item.gems.length;
   const gemKeys = Object.keys(char.gems).filter((k) => char.gems[k] > 0 && parseGem(k));
+  let trait = '';
+  if (base.slot === 'weapon') trait = WEAPON_TYPES[base.type].perk;
+  if (base.slot === 'focus') trait = `Casts ${ELEMENT_LABEL[base.element]} spells`;
 
-  const socketList = [];
+  const sockets = [];
   for (let i = 0; i < base.sockets; i++) {
     const g = item.gems[i] && parseGem(item.gems[i]);
-    socketList.push(`<div class="gemrow"><span class="sock ${g ? g.type : ''}"></span>
-      <span style="flex:1">${g ? `${g.name} <span class="muted">+${g.bonus} ${STAT_SHORT[g.stat]}</span>` : '<span class="muted">Empty socket</span>'}</span>
-      ${g && town ? btn('extract', i, `Extract · ${extractCost(g.tier)}g`, 'sm', char.gold < extractCost(g.tier)) : ''}</div>`);
+    sockets.push(`<div class="row static"><span class="nm">${g ? gemText(g.key) : '<span class="faint">Empty socket</span>'}</span>
+      ${g && town ? btn('extract', i, `Extract, ${extractCost(g.tier)} gold`, 'sm', char.gold < extractCost(g.tier)) : ''}</div>`);
   }
-
-  let perk = '';
-  if (base.slot === 'weapon') perk = WEAPON_TYPES[base.type].perk;
-  if (base.slot === 'focus') perk = `Casts ${ELEMENT_LABEL[base.element]} spells`;
-
-  return `<div class="sheet">
-    <div class="row"><h2 style="flex:1;margin:0">${esc(base.name)}</h2>${btn('close', null, '✕', 'sm')}</div>
-    <p class="muted small">${SLOT_LABEL[base.slot]} · Class ${tierRoman(base.tier)} · Score ${base.score}${isProficient(base) ? ' · <span class="good">Proficient</span>' : ''}</p>
+  return `<div class="panel">
+    <div class="panel-head"><h2>${esc(base.name)}</h2>${btn('close', null, 'Close', 'sm ghost')}</div>
+    <p class="small muted">${SLOT_LABEL[base.slot]}, Class ${tierRoman(base.tier)}, score ${base.score}${isProficient(base) ? ', <span class="good">proficient</span>' : ''}</p>
     <dl class="kv">
-      <dt>${base.slot === 'weapon' || base.slot === 'focus' ? 'Power' : 'Armor'}</dt><dd>${base.power ?? base.armor}</dd>
-      ${perk ? `<dt>Trait</dt><dd>${perk}</dd>` : ''}
-      <dt>Requires</dt><dd>${reqHtml(item.base)}</dd>
+      <dt>${base.armor != null ? 'Armor' : 'Power'}</dt><dd>${base.armor ?? base.power}</dd>
+      ${trait ? `<dt>Trait</dt><dd>${trait}</dd>` : ''}
+      <dt>Requirements</dt><dd>${reqHtml(item.base)}</dd>
     </dl>
-    ${base.sockets ? `<h3>Sockets</h3>${socketList.join('')}` : ''}
-    ${free > 0 && gemKeys.length ? `<h3>Socket a gem</h3><div class="chips" style="flex-wrap:wrap">${gemKeys.map((k) => {
-      const g = parseGem(k);
-      return btn('socket', k, `<span class="sock ${g.type}"></span> ${g.name} ×${char.gems[k]}`);
-    }).join('')}</div><p class="small muted">Socketed gems can be extracted later at a town jeweler for a fee.</p>` : ''}
-    <div class="grid2" style="margin-top:14px">
+    ${base.sockets ? `<h3>Sockets</h3><div class="rows">${sockets.join('')}</div>` : ''}
+    ${free > 0 && gemKeys.length ? `<h3>Socket a gem</h3><div class="chips" style="flex-wrap:wrap">${gemKeys.map((k) =>
+      `<button class="chip" data-a="socket" data-v="${k}">${gemText(k)} (x${char.gems[k]})</button>`).join('')}</div>
+      <p class="small faint">A town jeweler can extract socketed gems later for a fee.</p>` : ''}
+    <div class="choose" style="grid-template-columns:1fr 1fr;margin-top:16px">
       ${equipped ? btn('unequip', base.slot, 'Unequip') : btn('equip', uid, req.ok ? 'Equip' : 'Requirements not met', 'primary', !req.ok)}
-      ${town ? btn('sell', uid, equipped ? 'Unequip to sell' : `Sell · ${fmt(sellPrice(item))}g`, 'danger', equipped) : '<button disabled>Sell in town</button>'}
+      ${town ? btn('sell', uid, equipped ? 'Unequip to sell' : `Sell for ${fmt(sellPrice(item))} gold`, 'danger', equipped) : btn('noop', null, 'Sell in a town', '', true)}
     </div>
-    ${item.gems.length && !equipped && town ? '<p class="small warn" style="margin-top:8px">Selling destroys any socketed gems.</p>' : ''}
+    ${item.gems.length && !equipped && town ? '<p class="small warn" style="margin-top:8px">Selling destroys socketed gems.</p>' : ''}
   </div>`;
 }
 
+function sheetShop() {
+  if (!inTown(char)) return '';
+  const zone = currentZone(char);
+  const stock = shopItems(char);
+  const slots = SLOTS.filter((s) => stock.some((id) => ITEMS[id].slot === s));
+  if (!slots.includes(ui.shopSlot)) ui.shopSlot = slots[0];
+  let items = stock.filter((id) => ITEMS[id].slot === ui.shopSlot);
+  if (ui.usableOnly) items = items.filter((id) => meetsRequirements(char, id).ok);
+  items.sort((a, b) => ITEMS[a].tier - ITEMS[b].tier || ITEMS[a].name.localeCompare(ITEMS[b].name));
+  const current = equippedItem(char, ui.shopSlot);
+  const curScore = current ? ITEMS[current.base].score : 0;
+  const wares = items.map((id) => {
+    const base = ITEMS[id];
+    const ok = meetsRequirements(char, id).ok;
+    const diff = base.score - curScore;
+    const cmp = diff > 0 ? `<span class="up">${diff} better</span>` : diff < 0 ? `<span class="down">${-diff} worse</span>` : 'same as equipped';
+    const poor = char.gold < base.price;
+    return `<div class="ware">
+      <div class="ware-top"><b>${esc(base.name)}</b><span class="small muted">Class ${tierRoman(base.tier)}</span></div>
+      <div class="meta">${itemSummary(base)}, ${base.sockets} sockets${isProficient(base) ? ', <span class="good">proficient</span>' : ''}<br>
+        Score ${base.score}, ${cmp}. ${reqHtml(id)}</div>
+      <div class="acts"><span class="price">${fmt(base.price)} gold</span>
+        ${btn('buy', id, 'Buy', 'sm', poor)}
+        ${ok ? btn('buyequip', id, 'Buy and equip', 'sm primary', poor) : ''}</div>
+    </div>`;
+  }).join('');
+  return `<div class="panel">
+    <div class="panel-head"><h2>${esc(zone.town.name)} Shop</h2>${btn('close', null, 'Close', 'sm ghost')}</div>
+    <p class="small muted">You have <span class="gold">${fmt(char.gold)} gold</span>.</p>
+    <div class="chips">
+      ${slots.map((s) => `<button class="chip ${s === ui.shopSlot ? 'on' : ''}" data-a="shopslot" data-v="${s}">${SLOT_LABEL[s]}</button>`).join('')}
+      <button class="chip ${ui.usableOnly ? 'on' : ''}" data-a="usable">Usable only</button>
+    </div>
+    ${wares || '<p class="empty">Nothing here you can use yet.</p>'}
+  </div>`;
+}
+
+function sheetLevel() {
+  return `<div class="panel">
+    <div class="panel-head"><h2>Level ${char.level}!</h2>${btn('later', null, 'Later', 'sm ghost')}</div>
+    <p class="muted">You have ${char.pendingLevels} level${char.pendingLevels > 1 ? 's' : ''} to spend. Put all ${POINTS_PER_LEVEL} points into one stat, or ${POINTS_PER_LEVEL / STATS.length} into every stat.</p>
+    ${levelChooser()}
+  </div>`;
+}
+
+function viewSheet() {
+  if (!char || ui.phase !== 'game') return '';
+  if (ui.sheet?.type === 'item') return sheetItem(ui.sheet.uid);
+  if (ui.sheet?.type === 'shop') return sheetShop();
+  if (char.pendingLevels > ui.levelSheetSnoozed && !fighting() && ui.tab !== 'hero') return sheetLevel();
+  return '';
+}
+
 // ---------------------------------------------------------------- render
+const painted = {};
+function paint(id, html) {
+  if (painted[id] === html) return false;
+  painted[id] = html;
+  document.getElementById(id).innerHTML = html;
+  return true;
+}
+
+let lastView = null;
 function render() {
-  const prevTab = $('#main').dataset.tab;
-  const scroll = window.scrollY;
-  let html;
-  if (ui.phase === 'loading') html = viewLoading();
-  else if (ui.phase === 'auth') html = viewAuth();
-  else if (!char) html = viewCreate();
-  else if (ui.tab === 'hero') html = viewHero();
-  else if (ui.tab === 'gear') html = viewGear();
-  else if (ui.tab === 'map') html = viewMap();
-  else if (ui.tab === 'shop') html = viewShop();
-  else html = viewExplore();
-  $('#main').innerHTML = html;
-  $('#main').dataset.tab = ui.tab;
-  renderTop();
-  renderNav();
-  $('#modal').innerHTML = char && ui.modal?.type === 'item' ? viewItemModal(ui.modal.uid) : '';
+  let main;
+  let dock = '';
+  let fill = false;
+  if (ui.phase === 'loading') main = viewLoading();
+  else if (ui.phase === 'auth') main = viewAuth();
+  else if (!char) main = viewCreate();
+  else if (ui.tab === 'hero') main = viewHero();
+  else if (ui.tab === 'gear') main = viewGear();
+  else if (ui.tab === 'map') main = viewMap();
+  else if (char.battle) { main = viewBattle(); dock = dockBattle(); fill = true; }
+  else { main = viewExplore(); dock = dockExplore(); }
+
+  const mainEl = $('#main');
+  mainEl.classList.toggle('fill', fill);
+  const changed = paint('main', main);
+  const inGame = ui.phase === 'game' && !!char;
+  paint('top', inGame ? viewTop() : '');
+  paint('dock', inGame ? dock : '');
+  paint('nav', inGame ? viewNav() : '');
+  paint('sheet', viewSheet());
+
+  const viewKey = `${ui.phase}:${!!char}:${ui.tab}:${!!char?.battle}`;
+  if (viewKey !== lastView) { mainEl.scrollTop = 0; lastView = viewKey; }
   const log = $('#log');
-  if (log) log.scrollTop = log.scrollHeight;
-  if (prevTab === ui.tab) window.scrollTo(0, scroll);
-  else window.scrollTo(0, 0);
+  if (log && changed) log.scrollTop = log.scrollHeight;
+}
+
+// ---------------------------------------------------------------- battle feedback
+function floatText(sideId, text, cls) {
+  const side = document.getElementById(sideId);
+  if (!side) return;
+  const el = document.createElement('span');
+  el.className = `float ${cls}`;
+  el.textContent = text;
+  side.appendChild(el);
+  setTimeout(() => el.remove(), 900);
+}
+
+function retrigger(el, cls) {
+  if (!el) return;
+  el.classList.remove(cls);
+  void el.offsetWidth; // restart the animation
+  el.classList.add(cls);
+}
+
+function buzz(pattern) {
+  if (prefs.vibrate && navigator.vibrate) {
+    try { navigator.vibrate(pattern); } catch { /* not supported */ }
+  }
+}
+
+// Turn new battle-log lines into floating numbers, shakes and buzzes.
+function playEffects(entries) {
+  let delay = 0;
+  for (const e of entries) {
+    const dmg = Number((e.text.match(/for (\d+)/) || [])[1] || 0);
+    const crit = /^Critical|^A savage/.test(e.text);
+    const fx = () => {
+      if (e.kind === 'player') floatText('fx-foe', crit ? `${dmg}!` : `${dmg}`, crit ? 'crit' : 'dmg-foe');
+      else if (e.kind === 'monster') {
+        floatText('fx-you', `-${dmg}`, crit ? 'crit' : 'dmg-you');
+        retrigger($('#versus'), 'shake');
+        buzz(crit ? [40, 40, 60] : 30);
+      } else if (e.kind === 'miss') {
+        floatText(/^You|^Your/.test(e.text) ? 'fx-foe' : 'fx-you', 'Miss', 'miss');
+      } else if (e.kind === 'win') {
+        retrigger($('#versus'), 'flash');
+      }
+    };
+    setTimeout(fx, delay);
+    if (e.kind === 'player' || e.kind === 'monster' || e.kind === 'miss') delay += 260;
+  }
 }
 
 // ---------------------------------------------------------------- actions
@@ -549,68 +618,86 @@ function handleLocal(a, v) {
   switch (a) {
     case 'race': ui.draftName = $('#name')?.value || ''; ui.race = v; return true;
     case 'authmode': ui.authMode = v; ui.authMsg = ''; ui.email = $('#email')?.value || ui.email; return true;
-    case 'tab': ui.tab = v; ui.modal = null; if (v === 'explore') refreshPlayers(); return true;
+    case 'tab': ui.tab = v; ui.sheet = null; if (v === 'explore') refreshPlayers(); return true;
     case 'list': ui.list = v; refreshPlayers(); return true;
+    case 'shop': ui.sheet = { type: 'shop' }; return true;
     case 'shopslot': ui.shopSlot = v; return true;
-    case 'item': ui.modal = { type: 'item', uid: Number(v) }; return true;
-    case 'close': ui.modal = null; return true;
+    case 'usable': ui.usableOnly = !ui.usableOnly; return true;
+    case 'item': ui.sheet = { type: 'item', uid: Number(v) }; return true;
+    case 'close': ui.sheet = null; return true;
+    case 'later': ui.levelSheetSnoozed = char.pendingLevels; return true;
+    case 'pref': prefs[v] = !prefs[v]; savePrefs(); if (v === 'vibrate' && prefs.vibrate) buzz(30); return true;
+    case 'noop': return true;
     default: return false;
   }
 }
 
-// Actions the server performs. Returns [action, args, successMessage?] or null to cancel.
+// Actions the server performs: [action, args, successMessage?], or null to cancel.
 function remoteCall(a, v) {
   switch (a) {
     case 'create': return ['create', { name: $('#name')?.value || '', race: ui.race }];
     case 'move': return ['move', { dir: v }];
-    case 'fight': return ['fight', { monsterId: v }];
-    case 'melee': case 'cast': case 'flee': case 'again': case 'done': case 'dismiss': return [a, {}];
-    case 'portal': return ['portal', {}];
-    case 'heal': return ['heal', {}, `You are fully healed for ${healCost(char)} gold.`];
-    case 'buy': return ['buy', { itemId: v }, `Bought ${ITEMS[v].name}. Equip it from the Gear tab.`];
+    case 'walk': { const [x, y] = v.split(',').map(Number); return x === char.loc.x && y === char.loc.y ? null : ['walk', { x, y }]; }
+    case 'fight': ui.lastMonster = v; return ['fight', { monsterId: v }];
+    case 'melee': case 'cast': case 'flee': case 'again': case 'done': case 'dismiss': case 'portal': return [a, {}];
+    case 'heal': return ['heal', {}, `Healed for ${healCost(char)} gold.`];
+    case 'buy': return ['buy', { itemId: v }, `Bought ${ITEMS[v].name}. It is in your pack.`];
+    case 'buyequip': return ['buyequip', { itemId: v }, `Bought and equipped ${ITEMS[v].name}.`];
     case 'equip': return ['equip', { uid: Number(v) }, 'Equipped.'];
     case 'unequip': return ['unequip', { slot: v }];
-    case 'socket': return ['socket', { uid: ui.modal.uid, gem: v }, `Socketed ${parseGem(v).name}.`];
-    case 'extract': return ['extract', { uid: ui.modal.uid, index: Number(v) }, 'The jeweler extracts the gem.'];
+    case 'socket': return ['socket', { uid: ui.sheet.uid, gem: v }, `Socketed ${parseGem(v).name}.`];
+    case 'extract': return ['extract', { uid: ui.sheet.uid, index: Number(v) }, 'The jeweler extracts the gem.'];
     case 'sell': return ['sell', { uid: Number(v) }, 'Sold.'];
-    case 'level': return ['level', { stat: v }, v === 'all' ? 'All stats increased!' : `${STAT_LABEL[v]} increased!`];
+    case 'level': return ['level', { stat: v }, v === 'all' ? 'Every stat increased.' : `${STAT_LABEL[v]} increased.`];
     case 'attack': return confirm('Attack this player? The loser drops 10% of their gold.') ? ['attack', { targetId: v }] : null;
-    case 'delete':
-      return confirm(`Delete ${char.name} forever? This can't be undone.`) ? ['delete', {}, 'Your hero is gone.'] : null;
+    case 'delete': return confirm(`Delete ${char.name} forever? This cannot be undone.`) ? ['delete', {}, 'Your hero is gone.'] : null;
     default: return null;
   }
 }
 
-async function runRemote(a, v) {
+async function runRemote(a, v, el) {
   const call = remoteCall(a, v);
   if (!call) return;
   const [action, args, msg] = call;
-  const before = char && { zone: char.loc.zone, ...char.loc, level: char.level };
+  const before = char && {
+    loc: locKey(), zone: char.loc.zone,
+    battleLog: char.battle && !char.battle.pvp ? char.battle.log.length : 0,
+    battleId: char.battle?.monsterId,
+  };
   ui.busy = true;
-  document.body.classList.add('busy');
+  el?.classList.add('pending');
   try {
     const res = await api(action, args);
     char = res.char;
     if (msg) toast(msg);
-    if (action === 'create' && char) { ui.tab = 'explore'; toast(`Welcome to ${ZONES[char.loc.zone].name}, ${char.name}!`); }
-    if (action === 'sell') ui.modal = null;
+    if (action === 'create' && char) { ui.tab = 'explore'; toast(`Welcome to ${ZONES[char.loc.zone].name}, ${char.name}.`); }
+    if (action === 'sell' || action === 'buyequip') ui.sheet = null;
     if (action === 'fight' || action === 'attack') ui.tab = 'explore';
     if (char && before && char.loc.zone !== before.zone) toast(`You travel to ${ZONES[char.loc.zone].name}.`);
-    if (char && before && char.level > before.level) toast(`Level ${char.level}! Spend your points on the Hero tab.`);
   } catch (err) {
     toast(err.message || 'Something went wrong.', 'bad');
     if (err.status === 401) await sb.auth.signOut();
   } finally {
     ui.busy = false;
-    document.body.classList.remove('busy');
+    el?.classList.remove('pending');
   }
   render();
-  if (char && before && locKey() !== `${before.zone}:${before.x}:${before.y}`) { ui.players = null; refreshPlayers(); }
+  // Battle feedback for the new log lines.
+  const b = char?.battle;
+  if (b && ['melee', 'cast', 'flee', 'attack'].includes(action)) {
+    const start = b.monsterId && b.monsterId === before?.battleId ? before.battleLog : 0;
+    playEffects(b.log.slice(start));
+  }
+  if (char && before && locKey() !== before.loc) { ui.players = null; refreshPlayers(); }
   if (action === 'attack' || action === 'done') refreshPlayers();
 }
 
 document.addEventListener('click', async (e) => {
-  if (e.target.id === 'modal') { ui.modal = null; render(); return; }
+  if (e.target.id === 'sheet') {
+    if (ui.sheet) ui.sheet = null; else if (char) ui.levelSheetSnoozed = char.pendingLevels;
+    render();
+    return;
+  }
   const el = e.target.closest('[data-a]');
   if (!el || el.disabled) return;
   const a = el.dataset.a;
@@ -619,10 +706,10 @@ document.addEventListener('click', async (e) => {
   if (ui.busy) return;
   if (BATTLE_ACTIONS.has(a)) {
     const now = Date.now();
-    if (now < ui.nextActionAt) return; // small cooldown against accidental double-taps
+    if (now < ui.nextActionAt) return; // guard against accidental double taps
     ui.nextActionAt = now + 250;
   }
-  await runRemote(a, el.dataset.v);
+  await runRemote(a, el.dataset.v, el);
 });
 
 document.addEventListener('submit', async (e) => {
@@ -633,13 +720,14 @@ document.addEventListener('submit', async (e) => {
   ui.email = email;
   const submit = e.target.querySelector('button[type=submit]');
   submit.disabled = true;
+  submit.classList.add('pending');
   try {
     if (ui.authMode === 'signup') {
       const { data, error } = await sb.auth.signUp({ email, password });
       if (error) throw error;
       if (!data.session) {
         ui.authMode = 'signin';
-        ui.authMsg = 'Account created! Check your email to confirm it, then sign in here.';
+        ui.authMsg = 'Account created. Check your email to confirm it, then sign in here.';
         ui.authMsgKind = 'good';
         render();
       }
@@ -650,34 +738,48 @@ document.addEventListener('submit', async (e) => {
   } catch (err) {
     ui.authMsg = err.message || 'Could not sign in.';
     ui.authMsgKind = 'bad';
+    painted.main = null;
     render();
   }
 });
 
+// Keyboard support for desktop testing.
+const KEY_DIRS = { ArrowUp: 'n', ArrowDown: 's', ArrowLeft: 'w', ArrowRight: 'e' };
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && e.target.id === 'name') $('[data-a="create"]')?.click();
-  if (e.key === 'Escape' && ui.modal) { ui.modal = null; render(); }
+  if (e.target.tagName === 'INPUT') {
+    if (e.key === 'Enter' && e.target.id === 'name') $('[data-a="create"]')?.click();
+    return;
+  }
+  if (e.key === 'Escape' && ui.sheet) { ui.sheet = null; render(); return; }
+  if (KEY_DIRS[e.key] && char && !char.battle && ui.tab === 'explore' && !ui.sheet) {
+    e.preventDefault();
+    $(`[data-a="move"][data-v="${KEY_DIRS[e.key]}"]`)?.click();
+  }
 });
 
-// Passive regeneration, shown locally between server updates (the server does the real math).
+// ---------------------------------------------------------------- timers and boot
+async function refreshPlayers() {
+  if (!char || ui.list !== 'players' || ui.tab !== 'explore' || char.battle) return;
+  const key = locKey();
+  try {
+    const list = await playersAt(char.loc, char.name);
+    if (!char || key !== locKey()) return;
+    ui.players = list;
+    ui.playersKey = key;
+    render();
+  } catch (err) {
+    toast(err.message, 'bad');
+  }
+}
+
+// Regeneration shown locally between server updates (the server does the real math).
 setInterval(() => {
   if (!char) return;
   const before = char.hp;
   applyRegen(char);
-  if (char.hp !== before) {
-    renderTop();
-    if (ui.tab === 'explore' && !char.battle) {
-      const healBtn = document.querySelector('[data-a="heal"]');
-      if (healBtn) {
-        const cost = healCost(char);
-        healBtn.textContent = cost > 0 ? `Healer · ${fmt(cost)}g` : 'Healer · Full HP';
-        healBtn.disabled = cost <= 0;
-      }
-    }
-  }
+  if (char.hp !== before) render();
 }, 1000);
 
-// Keep the players list fresh while it's open.
 setInterval(() => { if (document.visibilityState === 'visible') refreshPlayers(); }, 15000);
 
 async function loadHero() {
@@ -698,7 +800,7 @@ sb.auth.onAuthStateChange((event, newSession) => {
   if (!newSession) {
     char = null;
     ui.phase = 'auth';
-    ui.modal = null;
+    ui.sheet = null;
     render();
   } else if (!wasSignedIn) {
     ui.phase = 'loading';

@@ -40,6 +40,21 @@ export function move(char, dir) {
   char.battle = null;
 }
 
+// Tap-to-travel within the current zone. Cells have nothing between them, so this is
+// the same as stepping there one square at a time.
+export function walkTo(char, x, y) {
+  if (char.battle && !char.battle.over) throw new Error('You can’t leave in the middle of a fight!');
+  const zone = currentZone(char);
+  x = Number(x);
+  y = Number(y);
+  if (!Number.isInteger(x) || !Number.isInteger(y) || x < 1 || y < 1 || x > zone.size || y > zone.size) {
+    throw new Error('You can’t go there.');
+  }
+  char.loc.x = x;
+  char.loc.y = y;
+  char.battle = null;
+}
+
 export function usePortal(char) {
   if (char.battle && !char.battle.over) throw new Error('You can’t leave in the middle of a fight!');
   const zone = currentZone(char);
