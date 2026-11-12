@@ -1,5 +1,5 @@
-// Playable races. Each has an affinity (a weapon type or a magic element) that grants
-// +25% damage and +5% hit/cast chance, plus starting stat leanings.
+// Playable races. Each has a specialty (a weapon type or a magic element) where it starts
+// with some mastery and can reach the highest cap (see data/masteries.js), plus stat leanings.
 export const RACES = {
   human: {
     id: 'human',
@@ -24,7 +24,6 @@ export const RACES = {
     name: 'Dwarf',
     desc: 'Stout miners of the deep halls. Masters of the axe who wear armor like a second skin.',
     affinity: { kind: 'weapon', type: 'axe' },
-    armorBonus: 0.2,
     bonus: { str: 3, vit: 5, dex: 2 },
     startZone: 'ironpeak',
     gear: ['axe_1', 'body_1', 'helm_1'],
@@ -63,5 +62,5 @@ export function affinityLabel(race) {
   const main = a.kind === 'weapon'
     ? `${a.type[0].toUpperCase()}${a.type.slice(1)}s`
     : `${a.element[0].toUpperCase()}${a.element.slice(1)} magic`;
-  return race.armorBonus ? `${main} · Armor +${Math.round(race.armorBonus * 100)}%` : main;
+  return race.id === 'dwarf' ? `${main} and armor` : main;
 }

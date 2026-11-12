@@ -4,6 +4,7 @@
 import { createCharacter, spendLevel, addItem, meetsRequirements, maxHp, xpToNext } from '../public/js/engine/character.js';
 import { MONSTERS } from '../public/js/data/zones.js';
 import { ITEMS, TIER_LEVEL } from '../public/js/data/items.js';
+import { masteryCap } from '../public/js/data/masteries.js';
 import { monsterCombatant } from '../public/js/engine/monster.js';
 import { battleAction, xpReward } from '../public/js/engine/battle.js';
 
@@ -30,6 +31,10 @@ function build(b, level) {
       break;
     }
   }
+  // Typical mastery for this level: grows ~2 per level in the main skill, ~1.2 in armor.
+  const main = b.mode === 'melee' ? b.weapon : b.element;
+  c.masteries[main] = Math.min(masteryCap(b.race, main), c.masteries[main] + Math.round(level * 2));
+  c.masteries.armor = Math.min(masteryCap(b.race, 'armor'), c.masteries.armor + Math.round(level * 1.2));
   c.hp = maxHp(c);
   return c;
 }
@@ -39,7 +44,7 @@ function fight(b, level, monId, n = 300) {
   for (let i = 0; i < n; i++) {
     const c = build(b, level);
     const mon = monsterCombatant(monId);
-    c.battle = { monsterId: monId, hp: mon.maxHp, maxHp: mon.maxHp, turn: 0, over: null, log: [] };
+    c.battle = { monsterId: monId, hp: mon.maxHp, maxHp: mon.maxHp, turn: 0, over: null, log: [], masteryUps: {} };
     const start = c.hp;
     while (!c.battle.over && c.battle.turn < 60) battleAction(c, b.mode === 'melee' ? 'melee' : 'cast');
     if (c.battle.over === 'victory') { wins++; hpLost += (start - c.hp) / start; }

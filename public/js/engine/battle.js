@@ -1,26 +1,32 @@
 // Turn-based battles: player acts, then the monster answers.
 import { MONSTERS } from '../data/zones.js';
 import { SPELL_NAME } from '../data/elements.js';
-import { GEM_TYPES, gemTierForLevel } from '../data/gems.js';
+import { GEM_TYPES, gemTierForLevel, parseGem } from '../data/gems.js';
+import { VARIANTS, rollVariant } from '../data/variants.js';
+import { MASTERY_LABEL } from '../data/masteries.js';
+import { ITEMS, itemDef, tierForLevel, WEAPON_TYPES } from '../data/items.js';
+import { ELEMENTS } from '../data/elements.js';
 import { monsterCombatant, theName, aName } from './monster.js';
-import { playerCombatant, gainXp, maxHp } from './character.js';
+import { playerCombatant, gainXp, maxHp, gemEffects, trainMastery, deathPenalty, addItem } from './character.js';
 import { resolveAttack } from './combat.js';
 import { monstersHere, respawnPoint } from './world.js';
 import { randInt, pick, clamp } from './util.js';
 
-export function startBattle(char, monsterId) {
+export const MAX_INVENTORY = 40;
+const GEM_CHANCE = 0.05;
+const RELIC_CHANCE = 1 / 350;
+
+export function startBattle(char, monsterId, rng = Math.random) {
   if (char.battle && !char.battle.over) throw new Error('You are already fighting!');
   if (!monstersHere(char).some((m) => m.id === monsterId)) throw new Error('That monster isn’t here.');
   if (char.hp <= 0) throw new Error('You are too weak to fight. Rest or visit a healer.');
-  const mon = monsterCombatant(monsterId);
-  char.battle = {
-    monsterId,
-    hp: mon.maxHp,
-    maxHp: mon.maxHp,
-    turn: 0,
-    over: null,
-    log: [{ kind: 'info', text: `You face ${aName(mon.def)}!` }],
-  };
+  const q = char.quest;
+  const boosted = q && q.zone === char.loc.zone ? q.variant : null;
+  const variant = rollVariant(rng, !!MONSTERS[monsterId].boss, boosted);
+  const mon = monsterCombatant(monsterId, variant);
+  const log = [{ kind: variant ? 'elite' : 'info', text: `You face ${aName(mon.def)}!` }];
+  if (variant) log.push({ kind: 'elite', text: VARIANTS[variant].desc });
+  char.battle = { monsterId, variant, hp: mon.maxHp, maxHp: mon.maxHp, turn: 0, over: null, log, masteryUps: {} };
   return char.battle;
 }
 
@@ -30,21 +36,41 @@ export function xpReward(monLevel, playerLevel, boss) {
   return Math.max(1, Math.round((6 + 4 * Math.pow(monLevel, 1.5)) * mult * (boss ? 5 : 1)));
 }
 
-function rollLoot(def, rng) {
-  const boss = !!def.boss;
-  const gold = randInt(rng, 2 + def.level * 3, 4 + def.level * 6) * (boss ? 5 : 1);
-  let gem = null;
-  if (rng() < (boss ? 1 : 0.05)) {
-    gem = `${pick(rng, Object.keys(GEM_TYPES))}:${gemTierForLevel(def.level)}`;
-  }
-  return { gold, gem };
+function randomGem(rng, level, bump = 0) {
+  return `${pick(rng, Object.keys(GEM_TYPES))}:${Math.min(5, gemTierForLevel(level) + bump)}`;
 }
+
+function randomRelic(rng, level) {
+  const tier = tierForLevel(level);
+  const kinds = [
+    ...Object.keys(WEAPON_TYPES).map((t) => `${t}_${tier}`),
+    ...ELEMENTS.map((e) => `focus_${e}_${tier}`),
+    `helm_${tier}`, `body_${tier}`, `boots_${tier}`,
+  ].filter((id) => ITEMS[id]);
+  return pick(rng, kinds);
+}
+
+// Rolls drops in order; at most one bonus drop (gem or relic) per kill.
+function rollLoot(def, variant, fx, rng) {
+  const v = variant ? VARIANTS[variant] : {};
+  const boss = !!def.boss;
+  let gold = randInt(rng, 2 + def.level * 3, 4 + def.level * 6) * (boss ? 5 : 1) * (v.gold || 1);
+  gold = Math.round(gold * (1 + fx.gold / 100));
+  const drop = v.drop || 1;
+  let gem = null;
+  let relic = null;
+  if (rng() < (boss ? 0.1 : RELIC_CHANCE) * drop) relic = randomRelic(rng, def.level);
+  else if (boss || rng() < GEM_CHANCE * drop) gem = randomGem(rng, def.level, boss ? 1 : 0);
+  return { gold, gem, relic };
+}
+
+const playerMastery = (player, mode) => (mode === 'melee' ? player.melee.type : player.spell.element);
 
 // mode: 'melee' | 'cast' | 'flee'
 export function battleAction(char, mode, rng = Math.random) {
   const b = char.battle;
-  if (!b || b.over) throw new Error('You are not in a fight.');
-  const mon = monsterCombatant(b.monsterId);
+  if (!b || b.over || b.pvp) throw new Error('You are not in a fight.');
+  const mon = monsterCombatant(b.monsterId, b.variant);
   const def = mon.def;
   const player = playerCombatant(char);
   const log = (kind, text) => b.log.push({ kind, text });
@@ -75,6 +101,15 @@ export function battleAction(char, mode, rng = Math.random) {
         log('player', text);
       }
     }
+    if (r.hit) {
+      b.lastMastery = playerMastery(player, mode);
+      const up = trainMastery(char, b.lastMastery, rng);
+      if (up != null) b.masteryUps[b.lastMastery] = up;
+      if (player.lifesteal > 0) {
+        const heal = Math.min(maxHp(char) - char.hp, Math.round(r.damage * player.lifesteal));
+        if (heal > 0) { char.hp += heal; log('info', `You drain ${heal} health.`); }
+      }
+    }
     b.hp = Math.max(0, b.hp - r.damage);
     if (b.hp <= 0) return victory(char, b, def, rng);
   } else {
@@ -92,6 +127,10 @@ export function battleAction(char, mode, rng = Math.random) {
   } else {
     log('monster', `${mr.crit ? 'A savage blow! ' : ''}${The} ${def.verb} you for ${mr.damage}!`);
   }
+  if (mr.hit) {
+    const up = trainMastery(char, 'armor', rng);
+    if (up != null) b.masteryUps.armor = up;
+  }
   char.hp = Math.max(0, char.hp - mr.damage);
   if (char.hp <= 0) return defeat(char, b, def);
   return b;
@@ -99,32 +138,56 @@ export function battleAction(char, mode, rng = Math.random) {
 
 function victory(char, b, def, rng) {
   b.over = 'victory';
+  const v = b.variant ? VARIANTS[b.variant] : {};
+  const fx = gemEffects(char);
   b.log.push({ kind: 'win', text: `Victory! ${theName(def, true)} has been slain!` });
-  const xp = xpReward(def.level, char.level, def.boss);
-  const loot = rollLoot(def, rng);
+  const xp = Math.round(xpReward(def.level, char.level, def.boss) * (v.xp || 1) * (1 + fx.xp / 100));
+  const loot = rollLoot(def, b.variant, fx, rng);
   char.gold += loot.gold;
   char.kills += 1;
   b.log.push({ kind: 'reward', text: `${theName(def, true)} dropped ${loot.gold} gold.` });
+
   if (loot.gem) {
     char.gems[loot.gem] = (char.gems[loot.gem] || 0) + 1;
-    b.rewardGem = loot.gem;
+    b.log.push({ kind: 'win', text: `You found a ${parseGem(loot.gem).name}!` });
   }
+  let relicName = null;
+  if (loot.relic) {
+    if (char.inventory.length < MAX_INVENTORY) {
+      const item = addItem(char, loot.relic, 'relic');
+      relicName = itemDef(item).name;
+      b.log.push({ kind: 'win', text: `A rare find: ${relicName}!` });
+    } else {
+      b.log.push({ kind: 'bad', text: 'Something rare glinted in the remains, but your pack is full.' });
+    }
+  }
+  if (v.mastery && b.lastMastery) {
+    const up = trainMastery(char, b.lastMastery, rng, v.mastery);
+    if (up != null) b.masteryUps[b.lastMastery] = up;
+  }
+  if (v.heal) {
+    char.hp = maxHp(char);
+    b.log.push({ kind: 'reward', text: 'A warm light restores your health.' });
+  }
+  for (const [m, val] of Object.entries(b.masteryUps)) {
+    b.log.push({ kind: 'reward', text: `${MASTERY_LABEL[m]} mastery is now ${val}.` });
+  }
+
   b.log.push({ kind: 'reward', text: `You gain ${xp} experience.` });
   const levels = gainXp(char, xp);
-  if (levels) b.log.push({ kind: 'win', text: `You reached level ${char.level}! Spend your points on the Hero tab.` });
-  b.rewards = { xp, gold: loot.gold, gem: loot.gem, levels };
+  if (levels) b.log.push({ kind: 'win', text: `You reached level ${char.level}!` });
+  b.rewards = { xp, gold: loot.gold, gem: loot.gem, relic: relicName, levels, variant: b.variant || null, monsterLevel: def.level };
   return b;
 }
 
 function defeat(char, b, def) {
   b.over = 'defeat';
-  const lost = Math.floor(char.gold * 0.1);
-  char.gold -= lost;
-  char.deaths += 1;
+  const { goldLost, xpLost } = deathPenalty(char);
   char.loc = respawnPoint(char);
   char.hp = Math.ceil(maxHp(char) * 0.3);
   b.log.push({ kind: 'bad', text: `You have been defeated by ${theName(def)}…` });
-  b.log.push({ kind: 'bad', text: `You wake up in town${lost ? `, ${lost} gold lighter` : ''}.` });
+  const losses = [goldLost ? `${goldLost} gold` : null, xpLost ? `${xpLost} experience` : null].filter(Boolean);
+  b.log.push({ kind: 'bad', text: `You wake up in town${losses.length ? `, having lost ${losses.join(' and ')}` : ''}. Gold in the bank is safe.` });
   return b;
 }
 

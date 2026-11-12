@@ -95,3 +95,37 @@ export function shopStock(shop) {
   }
   return ids.filter((id) => ITEMS[id]);
 }
+
+// ---- Rare drops ("relics"): stronger than shop gear, an extra socket, lower requirements.
+export const QUALITY = {
+  relic: { label: 'Relic', power: 1.2, req: 0.7, socket: 1, price: 4 },
+};
+
+// The real stats of an item instance ({ base, q }), including its quality.
+export function itemDef(item) {
+  const base = ITEMS[item.base];
+  if (!base) return null;
+  const q = item.q && QUALITY[item.q];
+  if (!q) return base;
+  const req = {};
+  for (const [s, n] of Object.entries(base.req)) req[s] = Math.round(n * q.req);
+  const def = {
+    ...base,
+    quality: item.q,
+    name: `${q.label} ${base.name}`,
+    sockets: Math.min(3, base.sockets + q.socket),
+    req,
+    price: base.price * q.price,
+  };
+  if (base.power != null) def.power = Math.round(base.power * q.power);
+  if (base.armor != null) def.armor = Math.round(base.armor * q.power);
+  def.score = Math.round(((def.power ?? def.armor * 2)) * 10 + def.sockets * 25);
+  return def;
+}
+
+// Highest shop tier appropriate for a monster level (used for rare drops).
+export function tierForLevel(level) {
+  let t = 1;
+  for (let i = 1; i <= MAX_TIER; i++) if (TIER_LEVEL[i] <= level + 2) t = i;
+  return t;
+}

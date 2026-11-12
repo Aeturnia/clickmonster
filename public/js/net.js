@@ -35,3 +35,11 @@ export async function playersAt(loc, myName) {
   if (error) throw new Error('Could not load players.');
   return data.filter((p) => p.name !== myName);
 }
+
+// Latest public announcements (quest wins, duels, rare finds).
+export async function recentEvents(limit = 12) {
+  const { data, error } = await sb.from('events').select('id, kind, text, created_at')
+    .order('created_at', { ascending: false }).limit(limit);
+  if (error) throw new Error('Could not load news.');
+  return data;
+}
