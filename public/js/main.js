@@ -10,8 +10,9 @@ import { ZONES, MONSTERS, loadZones } from './data/zones.js';
 import { parseGem, extractCost } from './data/gems.js';
 import {
   maxHp, xpToNext, totalStats, gemBonuses, totalArmor, playerCombatant,
-  applyRegen, healCost, findItem, equippedItem, meetsRequirements, NAME_RE,
+  applyRegen, healCost, findItem, equippedItem, meetsRequirements, NAME_RE, deathPenalty,
 } from './engine/character.js';
+import { ask, onConfirmClose, setConfirmFallback } from './confirm.js';
 import { currentZone, featuresAt, inTown, monstersHere, directionTo } from './engine/world.js';
 import { monsterCombatant } from './engine/monster.js';
 import { meleeChance, spellChance, meleeBase, spellBase } from './engine/combat.js';
@@ -97,6 +98,11 @@ function meter(label, cur, max, cls = '') {
     <div class="meter-track"><i style="width:${w}%"></i></div></div>`;
 }
 
+// Standard empty and loading states: a short statement, then what to do about it.
+function emptyState(title, hint = '', { loading = false } = {}) {
+  return `<div class="empty${loading ? ' loading' : ''}"${loading ? ' aria-busy="true"' : ''}><p class="empty-title">${title}</p>${hint ? `<p class="empty-hint">${hint}</p>` : ''}</div>`;
+}
+
 const DIFFICULTY = [
   [-6, 'con-gray', 'Trivial'], [-3, 'con-green', 'Easy'], [1, 'con-white', 'Even'],
   [3, 'con-yellow', 'Tough'], [6, 'con-orange', 'Hard'], [Infinity, 'con-red', 'Deadly'],
@@ -136,13 +142,23 @@ function ensureEl(id, attrs) {
 // hides them) and back on the page once it closes. One owner decides where they live;
 // it runs when they're shown, after every render, and whenever any dialog closes.
 function placeOverlays() {
-  const host = document.querySelector('dialog[open]') || document.body;
+  // The topmost open dialog (the last one opened sits last in the DOM), else the page.
+  const host = [...document.querySelectorAll('dialog[open]')].pop() || document.body;
   for (const el of [document.getElementById('toast'), document.getElementById('alerts')]) {
     if (el && el.parentNode !== host) host.appendChild(el);
   }
   return host;
 }
 for (const d of document.querySelectorAll('dialog')) d.addEventListener('close', () => { placeOverlays(); positionToast(); });
+onConfirmClose(() => { placeOverlays(); positionToast(); });
+// After a confirmation whose control was re-rendered away: inside the sheet or chat still open
+// underneath (its heading, else its first control), otherwise the screen's usual fallback.
+setConfirmFallback(() => {
+  const under = [...document.querySelectorAll('dialog[open]')].pop();
+  if (under) return under.querySelector('#sheet-title, [tabindex="-1"], button:not([disabled]), input:not([disabled])');
+  focusFallback();
+  return null;
+});
 
 // The on-screen keyboard. iOS (and Android without resizes-content) shrink only the visual
 // viewport, leaving bottom-anchored dialogs behind the keyboard. Expose the visible height and
@@ -249,17 +265,26 @@ const fighting = () => !!(char && char.battle && !char.battle.over);
 const locKey = () => `${char.loc.zone}:${char.loc.x}:${char.loc.y}`;
 
 // ---------------------------------------------------------------- HUD, tabs
+// Gold and XP changes from the last action show briefly in the HUD (decorative: the toast, battle
+// log and announcements already say it). DELTA_MS after the action they are gone.
+const DELTA_MS = 2600;
+function deltaChip(n, unit) {
+  if (!n) return '';
+  return `<span class="delta ${n > 0 ? 'up' : 'down'}" aria-hidden="true">${n > 0 ? '+' : '-'}${short(Math.abs(n))}${unit ? ` ${unit}` : ''}</span>`;
+}
+
 function viewTop() {
   if (!char) return '';
   const race = RACES[char.race];
   const gems = Object.values(char.gems).reduce((a, b) => a + b, 0);
+  const d = ui.delta && Date.now() - ui.delta.at < DELTA_MS ? ui.delta : {};
   // One line for identity and wealth, one for the meters. Race and the full numbers stay
   // available to screen readers; the Hero and Gear tabs show them in full.
   return `<div class="hud-row">
       <span class="hud-name">${esc(char.name)}<span class="sr-only">, level ${char.level} ${esc(race.name)}</span></span>
-      <span class="hud-res">${amount(char.gold, 'gold')}<span class="gems"> ${amount(gems, 'gems')}</span></span>
+      <span class="hud-res">${deltaChip(d.gold)}${amount(char.gold, 'gold')}<span class="gems"> ${amount(gems, 'gems')}</span></span>
     </div>
-    <div class="hud-bars">${meter('HP', char.hp, maxHp(char))}${meter(`Lv ${char.level}`, char.xp, xpToNext(char.level), 'xp')}</div>`;
+    <div class="hud-bars">${meter('HP', char.hp, maxHp(char))}${meter(`Lv ${char.level}${deltaChip(d.xp, 'XP')}`, char.xp, xpToNext(char.level), `xp${d.xp > 0 ? ' gain' : ''}`)}</div>`;
 }
 
 function viewNav() {
@@ -391,7 +416,7 @@ function huntRows() {
 function monsterRows() {
   const mons = monstersHere(char);
   const hunts = huntRows();
-  if (!mons.length && !hunts) return '<p class="empty">No monsters roam here.</p>';
+  if (!mons.length && !hunts) return emptyState('No monsters roam here.', 'Move on to find something to fight.');
   return `<div class="rows">${hunts}${mons.map((m) => {
     const d = difficulty(m.level);
     return `<button class="row ${m.boss ? 'boss' : ''}" data-a="fight" data-v="${m.id}">
@@ -404,8 +429,8 @@ function monsterRows() {
 
 function playerRows(zone) {
   const players = ui.playersKey === locKey() ? ui.players : null;
-  if (!players) return '<p class="empty">Looking around.</p>';
-  if (!players.length) return '<p class="empty">No other adventurers are here right now.</p>';
+  if (!players) return emptyState('Looking around', '', { loading: true });
+  if (!players.length) return emptyState('No other adventurers are here right now.', 'The list refreshes on its own every few seconds.');
   const safe = inTown(char);
   return `<div class="rows">${players.map((p) => {
     const d = difficulty(p.level);
@@ -455,9 +480,57 @@ function dockExplore() {
 }
 
 // ---------------------------------------------------------------- battle
-function logHtml(log) {
-  const firstFresh = Math.max(0, log.length - 4);
-  return log.map((l, i) => `<p class="${l.kind}${i >= firstFresh ? ' fresh' : ' older'}${i === log.length - 1 ? ' latest' : ''}">${esc(l.text)}</p>`).join('');
+// The log, grouped by turn: the lines each of your actions produced (tracked here, since the
+// server's log has no turn markers). The current turn stands out; earlier turns step back.
+// Without turn marks (after a reload) it falls back to "last few lines bright".
+function logHtml(b) {
+  const log = b.log;
+  const marks = (ui.turnLog?.marks || []).filter((m) => m.start < log.length);
+  const line = (l, i, cls) => `<p class="${l.kind} ${cls}${i === log.length - 1 ? ' latest' : ''}">${esc(l.text)}</p>`;
+  if (!marks.length) {
+    const firstFresh = Math.max(0, log.length - 4);
+    return log.map((l, i) => line(l, i, i >= firstFresh ? 'fresh' : 'older')).join('');
+  }
+  const parts = [log.slice(0, marks[0].start).map((l, i) => line(l, i, 'older')).join('')];
+  marks.forEach((m, k) => {
+    const end = k + 1 < marks.length ? marks[k + 1].start : log.length;
+    const current = k === marks.length - 1;
+    const gains = current && ui.delta?.mastery?.length && Date.now() - ui.delta.at < DELTA_MS
+      ? `<p class="turn-gain">${ui.delta.mastery.map((g) => `${esc(MASTERY_LABEL[g.m])} mastery ${g.to}`).join(', ')}</p>` : '';
+    parts.push(`<div class="turn${current ? ' current' : ''}"><p class="turn-label">${m.turn ? `Turn ${m.turn}` : 'This turn'}</p>
+      ${log.slice(m.start, end).map((l, j) => line(l, m.start + j, current ? 'fresh' : 'older')).join('')}${gains}</div>`);
+  });
+  return parts.join('');
+}
+
+// How the fight ended, and what it earned or cost, next to the latest line and the next action.
+function outcomeHtml(b) {
+  if (!b.over) return '';
+  const ups = Object.entries(b.masteryUps || {}).map(([m, v]) => `<li>${esc(MASTERY_LABEL[m])} mastery ${v}</li>`).join('');
+  if (b.over === 'victory') {
+    const r = b.rewards;
+    const gem = r?.gem && parseGem(r.gem);
+    const pvpGold = b.pvp && (b.log.find((l) => l.kind === 'reward' && /^You take/.test(l.text))?.text);
+    const items = r ? [
+      `<li class="xp">+${fmt(r.xp)} XP</li>`, `<li class="gold">+${fmt(r.gold)} gold</li>`,
+      gem ? `<li>Found ${esc(gem.name)}</li>` : '', r.relic ? `<li class="relic">Found ${esc(r.relic)}</li>` : '',
+      r.levels ? `<li class="level">Level ${char.level}!</li>` : '',
+    ].join('') : pvpGold ? `<li class="gold">${esc(pvpGold)}</li>` : '';
+    return `<div class="outcome win"><p class="outcome-title">Victory</p>${items || ups ? `<ul class="rewards" aria-label="Rewards">${items}${ups}</ul>` : ''}</div>`;
+  }
+  if (b.over === 'defeat') {
+    // The losses: the measured change in the hero, recorded when the defeat happened here.
+    // After a reload, what the closing log lines say ("having lost 120 gold and 40 experience";
+    // a duel's log names only the gold).
+    const tail = b.log.slice(-3).map((l) => l.text).join(' ');
+    const seen = ui.losses && ui.losses.first === b.log[0]?.text && ui.losses.length === b.log.length ? ui.losses : null;
+    const gold = seen ? seen.gold : Number((tail.match(/lost (\d+) gold|takes (\d+) of your gold/) || []).slice(1).find(Boolean) || 0);
+    const xp = seen ? seen.xp : Number((tail.match(/(\d+) experience/) || [])[1] || 0);
+    const losses = [gold ? `<li>Lost ${fmt(gold)} gold</li>` : '', xp ? `<li>Lost ${fmt(xp)} XP</li>` : '', /wake up in town/.test(tail) ? '<li>Back in town</li>' : ''].join('');
+    return `<div class="outcome loss"><p class="outcome-title">Defeated</p>${losses ? `<ul class="rewards losses" aria-label="Losses">${losses}</ul>` : ''}<p class="outcome-text">Gold in the bank is safe.</p></div>`;
+  }
+  if (b.over === 'fled') return '<div class="outcome neutral"><p class="outcome-title">You got away</p></div>';
+  return '';
 }
 
 function viewHuntBattle(b, you) {
@@ -467,7 +540,8 @@ function viewHuntBattle(b, you) {
         <div class="side-sub">World boss, level ${b.level}</div>
         ${meter('Shared HP', b.hp, b.maxHp, 'foe big')}</div></div>
     <div class="summary"><span>Your damage: ${fmt(b.myDamage || 0)}</span>${ended ? '' : '<span class="faint">Every hunter shares the reward</span>'}</div>
-    <div class="log" id="log" tabindex="0" role="log" aria-label="Battle log" aria-live="off">${logHtml(b.log)}</div>`;
+    <div class="log" id="log" tabindex="0" role="log" aria-label="Battle log" aria-live="off">${logHtml(b)}</div>
+    ${b.over === 'defeat' || b.over === 'fled' ? outcomeHtml(b) : ''}`;
 }
 
 function viewBattle() {
@@ -477,21 +551,17 @@ function viewBattle() {
   if (b.pvp) {
     return `<div class="versus" id="versus">${you}<div class="vs">vs</div>
         <div class="side foe" id="fx-foe"><div class="side-name">${esc(b.opponent)}</div><div class="side-sub">${b.over === 'victory' ? 'Defeated' : 'Victorious'}</div></div></div>
-      <div class="log" id="log" tabindex="0" role="log" aria-label="Battle log" aria-live="off">${logHtml(b.log)}</div>`;
+      <div class="log" id="log" tabindex="0" role="log" aria-label="Battle log" aria-live="off">${logHtml(b)}</div>
+      ${outcomeHtml(b)}`;
   }
   const mon = monsterCombatant(b.monsterId, b.variant);
   const d = difficulty(mon.level);
-  const r = b.rewards;
-  const gem = r?.gem && parseGem(r.gem);
-  const summary = b.over === 'victory' && r ? `<div class="summary">
-      <span>+${fmt(r.xp)} XP</span><span>+${fmt(r.gold)} gold</span>${gem ? `<span class="gem">Found ${esc(gem.name)}</span>` : ''}${r.relic ? `<span class="gem">Found ${esc(r.relic)}</span>` : ''}${r.levels ? `<span class="gem">Level ${char.level}!</span>` : ''}
-    </div>` : '';
   return `<div class="versus" id="versus">${you}<div class="vs">vs</div>
       <div class="side foe" id="fx-foe"><div class="side-name${b.variant ? ' elite-name' : ''}">${esc(mon.name)}</div>
         <div class="side-sub"><span class="${d.cls}">Lv ${mon.level} ${d.word}</span>${mon.element ? `, ${ELEMENT_LABEL[mon.element]}` : ''}</div>
         ${meter('HP', b.hp, b.maxHp, 'foe big')}</div></div>
-    <div class="log" id="log" tabindex="0" role="log" aria-label="Battle log" aria-live="off">${logHtml(b.log)}</div>
-    ${summary}`;
+    <div class="log" id="log" tabindex="0" role="log" aria-label="Battle log" aria-live="off">${logHtml(b)}</div>
+    ${outcomeHtml(b)}`;
 }
 
 function dockBattle() {
@@ -523,7 +593,7 @@ function dockBattle() {
   if (b.over === 'victory' && !b.pvp) {
     const stillHere = monstersHere(char).some((m) => m.id === b.monsterId);
     return `<div class="dock-battle">
-      ${btn('again', null, 'Fight again', 'big primary wide', !stillHere)}
+      ${btn('again', null, stillHere ? 'Fight again' : 'Fight again<small>None left here</small>', 'big primary wide', !stillHere)}
       ${btn('done', null, 'Continue', 'wide flee ghost')}
     </div>`;
   }
@@ -609,10 +679,10 @@ function viewGear() {
     <h3 style="margin-top:0">Equipped</h3>
     <div class="rows">${equipped}</div>
     <h3>Pack (${pack.length})</h3>
-    ${pack.length ? `<div class="rows">${pack.map((i) => itemRow(i)).join('')}</div>` : '<p class="empty">Your pack is empty. Town shops sell gear.</p>'}
+    ${pack.length ? `<div class="rows">${pack.map((i) => itemRow(i)).join('')}</div>` : emptyState('Your pack is empty.', 'Town shops sell gear, and monsters sometimes drop it.')}
     <h3>Gems</h3>
     ${gems.length ? `<div class="rows">${gems.map((g) => `<div class="row static"><span class="nm">${gemText(g.key)}</span><span class="go">x${g.n}</span></div>`).join('')}</div>`
-      : '<p class="empty">Monsters sometimes drop gems, and bosses always do. Socket them into gear for stat bonuses.</p>'}`;
+      : emptyState('No gems yet.', 'Monsters sometimes drop gems, and bosses always do. Socket them into gear for stat bonuses.')}`;
 }
 
 // ---------------------------------------------------------------- map
@@ -777,7 +847,7 @@ function sheetShop() {
       ${slots.map((s) => `<button class="chip ${s === ui.shopSlot ? 'on' : ''}" data-a="shopslot" data-v="${s}" aria-pressed="${s === ui.shopSlot}">${SLOT_LABEL[s]}</button>`).join('')}
       <button class="chip ${ui.usableOnly ? 'on' : ''}" data-a="usable" aria-pressed="${ui.usableOnly}">Usable only</button>
     </div>
-    ${wares || '<p class="empty">Nothing here you can use yet.</p>'}
+    ${wares || emptyState('Nothing here you can use yet.', 'Try another slot, or turn off Usable only.')}
   </div>`;
 }
 
@@ -824,8 +894,8 @@ function sheetQuests() {
   const cooldown = !q && (char.questCooldownUntil || 0) > now
     ? `<p class="small muted">You can take another quest in ${timeLeft(char.questCooldownUntil - now)}.</p>` : '';
   const board = ui.questBoard;
-  const list = !board ? '<p class="empty">Reading the board.</p>'
-    : !board.length ? '<p class="empty">The board is empty. New quests are posted every hour.</p>'
+  const list = !board ? emptyState('Reading the board', '', { loading: true })
+    : !board.length ? emptyState('The board is empty.', 'New quests are posted every hour.')
     : `<div class="rows">${[...board].sort((x, y) => (canAccept(char, y, now).ok - canAccept(char, x, now).ok) || (x.minLevel - y.minLevel)).map((b) => {
       const mine = q && q.id === b.id;
       const check = canAccept(char, b, now);
@@ -991,6 +1061,7 @@ function render() {
   syncSheet(viewSheet());
   renderAlerts(); // also re-homes the toast if a dialog just closed
   positionToast();
+  markPending();
 
   const viewKey = `${ui.phase}:${!!char}:${ui.tab}:${!!char?.battle}`;
   const viewChanged = viewKey !== lastView;
@@ -1005,6 +1076,53 @@ function render() {
   }
   const log = $('#log');
   if (log && changed) log.scrollTop = log.scrollHeight;
+}
+
+// After an action: turn boundaries for the battle log, and the gold, XP and mastery changes.
+function trackChanges(action, before) {
+  const b = char?.battle;
+  if (!b || ['fight', 'again', 'hunt', 'attack'].includes(action)) ui.turnLog = { marks: [] };
+  if (b && before && ['melee', 'cast', 'flee'].includes(action) && b.log.length > before.battleLog) {
+    ui.turnLog ||= { marks: [] }; // e.g. a fight resumed after reloading the page
+    ui.turnLog.marks.push({ start: before.battleLog, turn: b.turn });
+  }
+  if (!char || !before) return;
+  // A defeat's real cost, from the hero before and after (a duel's log names the gold but not
+  // the experience). Kept with the battle it belongs to.
+  if (b?.over === 'defeat' && ['melee', 'cast', 'flee', 'attack'].includes(action)) {
+    ui.losses = {
+      first: b.log[0]?.text, length: b.log.length,
+      gold: Math.max(0, before.gold - char.gold),
+      xp: char.level === before.level ? Math.max(0, before.xp - char.xp) : 0,
+    };
+  }
+  const gold = char.gold - before.gold;
+  // XP gained: across a level-up the bar restarts, so take the reward when there is one.
+  const xp = char.level > before.level ? (b?.rewards?.xp || 0) : char.xp - before.xp;
+  const mastery = Object.keys(char.masteries || {}).filter((m) => (char.masteries[m] || 0) > (before.masteries[m] || 0)).map((m) => ({ m, to: char.masteries[m] }));
+  if (!gold && !xp && !mastery.length) return;
+  ui.delta = { gold, xp: Math.max(0, xp), mastery, at: Date.now() };
+  clearTimeout(ui.deltaTimer);
+  ui.deltaTimer = setTimeout(render, DELTA_MS + 50);
+}
+
+// ---------------------------------------------------------------- interaction states
+// One pending pattern: the pressed control gets .pending and aria-busy, and #app gets data-busy.
+function markPending() {
+  for (const old of document.querySelectorAll('.pending[aria-busy]')) { old.classList.remove('pending'); old.removeAttribute('aria-busy'); }
+  const app = document.getElementById('app');
+  if (ui.busy) app.dataset.busy = ''; else delete app.dataset.busy;
+  if (!ui.busy || !ui.pendingKey) return;
+  const el = document.querySelector(ui.pendingKey);
+  if (el) { el.classList.add('pending'); el.setAttribute('aria-busy', 'true'); }
+}
+
+// A tap that was not acted on: nudge the control and say why (politely, via the toast).
+function refuse(el, why) {
+  retrigger(el, 'refused');
+  setTimeout(() => el.classList.remove('refused'), 400);
+  buzz(15);
+  toast(why, 'info');
 }
 
 // ---------------------------------------------------------------- battle feedback
@@ -1104,7 +1222,7 @@ function handleLocal(a, v) {
 }
 
 // Actions the server performs: [action, args, successMessage?], or null to cancel.
-function remoteCall(a, v) {
+async function remoteCall(a, v) {
   switch (a) {
     case 'create': {
       const name = ($('#name')?.value || '').trim().replace(/\s+/g, ' ');
@@ -1126,7 +1244,23 @@ function remoteCall(a, v) {
     case 'unequip': return ['unequip', { slot: v }];
     case 'socket': return ['socket', { uid: ui.sheet.uid, gem: v }, `Socketed ${parseGem(v).name}.`];
     case 'extract': return ['extract', { uid: ui.sheet.uid, index: Number(v) }, 'The jeweler extracts the gem.'];
-    case 'sell': return ['sell', { uid: Number(v) }, 'Sold.'];
+    case 'sell': {
+      const item = findItem(char, Number(v));
+      const base = item && itemDef(item);
+      // Selling is a trade at the price on the button; it only asks first when it also destroys gems.
+      if (item?.gems?.length) {
+        const ok = await ask({
+          title: `Sell ${base.name} for ${fmt(sellPrice(item))} gold?`,
+          points: [
+            `The ${item.gems.length === 1 ? 'gem' : `${item.gems.length} gems`} in it (${item.gems.map((g) => parseGem(g)?.name || g).join(', ')}) will be destroyed.`,
+            `To keep ${item.gems.length === 1 ? 'it, extract it' : 'them, extract them'} at the jeweler first (there is a fee).`,
+          ],
+          confirm: 'Sell and destroy gems', cancel: 'Keep it',
+        });
+        if (!ok) return null;
+      }
+      return ['sell', { uid: Number(v) }, 'Sold.'];
+    }
     case 'deposit': case 'withdraw': {
       const amount = v === 'all' ? 'all' : ($('#amount')?.value || '').trim();
       if (v !== 'all' && !/^\d+$/.test(amount)) { ui.bankError = 'Enter an amount of gold as a whole number.'; render(); $('#amount')?.focus(); return null; }
@@ -1134,28 +1268,65 @@ function remoteCall(a, v) {
       return [a, { amount }, a === 'deposit' ? 'Deposited.' : 'Withdrawn.'];
     }
     case 'accept': return ['accept', { questId: v }, 'Quest accepted. Good hunting.'];
-    case 'abandon': return confirm('Abandon your quest?') ? ['abandon', {}, 'Quest abandoned.'] : null;
+    case 'abandon': {
+      const q = char.quest;
+      const ok = q && await ask({
+        title: 'Abandon your quest?',
+        lead: questTitle(q),
+        points: [`You give up the reward: ${rewardText(q.reward)}.`, 'You can take a quest again at the board in town.'],
+        confirm: 'Abandon quest', cancel: 'Keep quest',
+      });
+      return ok ? ['abandon', {}, 'Quest abandoned.'] : null;
+    }
     case 'level': return ['level', { stat: v }, v === 'all' ? 'Every stat increased.' : `${STAT_LABEL[v]} increased.`];
-    case 'attack': return confirm('Attack this player? The loser drops 10% of their gold.') ? ['attack', { targetId: v }] : null;
-    case 'delete': return confirm(`Delete ${char.name} forever? This cannot be undone.`) ? ['delete', {}, 'Your hero is gone.'] : null;
+    case 'attack': {
+      const target = (ui.players || []).find((p) => p.id === v);
+      // What losing would cost, worked out by the same rule the server applies.
+      const { goldLost, xpLost } = deathPenalty(structuredClone(char));
+      const ok = await ask({
+        title: `Attack ${target ? target.name : 'this player'}?`,
+        lead: 'The duel is fought to the end in one go; you can\'t flee.',
+        points: [
+          `If you lose, you drop ${goldLost ? `all ${fmt(goldLost)} gold you carry` : 'any gold you carry'}${xpLost ? `, lose ${fmt(xpLost)} experience` : ''} and wake up in town.`,
+          'If you win, you take the gold they carry.',
+          'Gold in the bank is safe either way.',
+        ],
+        confirm: 'Attack', cancel: 'Not now',
+      });
+      return ok ? ['attack', { targetId: v }] : null;
+    }
+    case 'delete': {
+      const ok = await ask({
+        title: `Delete ${char.name}?`,
+        points: [
+          `${char.name}, with all their gear, gems, gold (carried and banked) and progress, is deleted.`,
+          'This cannot be undone.',
+        ],
+        typeToConfirm: char.name, confirm: 'Delete forever', cancel: 'Keep my hero',
+      });
+      return ok ? ['delete', {}, 'Your hero is gone.'] : null;
+    }
     default: return null;
   }
 }
 
 async function runRemote(a, v, el) {
-  const call = remoteCall(a, v);
+  const call = await remoteCall(a, v);
   if (!call) return;
   const [action, args, msg] = call;
   const before = char && {
-    loc: locKey(), zone: char.loc.zone,
+    loc: locKey(), zone: char.loc.zone, gold: char.gold, xp: char.xp, level: char.level, masteries: { ...char.masteries },
     battleLog: char.battle && !char.battle.pvp ? char.battle.log.length : 0,
     battleId: char.battle?.monsterId,
   };
   ui.busy = true;
-  el?.classList.add('pending');
+  // Pending: remembered by key so it survives re-renders (regeneration ticks every second).
+  ui.pendingKey = el ? focusKey(el) : null;
+  markPending();
   try {
     const res = await api(action, args);
     char = res.char;
+    trackChanges(action, before);
     if ('sanctions' in res) ui.sanctions = res.sanctions;
     resolveErrors(action);
     if (action === 'create') ui.createError = null;
@@ -1178,7 +1349,8 @@ async function runRemote(a, v, el) {
     if (err.status === 401) await sb.auth.signOut();
   } finally {
     ui.busy = false;
-    el?.classList.remove('pending');
+    ui.pendingKey = null;
+    markPending();
   }
   render();
   // Battle feedback for the new log lines.
@@ -1202,10 +1374,12 @@ document.addEventListener('click', async (e) => {
   const a = el.dataset.a;
   if (a === 'signout') { await sb.auth.signOut(); return; }
   if (handleLocal(a, el.dataset.v)) { render(); return; }
-  if (ui.busy) return;
+  if (el.getAttribute('aria-disabled') === 'true') return;
+  // Taps that are not acted on say so, instead of being silently dropped.
+  if (ui.busy) { refuse(el, 'Still working on your last action.'); return; }
   if (BATTLE_ACTIONS.has(a)) {
     const now = Date.now();
-    if (now < ui.nextActionAt) return; // guard against accidental double taps
+    if (now < ui.nextActionAt) { refuse(el, 'Second tap ignored, so you only acted once.'); return; } // accidental double tap
     ui.nextActionAt = now + 250;
   }
   await runRemote(a, el.dataset.v, el);

@@ -108,8 +108,18 @@ p { margin: 0 0 8px; }
 .btn.sm { min-height: 38px; padding: 6px 12px; font-size: 0.875rem; }
 .btn.block { width: 100%; }
 .btn small { font-size: 0.75rem; font-weight: 500; opacity: .75; margin-top: 2px; }
-.btn.pending { animation: pending .8s ease-in-out infinite; }
-@keyframes pending { 50% { opacity: .55; } }
+/* Pending: the pressed control keeps full-contrast text and gains a running bar along its bottom
+   edge (a still bar with reduced motion). It carries aria-busy="true" while the server works. */
+.btn.pending, .row.pending, .map button.pending { position: relative; overflow: hidden; cursor: progress; }
+.btn.pending::after, .row.pending::after, .map button.pending::after {
+  content: ''; position: absolute; left: 0; bottom: 0; height: 3px; width: 40%;
+  background: currentColor; border-radius: 2px; animation: pending-run 1s ease-in-out infinite alternate;
+}
+@keyframes pending-run { from { transform: translateX(-20%); } to { transform: translateX(170%); } }
+#app[data-busy] { cursor: progress; }
+/* Refused: a tap that was not acted on (already working, or a double tap) nudges the control. */
+.refused { animation: refused .3s ease-in-out; }
+@keyframes refused { 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
 .textbtn { appearance: none; background: none; border: 0; padding: 6px 0; color: var(--gold); font-weight: 600; cursor: pointer; }
 
 /* ---------------------------------------------------------------- HUD */
@@ -174,7 +184,6 @@ p { margin: 0 0 8px; }
 .row.static:active { background: none; }
 .con-gray { color: #a0a0a0; } .con-green { color: #79c27d; } .con-white { color: #ede4d4; }
 .con-yellow { color: #e6c845; } .con-orange { color: #ee913e; } .con-red { color: #f05d4e; }
-.empty { color: var(--muted); padding: 14px 0; }
 
 /* ---------------------------------------------------------------- dock */
 .dock-explore { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; }
@@ -336,17 +345,20 @@ dialog#sheet .panel, dialog#sheet { max-height: min(90dvh, calc(var(--vvh, 100dv
 
 #toast {
   position: fixed; left: 50%; top: calc(74px + env(safe-area-inset-top)); z-index: 30;
-  transform: translate(-50%, -8px); opacity: 0; pointer-events: none;
+  /* Shown and hidden without fading: text at partial opacity fails contrast (and axe catches it). */
+  transform: translate(-50%, -8px); visibility: hidden; pointer-events: none;
   background: #33281a; border: 1px solid var(--gold); color: var(--text);
   padding: 9px 16px; border-radius: 10px; max-width: calc(100% - 32px); text-align: center; font-size: 0.9375rem;
-  transition: opacity .2s, transform .2s;
+  transition: transform .2s;
 }
-#toast.show { opacity: 1; transform: translate(-50%, 0); }
+#toast.show { visibility: visible; transform: translate(-50%, 0); }
 #toast.bad { border-color: var(--bad); background: #3a1d19; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
   .float { animation: fade .8s forwards !important; animation-duration: .8s !important; }
+  .btn.pending::after, .row.pending::after, .map button.pending::after { left: 0; width: 100%; opacity: .7; animation: none !important; }
+  .refused { animation: none !important; outline: 2px dashed var(--warn); outline-offset: 2px; }
   @keyframes fade { to { opacity: 0; } }
 }
 
@@ -503,3 +515,79 @@ input[aria-invalid="true"] { border-color: var(--bad) !important; }
   #main > * { max-width: 760px; }
   #main.fill > * { max-width: none; }
 }
+
+/* ---------------------------------------------------------------- confirmations (Phase 3) */
+/* A centred card in the visible area (above an on-screen keyboard), on every screen size. */
+dialog.confirm {
+  padding: 0; border: 0; background: transparent; color: inherit;
+  inset: 0 0 var(--kb, 0px) 0; margin: auto; width: calc(100% - 2 * var(--gutter, 16px)); max-width: 420px;
+  max-height: calc(var(--vvh, 100dvh) - 16px); overflow: visible;
+}
+dialog.confirm::backdrop { background: rgba(0, 0, 0, .65); }
+.confirm-card {
+  max-height: calc(var(--vvh, 100dvh) - 16px); overflow-y: auto;
+  background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--radius);
+  padding: 18px 18px 16px; box-shadow: 0 16px 48px rgba(0, 0, 0, .6); animation: confirm-in .16s ease-out;
+}
+dialog.confirm[data-tone="danger"] .confirm-card { border-top: 3px solid var(--bad); }
+.confirm-card h2 { margin-bottom: 10px; overflow-wrap: anywhere; }
+.confirm-card p { margin: 0 0 8px; }
+.consequences { margin: 0 0 12px; padding-left: 1.2em; font-size: var(--fs-base-sm, 0.9375rem); }
+.consequences li { margin: 0 0 6px; }
+label.field.confirm-field { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 14px; font-size: 0.875rem; font-weight: 600; color: var(--muted); text-transform: none; letter-spacing: normal; }
+.confirm-field b { color: var(--text); }
+.confirm-field input {
+  font: inherit; font-size: 1rem; color: var(--text); background: #0d0a08; min-height: 44px;
+  border: 1px solid var(--line-strong); border-radius: 10px; padding: 10px 12px;
+}
+.confirm-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.confirm-actions .btn { flex: 1 1 8rem; }
+.btn.danger-solid { background: #a8322a; border-color: #a8322a; color: #fff; }
+.btn.danger-solid:disabled { opacity: .5; }
+@keyframes confirm-in { from { transform: scale(.97) translateY(6px); } }
+
+/* ---------------------------------------------------------------- states (Phase 3) */
+/* Empty: what is (not) here, then what to do about it. Loading: the same box, marked busy. */
+.empty { padding: 16px 0; color: var(--muted); }
+.empty .empty-title { margin: 0 0 4px; color: var(--text); font-weight: 600; }
+.empty .empty-hint { margin: 0; font-size: 0.875rem; }
+.loading .empty-title::after { content: ''; display: inline-block; width: 1.2em; text-align: left; animation: dots 1.2s steps(4) infinite; }
+@keyframes dots { 0% { content: ''; } 25% { content: '.'; } 50% { content: '..'; } 75% { content: '...'; } }
+@media (prefers-reduced-motion: reduce) { .loading .empty-title::after { content: '...'; animation: none !important; } }
+/* Toast kinds: success (gold), info (neutral, e.g. a refused tap); errors use the persistent alerts. */
+#toast.info { border-color: var(--line-strong); background: var(--surface-2); }
+
+/* ---------------------------------------------------------------- battle turns and outcome (Phase 3) */
+.log .turn { margin: 4px 0 8px; }
+.log .turn-label { margin: 0 0 4px; padding: 0; border: 0; font-size: 0.6875rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); }
+.log .turn.current { background: var(--surface); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; border-left: 3px solid var(--gold); padding: 6px 8px 2px 0; }
+.log .turn.current .turn-label { color: var(--gold-soft); padding-left: 10px; }
+.log .turn.current p.latest { border-left-color: transparent; }
+.log .turn-gain { margin: 2px 0 6px; padding-left: 10px; font-size: 0.8125rem; font-weight: 600; color: #a7e3ab; }
+
+.outcome { flex: none; margin-top: 6px; padding: 10px 12px; border-radius: var(--radius-sm); background: var(--surface); border-left: 4px solid var(--line-strong); }
+.outcome.win { border-left-color: var(--gold); }
+.outcome.loss { border-left-color: var(--bad); }
+.outcome-title { margin: 0; font-family: Georgia, "Times New Roman", serif; font-size: 1.125rem; font-weight: 600; }
+.outcome.win .outcome-title { color: var(--gold-soft); }
+.outcome.loss .outcome-title { color: var(--bad); }
+.outcome-text { margin: 4px 0 0; font-size: 0.875rem; }
+.rewards { list-style: none; display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 0; padding: 0; }
+.rewards li { font-size: 0.8125rem; font-weight: 700; padding: 3px 9px; border-radius: 99px; border: 1px solid var(--line-strong); color: var(--text); background: var(--surface-2); }
+.rewards .xp { color: #b9cdea; }
+.rewards .gold { color: var(--gold); }
+.rewards .relic, .rewards .level { color: #f0c04c; border-color: #6a5420; }
+
+/* HUD change cues: a short rise-and-fade chip; with reduced motion it just sits there, then goes. */
+.delta { display: inline-block; margin-right: 6px; font-size: 0.75rem; font-weight: 700; font-variant-numeric: tabular-nums; animation: delta .35s ease-out; }
+.delta.up { color: #a7e3ab; }
+.delta.down { color: var(--muted); }
+.meter-label .delta { margin: 0 0 0 6px; }
+@keyframes delta { from { transform: translateY(5px); } to { transform: none; } } /* no fading: full contrast throughout; it is removed after DELTA_MS */
+.meter.xp.gain .meter-track { animation: xp-glow 1.2s ease-out; }
+@keyframes xp-glow { 0%, 60% { box-shadow: 0 0 0 1px var(--xp), 0 0 8px var(--xp); } 100% { box-shadow: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .delta { animation: none !important; }
+  .meter.xp.gain .meter-track { animation: none !important; box-shadow: 0 0 0 1px var(--xp); }
+}
+.rewards.losses li { color: #f19a8c; border-color: #7d3a31; }

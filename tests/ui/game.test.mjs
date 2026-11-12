@@ -363,7 +363,8 @@ test('success message shown in chat stays visible after chat closes', async () =
   const { page } = ctx;
   await page.click('.chatbar'); await page.waitForSelector('#chat[open]');
   await page.click('.chat-line[data-v="2"]');
-  await page.click('.chat-menu [data-c="ignore"]'); // confirm() is accepted by the harness
+  await page.click('.chat-menu [data-c="ignore"]');
+  await page.click('#confirm [data-r="ok"]'); // the styled confirmation (Phase 3)
   await page.waitForFunction(() => /Ignoring/.test(document.getElementById('toast')?.textContent || ''));
   await page.keyboard.press('Escape'); await settle(page);
   await page.keyboard.press('Escape'); await settle(page);

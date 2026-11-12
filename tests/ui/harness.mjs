@@ -18,6 +18,7 @@ import { startBattle, battleAction } from '../../public/js/engine/battle.js';
 import { buy, buyAndEquip, sell, equip, unequip, socketGem, extractGem, deposit, withdraw } from '../../public/js/engine/inventory.js';
 import { generateQuests, accept, hourBucket } from '../../public/js/engine/quests.js';
 import { canSend } from '../../public/js/engine/chat.js';
+import { duel } from '../../public/js/engine/pvp.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const PUBLIC = path.resolve(ROOT, process.env.UI_PUBLIC_DIR || 'public');
@@ -83,7 +84,7 @@ function fakeJwt(sub, email) {
 
 // ---------------------------------------------------------------- fake backend
 export class FakeBackend {
-  constructor({ hero = makeHero(), players = [], chat = [], events = [], seed = 7, zones = [] } = {}) {
+  constructor({ hero = makeHero(), players = [], chat = [], events = [], seed = 7, zones = [], quests = null } = {}) {
     this.zoneDefs = [...DEFAULT_ZONES, ...zones];
     loadZones(this.zoneDefs);
     this.rng = seeded(seed);
@@ -96,12 +97,21 @@ export class FakeBackend {
     this.unexpected = [];
     this.calls = [];
     this.failures = []; // { action, status, message, once }
+    this.holds = {}; // action -> promise: requests for it wait until released
     this.offline = false;
     this.sockets = [];
-    this.quests = generateQuests(hourBucket()).map((q, i) => ({ ...q, id: `quest-${i}`, completedBy: null }));
+    // The real board depends on the hour; tests that need a quest pass a fixed one (fixedQuest()).
+    this.quests = quests || generateQuests(hourBucket()).map((q, i) => ({ ...q, id: `quest-${i}`, completedBy: null }));
   }
 
   failNext(action, status, message) { this.failures.push({ action, status, message }); }
+
+  // Keep requests for an action waiting (a slow server) until the returned function is called.
+  hold(action) {
+    let release;
+    this.holds[action] = new Promise((r) => { release = r; });
+    return () => { delete this.holds[action]; release(); };
+  }
 
   userFor(token) {
     try {
@@ -129,6 +139,7 @@ export class FakeBackend {
       return { char: c };
     }
     if (action === 'quests') return { quests: this.quests };
+    if (action === 'delete') { delete this.heroes[id]; return { char: null }; }
     const c = this.heroes[id];
     if (!c) throw Object.assign(new Error('Create a hero first.'), { status: 404 });
     const rng = this.rng;
@@ -143,6 +154,16 @@ export class FakeBackend {
       socket: () => socketGem(c, Number(args.uid), args.gem), extract: () => extractGem(c, Number(args.uid), Number(args.index)),
       level: () => spendLevel(c, args.stat), deposit: () => deposit(c, args.amount), withdraw: () => withdraw(c, args.amount),
       dismiss: () => { c.notices = []; }, abandon: () => { c.quest = null; },
+      // A duel against another player, built as a full hero from their public row.
+      attack: () => {
+        const p = this.players.find((x) => x.id === args.targetId);
+        if (!p) throw Object.assign(new Error('They are no longer here.'), { status: 400 });
+        const t = createCharacter(p.name, p.race, now);
+        t.level = p.level; t.loc = { zone: p.zone, x: p.x, y: p.y }; t.gold = p.gold ?? 500;
+        if (p.stats) Object.assign(t.stats, p.stats); // a test can make the opponent stronger
+        t.hp = maxHp(t);
+        duel(c, t, rng);
+      },
       accept: () => accept(c, this.quests.find((q) => q.id === args.questId), now),
       chat: () => {
         const check = canSend(c.level, args.text, null, now);
@@ -263,6 +284,7 @@ export async function attach(context, backend, baseUrl) {
         const fnName = p.split('/').pop();
         const body = JSON.parse(req.postData() || '{}');
         backend.calls.push({ fn: fnName, action: body.action, args: body.args });
+        if (backend.holds[body.action]) await backend.holds[body.action];
         const fail = backend.failures.findIndex((f) => f.action === body.action);
         if (fail >= 0) {
           const f = backend.failures.splice(fail, 1)[0];
@@ -305,7 +327,10 @@ export async function attach(context, backend, baseUrl) {
       push(table, type, record) {
         for (const b of bindings) {
           if (b.table !== table || (b.event !== '*' && b.event !== type)) continue;
-          const payload = { data: { type, table, schema: 'public', record, columns: [], commit_timestamp: new Date().toISOString(), errors: null }, ids: [b.id] };
+          // Like Supabase, updates and deletes also carry the old row (at least its key).
+          const data = { type, table, schema: 'public', record, columns: [], commit_timestamp: new Date().toISOString(), errors: null };
+          if (type !== 'INSERT') data.old_record = { id: record.id };
+          const payload = { data, ids: [b.id] };
           ws.send(frame(b.joinRef, null, b.topic, 'postgres_changes', payload));
         }
       },
@@ -344,7 +369,9 @@ export async function setup() {
       const page = await context.newPage();
       page.errors = [];
       page.on('pageerror', (e) => page.errors.push(e.message));
-      page.on('dialog', (d) => d.accept());
+      // Native confirm()/prompt()/alert() are recorded (Phase 3 replaces them; tests assert none appear).
+      page.nativeDialogs = [];
+      page.on('dialog', (d) => { page.nativeDialogs.push({ type: d.type(), message: d.message() }); d.accept(); });
       return { page, context, backend };
     },
     async close() { await browser.close(); server.close(); },
@@ -455,3 +482,11 @@ export const PAGE_METRICS = () => {
     hOverflow: document.documentElement.scrollWidth > innerWidth + 1,
   };
 };
+
+// A quest the default test hero (level 12, in Bramblebrook) can always take, whatever the hour.
+export function fixedQuest() {
+  return {
+    id: 'quest-fixed', bucket: hourBucket(), slot: 0, zone: 'bramblebrook', variant: 'blessed', minLevel: 8, maxLevel: 14,
+    reward: { xp: 120, gold: 300, gem: null, kind: 'gold' }, expiresAt: Date.now() + 3600000, completedBy: null,
+  };
+}

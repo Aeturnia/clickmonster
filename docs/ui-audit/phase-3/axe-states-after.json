@@ -1,0 +1,158 @@
+[
+ {
+  "width": 320,
+  "screen": "battle-turns",
+  "violations": [],
+  "native": []
+ },
+ {
+  "width": 320,
+  "screen": "pending",
+  "violations": [],
+  "native": []
+ },
+ {
+  "width": 320,
+  "screen": "refused-while-busy",
+  "violations": [],
+  "native": []
+ },
+ {
+  "width": 320,
+  "screen": "double-tap",
+  "violations": [],
+  "native": []
+ },
+ {
+  "width": 320,
+  "screen": "battle-defeat",
+  "violations": [],
+  "native": []
+ },
+ {
+  "width": 320,
+  "screen": "battle-victory",
+  "violations": [],
+  "native": []
+ },
+ {
+  "width": 320,
+  "screen": "empty-players",
+  "violations": [],
+  "native": []
+ },
+ {
+  "width": 320,
+  "screen": "confirm-delete-hero",
+  "violations": [],
+  "native": []
+ },
+ {
+  "width": 320,
+  "screen": "confirm-attack",
+  "violations": [],
+  "native": []
+ },
+ {
+  "width": 320,
+  "screen": "confirm-abandon-quest",
+  "violations": [],
+  "native": []
+ },
+ {
+  "width": 320,
+  "screen": "confirm-sell-gems",
+  "violations": [],
+  "native": []
+ },
+ {
+  "width": 320,
+  "screen": "confirm-chat-report",
+  "violations": [],
+  "native": []
+ },
+ {
+  "width": 320,
+  "screen": "admin-confirm-ban",
+  "violations": [],
+  "native": []
+ },
+ {
+  "width": 390,
+  "screen": "battle-turns",
+  "violations": [],
+  "native": []
+ },
+ {
+  "width": 390,
+  "screen": "pending",
+  "violations": [],
+  "native": []
+ },
+ {
+  "width": 390,
+  "screen": "refused-while-busy",
+  "violations": [],
+  "native": []
+ },
+ {
+  "width": 390,
+  "screen": "double-tap",
+  "violations": [],
+  "native": []
+ },
+ {
+  "width": 390,
+  "screen": "battle-defeat",
+  "violations": [],
+  "native": []
+ },
+ {
+  "width": 390,
+  "screen": "battle-victory",
+  "violations": [],
+  "native": []
+ },
+ {
+  "width": 390,
+  "screen": "empty-players",
+  "violations": [],
+  "native": []
+ },
+ {
+  "width": 390,
+  "screen": "confirm-delete-hero",
+  "violations": [],
+  "native": []
+ },
+ {
+  "width": 390,
+  "screen": "confirm-attack",
+  "violations": [],
+  "native": []
+ },
+ {
+  "width": 390,
+  "screen": "confirm-abandon-quest",
+  "violations": [],
+  "native": []
+ },
+ {
+  "width": 390,
+  "screen": "confirm-sell-gems",
+  "violations": [],
+  "native": []
+ },
+ {
+  "width": 390,
+  "screen": "confirm-chat-report",
+  "violations": [],
+  "native": []
+ },
+ {
+  "width": 390,
+  "screen": "admin-confirm-ban",
+  "violations": [],
+  "native": []
+ }
+]

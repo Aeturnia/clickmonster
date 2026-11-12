@@ -1,9 +1,10 @@
 // Zone editor for the admin console. Edits a working copy of a zone definition, shows a
 // live map preview and validation, and saves through the `admin` edge function.
 import { ZONES, ZONE_DEFS, DEFAULT_ZONES, OVERWORLD_ID, compileZone, loadZones } from './data/zones.js';
-import { validateZone, blankZone, ARCHETYPES, MAX_MONSTERS } from './engine/zone-validate.js';
+import { validateZone, blankZone, deleteBlockers, ARCHETYPES, MAX_MONSTERS } from './engine/zone-validate.js';
 import { ELEMENTS, ELEMENT_LABEL } from './data/elements.js';
 import { WEAPON_TYPES, MAX_TIER } from './data/items.js';
+import { ask } from './confirm.js';
 
 export function setupZones({ st, call, toast, render, esc, isAdmin }) {
   const clone = (o) => JSON.parse(JSON.stringify(o));
@@ -251,7 +252,14 @@ export function setupZones({ st, call, toast, render, esc, isAdmin }) {
         return true;
       }
       case 'zoneDelete': {
-        if (!confirm(`Delete ${d.name}? Heroes there will be moved somewhere safe. This can’t be undone (the definition is kept in the audit log).`)) return true;
+        // Don't ask about a delete the server would refuse (it checks again anyway).
+        const blockers = deleteBlockers(ed.originalId, ZONE_DEFS);
+        if (blockers.length) { toast(`${d.name} can’t be deleted. ${blockers.join(' ')}`, true); return true; }
+        if (!await ask({
+          title: `Delete ${d.name}?`,
+          points: ['Heroes in it are moved to a safe place the next time they act.', 'Any active world-boss hunt in it is cancelled.', 'This can’t be undone here; the definition is kept in the audit log.'],
+          typeToConfirm: d.name, confirm: 'Delete zone', cancel: 'Keep zone',
+        })) return true;
         try {
           const res = await call('deleteZone', { id: ed.originalId });
           st.zones = res.zones;
@@ -263,7 +271,11 @@ export function setupZones({ st, call, toast, render, esc, isAdmin }) {
         return true;
       }
       case 'zoneReset': {
-        if (!confirm(`Restore the built-in version of ${d.name}? Your edits to it will be replaced (the old version is kept in the audit log).`)) return true;
+        if (!await ask({
+          title: `Restore the built-in ${d.name}?`,
+          points: ['Your edits to it are replaced by the original version.', 'The edited version is kept in the audit log.'],
+          confirm: 'Restore built-in version', cancel: 'Keep my edits',
+        })) return true;
         try {
           const res = await call('resetZone', { id: ed.originalId });
           st.zones = res.zones;
