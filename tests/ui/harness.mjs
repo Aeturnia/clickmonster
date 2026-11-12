@@ -617,3 +617,14 @@ export const ADMIN_CHAT = [
 ];
 export const ADMIN_REPORTS = [{ message_id: 12, reporter_name: 'Tamsin Reed', reason: 'Rude to new players' }, { message_id: 11, reporter_name: 'Kettle', reason: '' }];
 
+
+// Opens an admin console section the way a person would: on phones a section can sit in a
+// collapsed navigation group (Phase 4), so its group is opened first. Works with older layouts too.
+export async function adminTab(page, tab) {
+  const sel = `[data-a="tab"][data-v="${tab}"]`;
+  if (!(await page.isVisible(sel))) {
+    const group = await page.getAttribute(sel, 'data-group');
+    if (group) await page.click(`[data-a="navgroup"][data-v="${group}"]`);
+  }
+  await page.click(sel);
+}

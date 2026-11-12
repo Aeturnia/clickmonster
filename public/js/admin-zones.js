@@ -216,12 +216,13 @@ export function setupZones({ st, call, toast, render, esc, isAdmin, pushRoute })
       <aside class="box zone-side" id="zs-preview" aria-labelledby="zs-preview-h"><h2 id="zs-preview-h" tabindex="-1">Preview and problems</h2><div id="zone-preview-body">${previewHtml(errors)}</div></aside>
     </div>
     </form>
-    ${isAdmin() ? `<div class="zone-savebar">
+    ${isAdmin() ? `${!ed.isNew ? `<section class="box" aria-labelledby="zone-more-h"><h2 id="zone-more-h">Other actions</h2><div class="acts flush">
+      ${DEFAULT_ZONES.some((z) => z.id === d.id) ? '<button class="btn" data-a="zoneReset">Restore built-in version</button>' : ''}
+      <button class="btn danger" data-a="zoneDelete">Delete zone</button></div></section>` : ''}
+    <div class="zone-savebar">
       <p class="note" id="zone-save-note" aria-live="polite">${savebarNote(errors)}</p>
       <button class="btn primary" data-a="zoneSave">${ed.isNew ? 'Create zone' : 'Save changes'}</button>
       <button class="btn" data-a="zoneBack">Cancel</button>
-      ${!ed.isNew && DEFAULT_ZONES.some((z) => z.id === d.id) ? '<button class="btn" data-a="zoneReset">Restore built-in version</button>' : ''}
-      ${!ed.isNew ? '<button class="btn danger" data-a="zoneDelete">Delete zone</button>' : ''}
     </div>` : '<p class="note">Only admins can edit zones.</p>'}`;
   }
 

@@ -113,16 +113,22 @@ test('deep links: sections, a player record and a zone have addresses; Back work
 // ---------------------------------------------------------------- tables
 
 const TABLE_CHECK = () => {
-  const cells = [...document.querySelectorAll('#admin table.data td .cv')];
-  // A cell is "crushed" if its words don't fit unless broken mid-word.
-  let crushed = 0;
-  for (const cv of cells) {
-    const td = cv.closest('td');
-    const prev = td.style.cssText;
-    td.style.overflowWrap = 'normal'; td.style.wordBreak = 'normal';
-    if (cv.scrollWidth > cv.clientWidth + 1) crushed++;
-    td.style.cssText = prev;
+  // A word is broken to fit when its letters land on more than one line.
+  const brokenWords = (root) => {
+  let n = 0;
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const range = document.createRange();
+  for (let t = walker.nextNode(); t; t = walker.nextNode()) {
+    const re = /\S+/g; let m;
+    while ((m = re.exec(t.data))) {
+      range.setStart(t, m.index); range.setEnd(t, m.index + m[0].length);
+      const tops = new Set([...range.getClientRects()].filter((r) => r.width > 0).map((r) => Math.round(r.top)));
+      if (tops.size > 1) n++;
+    }
   }
+  return n;
+};
+  const crushed = [...document.querySelectorAll('#admin table td')].reduce((a, td) => a + brokenWords(td), 0);
   const tables = [...document.querySelectorAll('#admin table')];
   return {
     tables: tables.length, crushed,
@@ -354,8 +360,11 @@ test('zone editor: preview is sticky beside the form on wide screens, not on pho
       const r = await page.evaluate(() => { const b = document.getElementById('zs-preview').getBoundingClientRect(); return { top: Math.round(b.top), bottom: Math.round(b.bottom) }; });
       assert.ok(r.top >= 0 && r.top < 40 && r.bottom <= 900, `the preview stays in view while editing (${r.top}-${r.bottom})`);
     }
+    // The sticky save bar never takes more than a fifth of the screen.
+    const bar = await page.evaluate(() => Math.round(document.querySelector('.zone-savebar').getBoundingClientRect().height));
+    assert.ok(bar <= h / 5, `${w}: save bar ${bar}px of ${h}`);
     const ow = await page.evaluate(() => [...document.querySelectorAll('[data-owpick]')].map((b) => { const r = b.getBoundingClientRect(); return Math.min(r.width, r.height); }));
-    assert.ok(ow.length && Math.min(...ow) >= 32, `overworld squares ${Math.min(...ow)}px`);
+    assert.ok(ow.length && Math.min(...ow) >= 40, `overworld squares ${Math.min(...ow)}px (before: 43, unnamed)`);
     assert.ok(await page.evaluate(() => [...document.querySelectorAll('[data-owpick]')].every((b) => b.getAttribute('aria-label'))), 'each square is named');
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false);
     await done(ctx);

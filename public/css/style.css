@@ -732,7 +732,9 @@ fieldset.f-set legend { padding: 0; margin-bottom: 4px; font-size: var(--fs-xs);
 .zone-problems ul { margin: 6px 0 0; padding-left: 18px; font-size: var(--fs-md); }
 .mon-row { padding: var(--space-2) 0; border-bottom: 1px solid var(--line); margin-bottom: var(--space-2); }
 .zone-savebar { position: sticky; bottom: 0; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); padding: var(--space-3); margin: 0 calc(-1 * var(--gutter)) 0; background: rgba(21, 17, 14, .96); border-top: 1px solid var(--line-strong); }
-.zone-savebar .note { flex: 1 1 12rem; }
+.zone-savebar .note { flex: 1 1 8rem; margin: 0; }
+.zone-savebar .btn { flex: none; }
+@media (max-width: 599px) { .zone-savebar { padding: var(--space-2) var(--gutter); gap: var(--space-2); } .zone-savebar .btn { min-height: 44px; padding: 6px 12px; } }
 .preview-map { --cell: 22px; overflow: auto; max-width: 100%; max-height: 60vh; overscroll-behavior: contain; }
 .preview-map .map { grid-template-columns: repeat(var(--n), var(--cell)); width: max-content; gap: 2px; margin: 0; }
 .preview-map .map span { display: flex; align-items: center; justify-content: center; width: var(--cell); height: var(--cell); border-radius: 3px; background: #2a231c; color: var(--muted); font-size: var(--fs-2xs); font-weight: 700; }
@@ -740,8 +742,8 @@ fieldset.f-set legend { padding: 0; margin-bottom: 4px; font-size: var(--fs-xs);
 .preview-map .map span.portal { background: #1f3346; color: #a9c8ee; }
 .preview-map .map span.lair { background: #3a2342; color: #d8b4f5; }
 .preview-map .map.pvp span:not(.town):not(.portal):not(.lair) { background: #33201b; }
-.ow-map .map { grid-template-columns: repeat(var(--n), 32px); width: max-content; gap: 3px; }
-.ow-map .map button { width: 32px; height: 32px; aspect-ratio: auto; font-size: var(--fs-2xs); }
+.ow-map .map { grid-template-columns: repeat(var(--n), 40px); width: max-content; gap: 3px; }
+.ow-map .map button { width: 40px; height: 40px; aspect-ratio: auto; font-size: var(--fs-2xs); }
 @container amain (min-width: 720px) {
   .zone-cols { grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); align-items: start; }
   /* The preview follows you while you edit, within the screen height (it scrolls on its own). */

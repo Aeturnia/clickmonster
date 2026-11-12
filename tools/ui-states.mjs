@@ -4,7 +4,7 @@
 //   node tools/ui-states.mjs <out-dir> [widths]
 // Set UI_PUBLIC_DIR to capture another checkout's public/ folder.
 import fs from 'node:fs';
-import { setup, signIn, settle, FakeBackend, makeHero, axe, fixedQuest } from '../tests/ui/harness.mjs';
+import { setup, signIn, settle, FakeBackend, makeHero, axe, fixedQuest, adminTab } from '../tests/ui/harness.mjs';
 
 const out = process.argv[2] || 'tests/ui/artifacts/states';
 const widths = (process.argv[3] || '390').split(',').map(Number);
@@ -104,7 +104,7 @@ for (const w of widths) {
     await shot('confirm-chat-report');
   });
   await scene(w, 'admin', { admin: true }, async (page, shot) => {
-    await page.click('[data-a="tab"][data-v="players"]'); await wait(page, 500);
+    await adminTab(page, 'players'); await wait(page, 500);
     await page.click('[data-a="open"]'); await page.waitForSelector('#sanction'); await wait(page, 300);
     await page.selectOption('#s-kind', 'ban'); await page.fill('#s-days', ''); await page.fill('#s-reason', 'Botting');
     await page.click('#sanction [type="submit"]'); await wait(page, 300);

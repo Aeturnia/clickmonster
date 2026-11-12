@@ -4,7 +4,7 @@
 // and no test may see a native confirm()/prompt()/alert().
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { setup, signIn, settle, FakeBackend, makeHero, axe, fixedQuest } from './harness.mjs';
+import { setup, signIn, settle, FakeBackend, makeHero, axe, fixedQuest, adminTab } from './harness.mjs';
 import { xpToNext } from '../../public/js/engine/character.js';
 
 let env;
@@ -177,7 +177,7 @@ test('chat report: a dialog with an optional reason replaces prompt(); the reaso
 test('admin: a permanent ban needs the name typed, a timed mute does not; cancelling sends nothing', async () => {
   const ctx = await game({ who: 'admin' });
   const { page, backend } = ctx;
-  await page.click('[data-a="tab"][data-v="players"]'); await page.waitForTimeout(400);
+  await adminTab(page, 'players'); await page.waitForTimeout(400);
   await page.click('[data-a="open"]'); await page.waitForSelector('#sanction');
   await page.selectOption('#s-kind', 'ban'); await page.fill('#s-days', ''); await page.fill('#s-reason', 'Botting');
   await page.click('#sanction [type="submit"]');
@@ -205,7 +205,7 @@ test('admin: a permanent ban needs the name typed, a timed mute does not; cancel
 test('admin zones: a delete the server would refuse is explained, not asked; restore asks', async () => {
   const ctx = await game({ who: 'admin' });
   const { page, backend } = ctx;
-  await page.click('[data-a="tab"][data-v="zones"]'); await page.waitForTimeout(400);
+  await adminTab(page, 'zones'); await page.waitForTimeout(400);
   await page.locator('button[data-a="zoneEdit"]', { hasText: 'Edit' }).nth(1).click(); await page.waitForTimeout(300);
   await page.click('[data-a="zoneDelete"]'); await page.waitForTimeout(300);
   assert.equal(await page.evaluate(() => !!document.getElementById('confirm')?.open), false, 'no question for a blocked delete');
