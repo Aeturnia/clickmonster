@@ -2,7 +2,7 @@
 // workflow and the zone editor. Deterministic fake backend; no live access; no native dialogs.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { setup, signIn, FakeBackend, makeHero, axe, focusInfo, ADMIN_CHAT, ADMIN_REPORTS } from './harness.mjs';
+import { setup, signIn, settle, FakeBackend, makeHero, axe, focusInfo, ADMIN_CHAT, ADMIN_REPORTS } from './harness.mjs';
 
 let env;
 before(async () => { env = await setup(); });
@@ -369,4 +369,185 @@ test('zone editor: preview is sticky beside the form on wide screens, not on pho
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false);
     await done(ctx);
   }
+});
+
+// ---------------------------------------------------------------- Phase 4 review corrections
+
+const busy = (page, sel) => page.getAttribute(sel, 'aria-busy');
+const toastSays = (page, re) => page.waitForFunction((src) => new RegExp(src).test(document.getElementById('toast').textContent), re.source);
+
+test('P4-01 two forms sending at once: each keeps its own pending state; a second press sends nothing', async () => {
+  const ctx = await admin();
+  const { page, backend } = ctx;
+  await go(page, 'world');
+  await page.fill('#ev-name', 'Harvest Festival');
+  await page.fill('#m-xp', '2');
+  await page.fill('#b-xp', '1.5');
+  const releaseEvent = backend.hold('startEvent');
+  const releaseBase = backend.hold('setBase');
+  await page.click('#event [type="submit"]');
+  await page.waitForSelector('#event [type="submit"][aria-busy="true"]');
+  await page.click('#base [type="submit"]');
+  await page.waitForSelector('#base [type="submit"][aria-busy="true"]');
+  // The event request finishes while Base settings is still sending.
+  releaseEvent();
+  await page.waitForSelector('#event [type="submit"]:not([aria-busy])');
+  assert.equal(await busy(page, '#base [type="submit"]'), 'true', 'Base settings is still pending after the event finished');
+  assert.equal(await page.inputValue('#b-xp'), '1.5', 'typed values kept');
+  await page.click('#base [type="submit"]');
+  await toastSays(page, /Still working/);
+  assert.equal(calls(backend, 'setBase').length, 1, 'the second press sent nothing');
+  releaseBase();
+  await page.waitForSelector('#base [type="submit"]:not([aria-busy])');
+  await settle(page);
+  assert.deepEqual([calls(backend, 'startEvent').length, calls(backend, 'setBase').length], [1, 1]);
+  await done(ctx);
+});
+
+test('P4-01 a press while a confirmed form is sending opens no second confirmation', async () => {
+  const ctx = await admin();
+  const { page, backend } = ctx;
+  await go(page, 'hunts');
+  await page.fill('#h-name', 'The Ashen Colossus');
+  const release = backend.hold('startHunt');
+  await page.click('#hunt [type="submit"]');
+  await page.click('#confirm [data-r="ok"]');
+  await page.waitForSelector('#hunt [type="submit"][aria-busy="true"]');
+  await page.click('#hunt [type="submit"]');
+  await page.waitForTimeout(250);
+  assert.equal(await page.evaluate(() => !!document.getElementById('confirm')?.open), false, 'no second dialog');
+  await toastSays(page, /Still working/);
+  release();
+  await page.waitForSelector('#hunt [type="submit"]:not([aria-busy])');
+  assert.equal(calls(backend, 'startHunt').length, 1);
+  await done(ctx);
+});
+
+test('P4-01 zone save: pending survives re-renders and repeated presses send one request', async () => {
+  const ctx = await admin({ path: '/admin.html#zone/ashford', wait: '#zone-form' });
+  const { page, backend } = ctx;
+  const release = backend.hold('saveZone');
+  await page.click('[data-a="zoneSave"]');
+  await page.waitForSelector('[data-a="zoneSave"][aria-busy="true"]');
+  // Anything that re-renders the editor meanwhile (here: adding a path) must keep Save pending.
+  await page.click('[data-a="zoneAddPortal"]');
+  await page.waitForSelector('[data-f="portals.0.label"]');
+  assert.match(await page.textContent('#zone-save-note'), /Ready to save/, 'the draft is still valid');
+  assert.equal(await busy(page, '[data-a="zoneSave"]'), 'true', 'Save is still pending after a re-render');
+  await page.click('[data-a="zoneSave"]');
+  await page.click('[data-a="zoneSave"]');
+  await toastSays(page, /Still working/);
+  assert.equal(calls(backend, 'saveZone').length, 1, 'repeated presses sent nothing');
+  release();
+  await page.waitForSelector('#zone-form', { state: 'detached' });
+  await settle(page);
+  assert.equal(calls(backend, 'saveZone').length, 1);
+  await done(ctx);
+});
+
+test('P4-01 zone save failure: pending clears, the problem shows, focus and the draft stay', async () => {
+  const ctx = await admin({ path: '/admin.html#zone/ashford', wait: '#zone-form' });
+  const { page, backend } = ctx;
+  await page.fill('#zf-name', 'Ashford Downs');
+  const release = backend.hold('saveZone');
+  backend.failNext('saveZone', 400, 'That zone was changed by someone else.');
+  await page.focus('[data-a="zoneSave"]');
+  await page.keyboard.press('Enter');
+  await page.waitForSelector('[data-a="zoneSave"][aria-busy="true"]');
+  release();
+  await page.waitForFunction(() => /changed by someone else/.test(document.getElementById('alerts').textContent));
+  const st = await page.evaluate(() => ({
+    busy: document.querySelector('[data-a="zoneSave"]').getAttribute('aria-busy'),
+    pending: document.querySelector('[data-a="zoneSave"]').classList.contains('pending'),
+    focus: document.activeElement.dataset.a, name: document.getElementById('zf-name').value,
+  }));
+  assert.deepEqual(st, { busy: null, pending: false, focus: 'zoneSave', name: 'Ashford Downs' });
+  // And it can be saved again.
+  await page.click('[data-a="zoneSave"]');
+  await page.waitForSelector('#zone-form', { state: 'detached' });
+  assert.equal(calls(backend, 'saveZone').length, 2);
+  await done(ctx);
+});
+
+test('P4-02 granting admin: the email must be typed; Cancel sends nothing; confirming sends one request', async () => {
+  const ctx = await admin({ path: '/admin.html#staff', wait: '#addstaff' });
+  const { page, backend } = ctx;
+  await page.fill('#st-email', 'new.admin@example.test');
+  await page.selectOption('#st-role', 'admin');
+  await page.click('#addstaff [type="submit"]');
+  await page.waitForSelector('#confirm[open]');
+  const dlg = await page.evaluate(() => ({
+    title: document.getElementById('confirm-title').textContent, tone: document.getElementById('confirm').dataset.tone,
+    body: document.getElementById('confirm-body').textContent, ok: document.querySelector('#confirm [data-r="ok"]').textContent,
+    disabled: document.querySelector('#confirm [data-r="ok"]').disabled, focus: document.activeElement.id,
+  }));
+  assert.equal(dlg.title, 'Make new.admin@example.test an admin?');
+  assert.equal(dlg.tone, 'danger');
+  assert.match(dlg.body, /Admins can do everything a moderator can/);
+  assert.match(dlg.body, /add or remove staff/);
+  assert.match(dlg.body, /audit log/);
+  assert.equal(dlg.ok, 'Make admin');
+  assert.equal(dlg.disabled, true, 'confirm stays disabled until the email is typed');
+  assert.equal(dlg.focus, 'confirm-input');
+  await noAxe(page, 'grant admin confirmation');
+  await page.click('#confirm [data-r="cancel"]');
+  await page.waitForSelector('#confirm:not([open])', { state: 'attached' });
+  assert.equal(calls(backend, 'setStaff').length, 0, 'Cancel sends nothing');
+  assert.deepEqual([await page.inputValue('#st-email'), await page.inputValue('#st-role')], ['new.admin@example.test', 'admin'], 'values kept');
+  assert.equal(await page.evaluate(() => document.activeElement.matches('#addstaff [type="submit"]')), true, 'focus back on Add');
+  // Confirm: a wrong email keeps the button disabled; the right one (any case) enables it.
+  await page.click('#addstaff [type="submit"]');
+  await page.fill('#confirm-input', 'new.admin@example.tes');
+  assert.equal(await page.isDisabled('#confirm [data-r="ok"]'), true);
+  await page.fill('#confirm-input', 'New.Admin@example.test');
+  await page.click('#confirm [data-r="ok"]');
+  await toastSays(page, /Added/);
+  await settle(page);
+  assert.deepEqual(calls(backend, 'setStaff').map((c) => c.args), [{ email: 'new.admin@example.test', role: 'admin' }], 'exactly one request');
+  await done(ctx);
+});
+
+test('P4-02 granting moderator: a normal confirmation stating the permissions; one request', async () => {
+  const ctx = await admin({ path: '/admin.html#staff', wait: '#addstaff' });
+  const { page, backend } = ctx;
+  await page.fill('#st-email', 'new.mod@example.test');
+  await page.click('#addstaff [type="submit"]');
+  await page.waitForSelector('#confirm[open]');
+  const dlg = await page.evaluate(() => ({
+    title: document.getElementById('confirm-title').textContent, tone: document.getElementById('confirm').dataset.tone,
+    body: document.getElementById('confirm-body').textContent, input: !!document.getElementById('confirm-input'),
+    focus: document.activeElement.dataset.r,
+  }));
+  assert.equal(dlg.title, 'Make new.mod@example.test a moderator?');
+  assert.deepEqual([dlg.tone, dlg.input, dlg.focus], ['normal', false, 'ok']);
+  assert.match(dlg.body, /Moderators can look up players/);
+  assert.match(dlg.body, /up to 7 days/);
+  await noAxe(page, 'grant moderator confirmation');
+  await page.click('#confirm [data-r="cancel"]');
+  assert.equal(calls(backend, 'setStaff').length, 0, 'Cancel sends nothing');
+  await page.click('#addstaff [type="submit"]');
+  await page.click('#confirm [data-r="ok"]');
+  await toastSays(page, /Added/);
+  await settle(page);
+  assert.deepEqual(calls(backend, 'setStaff').map((c) => c.args), [{ email: 'new.mod@example.test', role: 'moderator' }]);
+  await done(ctx);
+});
+
+test('P4-02 changing the role of existing staff says which way it changes', async () => {
+  const ctx = await admin({ path: '/admin.html#staff', wait: '#addstaff' });
+  const { page, backend } = ctx;
+  await page.waitForSelector('[data-a="removeStaff"]');
+  await page.fill('#st-email', 'mod@example.test');
+  await page.selectOption('#st-role', 'admin');
+  await page.click('#addstaff [type="submit"]');
+  assert.equal(await page.textContent('#confirm-title'), 'Change mod@example.test from moderator to admin?');
+  await page.click('#confirm [data-r="cancel"]');
+  await page.fill('#st-email', 'admin@example.test');
+  await page.selectOption('#st-role', 'moderator');
+  await page.click('#addstaff [type="submit"]');
+  assert.equal(await page.textContent('#confirm-title'), 'Change admin@example.test from admin to moderator?');
+  assert.match(await page.textContent('#confirm-body'), /They lose their admin powers/);
+  await page.click('#confirm [data-r="cancel"]');
+  assert.equal(calls(backend, 'setStaff').length, 0);
+  await done(ctx);
 });

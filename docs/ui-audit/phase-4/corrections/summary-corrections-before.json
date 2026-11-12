@@ -1,0 +1,74 @@
+[
+ {
+  "width": 390,
+  "scene": "staff-grant-admin",
+  "error": "page.waitForSelector: Timeout 3000ms exceeded."
+ },
+ {
+  "width": 390,
+  "scene": "staff-grant-moderator",
+  "error": "page.waitForSelector: Timeout 3000ms exceeded."
+ },
+ {
+  "width": 390,
+  "scene": "zone-save-pending",
+  "violations": [],
+  "busy": [],
+  "calls": {
+   "setStaff": 0,
+   "saveZone": 1,
+   "startEvent": 0,
+   "setBase": 0
+  },
+  "nativeDialogs": 0
+ },
+ {
+  "width": 390,
+  "scene": "world-two-forms-pending",
+  "violations": [],
+  "busy": [],
+  "calls": {
+   "setStaff": 0,
+   "saveZone": 0,
+   "startEvent": 1,
+   "setBase": 1
+  },
+  "nativeDialogs": 0
+ },
+ {
+  "width": 1440,
+  "scene": "staff-grant-admin",
+  "error": "page.waitForSelector: Timeout 3000ms exceeded."
+ },
+ {
+  "width": 1440,
+  "scene": "staff-grant-moderator",
+  "error": "page.waitForSelector: Timeout 3000ms exceeded."
+ },
+ {
+  "width": 1440,
+  "scene": "zone-save-pending",
+  "violations": [],
+  "busy": [],
+  "calls": {
+   "setStaff": 0,
+   "saveZone": 1,
+   "startEvent": 0,
+   "setBase": 0
+  },
+  "nativeDialogs": 0
+ },
+ {
+  "width": 1440,
+  "scene": "world-two-forms-pending",
+  "violations": [],
+  "busy": [],
+  "calls": {
+   "setStaff": 0,
+   "saveZone": 0,
+   "startEvent": 1,
+   "setBase": 1
+  },
+  "nativeDialogs": 0
+ }
+]

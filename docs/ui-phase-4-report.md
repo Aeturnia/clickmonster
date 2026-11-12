@@ -126,3 +126,68 @@ axe-core 4.10.2, all impacts including minor:
 - **Screen readers** (VoiceOver, TalkBack, NVDA): the group switcher, the review panel, the zone editor's live save note and table cards. The accessible names and relationships were checked in the DOM and by axe only.
 - **Touch use** of the sticky save bar on iOS, with the on-screen keyboard open.
 - **Real staff data volumes:** hundreds of reports or a long audit log. Fixtures are small. Lists are rendered in full, as before.
+
+## Review corrections (PR #13 review)
+
+The review accepted the Phase 4 design: grouped navigation, cards in a narrow content column, the inline moderation workflow, shared styling and the zone editor layout. Two findings were corrected, both in the client. No server code, schema, API contract or permission check changed.
+
+**P4-01: overlapping admin requests.**
+- *Cause:*
+  - `submitting()` kept one `pendingForm` id for the whole console. Starting an event and then saving Base settings overwrote it with `base`. When the event finished it cleared the shared flag, so Base settings looked idle while it was still sending, and a second press sent a second `setBase`.
+  - Zone Save set `pending` and `aria-busy` on the button element directly and had no guard. Any re-render (adding a monster or path, data arriving) drew a fresh, idle Save button, and every press sent another `saveZone`. Each one bumps the zone's version and writes an audit entry.
+- *Fix:*
+  - `st.pendingForms` is a set with one flag per form: `submitting()` adds its form's id and removes it in `finally`, so success and failure both clear it, and requests from different forms no longer clear each other's flag. `formFoot()` draws pending from the set, so it survives any re-render.
+  - The submit handler checks the flag before validating or asking anything. A press while a form is sending says "Still working on the last request." and sends nothing, and no second confirmation opens for forms that ask first (Start hunt, sanctions, Add staff).
+  - Zone Save uses the same set with the key `zone:<id>` (`zone:new` for a new zone). The editor draws the Save button's pending state from it. A second press says "Still working" and sends nothing. On failure the flag clears, the problem shows, and the draft and focus on Save are kept.
+- *Tests:*
+  - "P4-01 two forms sending at once…": `startEvent` and `setBase` are both held. After the event is released, Base settings is still `aria-busy`, its typed value is kept, and a second press sends nothing. Then both clear, with exactly one request each.
+  - "P4-01 a press while a confirmed form is sending…": Start hunt is confirmed and held. A second press opens no dialog and sends nothing.
+  - "P4-01 zone save: pending survives re-renders…": `saveZone` is held. Adding a path re-renders the editor and Save stays pending. Two more presses send nothing, and there is exactly one `saveZone`.
+  - "P4-01 zone save failure…": the save fails. Pending clears, the error shows, focus stays on Save, the edited name is kept, and saving again works.
+
+**P4-02: granting staff access had no confirmation.**
+- *Fix:* Add staff now asks first, through the Phase 3 `ask()` dialog, and only a confirmation sends `setStaff`.
+  - **Admin:** a danger dialog. Confirm stays disabled until the email is typed (any letter case), and focus starts in that field.
+  - **Moderator:** a normal dialog, with focus on the confirm button.
+  - Both state what the role can do, as the admin edge function enforces it:
+    - **Moderators** can look up players and their records, warn, mute, jail or ban for up to 7 days, lift sanctions, post news, and review reports and remove chat messages.
+    - **Admins** can also edit heroes and their items, sanction for longer or permanently, change world settings, events and hunts, edit zones, delete news, see players' email addresses, and add or remove staff.
+  - Both say the change takes effect straight away (the server reads the role on every request) and is recorded in the audit log (`setStaff` logs `staff:<role>`).
+  - For someone already on staff the title names the change, for example "Change admin@… from admin to moderator?", and a demotion says they lose their admin powers. The form only sends an upsert, so this wording reflects what the server does.
+  - Cancel sends nothing, keeps the typed values and returns focus to Add.
+- *Tests:*
+  - "P4-02 granting admin…": the dialog's title, tone, permissions, audit note and focus are checked, and axe passes with it open. Cancel sends nothing and keeps the values. A wrong email keeps Confirm disabled. Typing the email in a different case and confirming sends exactly one `setStaff` with `{ email, role: 'admin' }`.
+  - "P4-02 granting moderator…": a normal dialog with no typing, permissions stated, and axe passing. Cancel sends nothing, and confirming sends exactly one request.
+  - "P4-02 changing the role of existing staff…": the moderator-to-admin and admin-to-moderator titles, and the demotion note.
+
+**Noted, not changed.** Some button-driven admin actions also have no single-flight guard: quick actions on a player record, Remove item, Dismiss report, Remove from staff, End event, Cancel hunt, Delete zone, Restore built-in zone, Delete news and Remove message. All except Dismiss report and the quick actions already confirm first. The orders named `submitting()` and zone Save, so these are left for the reviewer to decide.
+
+### Results
+All on this laptop (Windows 11, Node 22.16, Playwright 1.63.0 Chromium), fake backend.
+
+- **Baseline before the corrections** (`dfe77b9`, in a separate worktree): `npm test` 24 of 24, `npm run test:ui` 68 of 68.
+- **After:** `npm test` 24 of 24 and `npm run test:ui` **75 of 75 in each of 3 consecutive full runs** (68 earlier tests plus 7 new).
+- **New tests against the old code** (`UI_PUBLIC_DIR` set to the `dfe77b9` checkout): 6 of the 7 fail, each on the behaviour it tests:
+  - two forms: "Base settings is still pending after the event finished" (`aria-busy` was gone);
+  - confirmed form: "no second dialog" (a second dialog opened);
+  - zone save: "Save is still pending after a re-render" (it wasn't);
+  - all three staff tests: no confirmation dialog appears.
+  - The zone-save **failure** test passes on the old code too: the old failure path already cleared the button and kept the draft. It is kept as a guard for the new state-driven pending flag.
+- **Admin accessibility sweep** (`tools/admin-shots.mjs`, 12 screens × 320, 390, 768, 1024, 1440): **0 violations of any impact on all 60 captures**. There is also 0 page overflow, 0 targets under 24px and 0 presentational inline styles. Raw data: `docs/ui-audit/phase-4/summary-after-corrections.json`.
+- **Corrected states**, axe (all impacts) at 390 and 1440: the grant-admin dialog, the grant-moderator dialog, zone Save pending after a re-render, and Base settings pending after the event finished. **0 violations on all 8**, and no native dialogs. The two new staff tests also run axe with the dialog open.
+
+### Evidence
+
+`docs/ui-audit/phase-4/corrections/`:
+- **`after-{390,1440}-…`:**
+  - `staff-grant-admin`, `staff-grant-moderator`;
+  - `zone-save-pending` (Save pressed and held, then a path added);
+  - `world-two-forms-pending` (event finished, Base settings still sending).
+- **`before-{390,1440}-…`:** the same two pending scenes on `dfe77b9`, where nothing shows as pending. There are no "before" staff shots: no dialog exists on the old code, and the capture timed out waiting for one.
+- **`summary-corrections-after.json` and `summary-corrections-before.json`:** axe results, pending controls and request counts for each scene.
+
+### Not verified
+
+- **Screen readers:** announcement of the new dialogs and of the pending Save button. Checked in the DOM and by axe only.
+- **Real devices.**
+- **A real Supabase backend:** the tests hold and fail requests in the fake backend; no request was sent to the live project.

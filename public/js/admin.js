@@ -44,7 +44,7 @@ const st = {
   world: null, hunts: null, economy: null, zones: null, zoneEdit: null, chat: null, reports: null, chatQ: {}, focusNext: null, returnFocus: null,
   reviews: {}, // report id -> { open, player, loading, done }
   formErrors: {}, // form id -> server error shown inside the form
-  pendingForm: null, // form id while its request runs
+  pendingForms: new Set(), // forms (and `zone:<id>` saves) whose request is running; each has its own flag
   clearForms: new Set(), // forms to show fresh (not restored) on the next render, after a success
 };
 
@@ -131,7 +131,7 @@ const opt = (v, l, cur) => `<option value="${esc(v)}"${String(cur) === String(v)
 
 // The bottom of a form: its submit button (pending while the request runs) and its error.
 function formFoot(id, label, extra = '') {
-  const busy = st.pendingForm === id;
+  const busy = st.pendingForms.has(id);
   const err = st.formErrors[id];
   return `<div class="form-foot"><button class="btn primary${busy ? ' pending' : ''}" type="submit"${busy ? ' aria-busy="true"' : ''}>${esc(label)}</button>${extra}</div>
     ${err ? `<p class="form-error" id="${id}-error" role="alert">${esc(err)}</p>` : ''}`;
@@ -772,10 +772,19 @@ function validate(id, form) {
   return false;
 }
 
+// True (and says so) while this form's request is still running, so a second press sends nothing.
+function stillWorking(id) {
+  if (!st.pendingForms.has(id)) return false;
+  toast('Still working on the last request.');
+  return true;
+}
+
 // Runs a form's request once at a time, showing it as pending; a server error stays in the form.
+// Each form has its own pending flag, so requests from different forms can overlap without one
+// finishing and clearing the other's.
 async function submitting(id, fn) {
-  if (st.pendingForm === id) { toast('Still working on the last request.'); return; }
-  st.pendingForm = id;
+  if (stillWorking(id)) return;
+  st.pendingForms.add(id);
   delete st.formErrors[id];
   render();
   try {
@@ -783,7 +792,7 @@ async function submitting(id, fn) {
   } catch (err) {
     st.formErrors[id] = err.message;
   } finally {
-    st.pendingForm = null;
+    st.pendingForms.delete(id);
   }
   render();
   if (st.formErrors[id]) document.getElementById(`${id}-error`)?.scrollIntoView({ block: 'nearest' });
@@ -879,6 +888,28 @@ document.addEventListener('click', async (e) => {
   }
 });
 
+// What each role can do, as the admin edge function enforces it.
+const MOD_POWERS = 'look up players and their records, warn, mute, jail or ban for up to 7 days, lift sanctions, post news, and review reports and remove chat messages';
+const ADMIN_POWERS = 'everything a moderator can, and also edit heroes and their items, sanction for longer or permanently, change world settings, events and hunts, edit zones, delete news, see players’ email addresses, and add or remove staff';
+
+// Granting staff access asks first. Admin is full control of the game, so the email is typed.
+function staffQuestion(email, role) {
+  const current = st.staff?.find((s) => s.email.toLowerCase() === email.toLowerCase())?.role;
+  const admin = role === 'admin';
+  const title = current && current !== role
+    ? `Change ${email} from ${current} to ${role}?`
+    : `Make ${email} ${admin ? 'an admin' : 'a moderator'}?`;
+  const powers = admin
+    ? `Admins can do ${ADMIN_POWERS}.`
+    : `${current === 'admin' ? 'They lose their admin powers. ' : ''}Moderators can ${MOD_POWERS}.`;
+  return {
+    title,
+    points: [powers, 'It takes effect straight away.', 'The change is recorded in the audit log.'],
+    typeToConfirm: admin ? email : null,
+    confirm: admin ? 'Make admin' : 'Make moderator', cancel: 'Cancel', tone: admin ? 'danger' : 'normal',
+  };
+}
+
 async function applySanction(id, form) {
   const ids = id === 'sanction' ? { kind: 's-kind', days: 's-days', reason: 's-reason' } : { kind: `${id}-kind`, days: `${id}-days`, reason: `${id}-reason` };
   const kind = form.querySelector(`#${ids.kind}`).value;
@@ -935,6 +966,8 @@ document.addEventListener('submit', async (e) => {
     return;
   }
   if (id === 'search') { st.q = $('#q').value; st.players = null; render(); load('players'); return; }
+  // Before validating or asking anything: a press while this form is sending does nothing.
+  if (stillWorking(id)) return;
   if (!validate(id, form)) return;
   if (id === 'sanction' || id.startsWith('sanction-r')) { await applySanction(id, form); return; }
   if (id === 'edit') {
@@ -986,7 +1019,10 @@ document.addEventListener('submit', async (e) => {
     load('hunts');
   }
   if (id === 'addstaff') {
-    await submitting(id, async () => { st.staff = (await call('setStaff', { email: $('#st-email').value.trim(), role: $('#st-role').value })).staff; st.clearForms.add(id); toast('Added.'); });
+    const email = $('#st-email').value.trim();
+    const role = $('#st-role').value;
+    if (!await ask(staffQuestion(email, role))) return;
+    await submitting(id, async () => { st.staff = (await call('setStaff', { email, role })).staff; st.clearForms.add(id); toast('Added.'); });
   }
 });
 
