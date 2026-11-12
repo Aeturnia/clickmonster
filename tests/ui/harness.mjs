@@ -250,6 +250,7 @@ export class FakeBackend {
       h.level = p.level; h.loc = { zone: p.zone, x: p.x, y: p.y };
       return h;
     };
+    const zoneRows = () => (D.zoneRows ||= DEFAULT_ZONES.map((z, i) => ({ id: z.id, data: z, sort: i, players: z.id === 'bramblebrook' ? 1 : 0, builtin: true })));
     const withMessages = (r) => ({ ...r, message: this.chat.find((m) => m.id === r.message_id) || null });
     switch (action) {
       case 'whoami': return { role: user.role, email: user.email };
@@ -286,13 +287,13 @@ export class FakeBackend {
         log({ action: `sanction:${kind}`, target_id: p.id, target_name: p.name, details: { days: a.days, reason: text, until } });
         return { ok: true };
       }
-      case 'zones': return { zones: DEFAULT_ZONES.map((z, i) => ({ id: z.id, data: z, sort: i, players: z.id === 'bramblebrook' ? 1 : 0, builtin: true })) };
+      case 'zones': return { zones: zoneRows() };
       case 'chatLog': {
         const q = String(a.q || '').toLowerCase();
         const sender = String(a.sender || '').toLowerCase();
         return { messages: this.chat.filter((m) => (!a.channel || m.channel === a.channel) && (!sender || m.sender_name.toLowerCase().includes(sender)) && (!q || (m.original_text || m.text).toLowerCase().includes(q))).slice().reverse() };
       }
-      case 'chatReports': return { reports: D.reports.map(withMessages) };
+      case 'chatReports': return { reports: D.reports.filter((r) => !r.resolved_at).map(withMessages) };
       case 'chatDelete': {
         const m = this.chat.find((x) => x.id === Number(a.id));
         if (!m) throw err('No such message.');
@@ -302,27 +303,77 @@ export class FakeBackend {
         return { ok: true };
       }
       case 'resolveReport': {
+        // Like the server: an already-resolved report is still found, nothing changes, and the
+        // resolution is logged again (so a duplicate request shows up as a duplicate audit entry).
         const r = D.reports.find((x) => x.id === Number(a.id));
         if (!r) throw err('No such report.');
-        D.reports = D.reports.filter((x) => x.message_id !== r.message_id);
+        for (const x of D.reports) if (x.message_id === r.message_id && !x.resolved_at) Object.assign(x, { resolved_at: new Date().toISOString(), resolved_by: user.email });
         log({ action: 'chat:resolveReport', details: { message: r.message_id, note: a.note || null } });
         return { ok: true };
       }
       case 'world': return { data: D.world };
       case 'setBase': requireAdmin(); D.world.base = { ...D.world.base, ...a.base }; return { data: D.world };
       case 'startEvent': requireAdmin(); D.world.events.push({ id: `ev-${D.world.events.length + 1}`, name: a.name, ...a.mults, until: new Date(Date.now() + Number(a.hours) * 3600000).toISOString() }); return { data: D.world };
-      case 'endEvent': requireAdmin(); D.world.events = D.world.events.filter((e) => e.id !== a.id); return { data: D.world };
+      case 'endEvent': {
+        requireAdmin();
+        const ev = D.world.events.find((e) => e.id === a.id);
+        if (!ev) throw err('No such event.');
+        D.world.events = D.world.events.filter((e) => e.id !== a.id);
+        log({ action: 'world:endEvent', details: { name: ev.name } });
+        return { data: D.world };
+      }
       case 'hunts': return { hunts: D.hunts, suggest: {} };
       case 'startHunt': requireAdmin(); return { ok: true };
-      case 'cancelHunt': requireAdmin(); D.hunts = D.hunts.map((h) => (h.id === a.id ? { ...h, status: 'cancelled' } : h)); return { ok: true };
+      case 'cancelHunt': {
+        requireAdmin();
+        const h = D.hunts.find((x) => x.id === a.id && x.status === 'active');
+        if (!h) throw err('That hunt is not active.');
+        h.status = 'cancelled';
+        log({ action: 'hunt:cancel', target_name: h.name });
+        return { ok: true };
+      }
       case 'economy': return { rows: D.economy };
       case 'events': return { events: this.events };
       case 'announce': this.events.unshift({ id: this.events.length + 10, kind: 'announce', text: a.text, created_at: new Date().toISOString() }); return { ok: true };
-      case 'deleteEvent': requireAdmin(); this.events = this.events.filter((e) => String(e.id) !== String(a.id)); return { ok: true };
+      case 'deleteEvent': requireAdmin(); this.events = this.events.filter((e) => String(e.id) !== String(a.id)); log({ action: 'deleteEvent', details: { id: a.id } }); return { ok: true };
       case 'log': return { log: D.log };
       case 'staff': return { staff: D.staff };
-      case 'setStaff': requireAdmin(); return { staff: D.staff };
-      case 'saveZone': case 'deleteZone': case 'resetZone': requireAdmin(); return { zones: DEFAULT_ZONES.map((z, i) => ({ id: z.id, data: z, sort: i, players: 0, builtin: true })) };
+      case 'setStaff': {
+        requireAdmin();
+        const email = String(a.email || '');
+        if (a.role == null) D.staff = D.staff.filter((s) => s.email !== email);
+        else if (D.staff.some((s) => s.email === email)) D.staff = D.staff.map((s) => (s.email === email ? { ...s, role: a.role } : s));
+        log({ action: a.role ? `staff:${a.role}` : 'staff:remove', target_name: email });
+        return { staff: D.staff };
+      }
+      // Zones: like the server, every save, delete and restore changes the list and is logged;
+      // deleting a zone that is already gone is refused.
+      case 'saveZone': {
+        requireAdmin();
+        const rows = zoneRows();
+        const i = rows.findIndex((r) => r.id === a.zone.id);
+        if (i >= 0) rows[i] = { ...rows[i], data: a.zone }; else rows.push({ id: a.zone.id, data: a.zone, sort: rows.length, players: 0, builtin: false });
+        log({ action: a.isNew ? 'zone:create' : 'zone:edit', target_name: a.zone.name, details: { id: a.zone.id } });
+        return { zones: rows };
+      }
+      case 'deleteZone': {
+        requireAdmin();
+        const row = zoneRows().find((r) => r.id === a.id);
+        if (!row) throw err('No such zone.');
+        D.zoneRows = zoneRows().filter((r) => r.id !== a.id);
+        log({ action: 'zone:delete', target_name: row.data.name, details: { id: a.id } });
+        return { zones: D.zoneRows };
+      }
+      case 'resetZone': {
+        requireAdmin();
+        const def = DEFAULT_ZONES.find((z) => z.id === a.id);
+        if (!def) throw err('That zone has no built-in version.');
+        const rows = zoneRows();
+        const i = rows.findIndex((r) => r.id === a.id);
+        if (i >= 0) rows[i] = { ...rows[i], data: def }; else rows.push({ id: def.id, data: def, sort: rows.length, players: 0, builtin: true });
+        log({ action: 'zone:reset', target_name: def.name, details: { id: a.id } });
+        return { zones: rows };
+      }
       default: return { ok: true };
     }
   }

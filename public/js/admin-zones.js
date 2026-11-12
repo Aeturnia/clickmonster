@@ -17,8 +17,33 @@ const sectionOf = (msg) => (/town|shop/i.test(msg) ? 'town' : /boss|lair/i.test(
 
 export function setupZones({ st, call, toast, render, esc, isAdmin, pushRoute }) {
   const clone = (o) => JSON.parse(JSON.stringify(o));
-  // The pending flag for saving a zone (shared with admin.js forms, in st.pendingForms).
-  const saveKey = (ed) => `zone:${ed.isNew ? 'new' : ed.originalId}`;
+  // Pending flags for zone changes, in st.pendingForms (shared with admin.js): `zone:<id>:<op>`.
+  // Save, Delete and Restore all change the same zone, so only one of them runs at a time.
+  // ('+new' can't clash with a real id: ids are lower case letters, numbers and hyphens.)
+  const zoneOf = (ed) => `zone:${ed.isNew ? '+new' : ed.originalId}:`;
+  const opKey = (ed, op) => `${zoneOf(ed)}${op}`;
+  const zoneBusy = (ed) => [...st.pendingForms].some((k) => k.startsWith(zoneOf(ed)));
+  function zoneWaiting(ed) {
+    if (!zoneBusy(ed)) return false;
+    toast('Still working on the last change to this zone.');
+    return true;
+  }
+  // Runs one change to the zone under its flag; true when it succeeded. A failure stays on
+  // screen as a problem and the draft is kept.
+  async function zoneOp(ed, op, fn) {
+    const key = opKey(ed, op);
+    st.pendingForms.add(key);
+    render();
+    try {
+      await fn();
+      return true;
+    } catch (e) {
+      toast(e.message, true);
+      return false;
+    } finally {
+      st.pendingForms.delete(key);
+    }
+  }
   const defsWithDraft = () => {
     const d = st.zoneEdit.def;
     return [...st.zones.map((z) => z.data).filter((z) => z.id !== (st.zoneEdit.originalId || d.id)), d];
@@ -158,7 +183,10 @@ export function setupZones({ st, call, toast, render, esc, isAdmin, pushRoute })
   function editorView() {
     const ed = st.zoneEdit;
     const d = ed.def;
-    const saving = st.pendingForms.has(saveKey(ed));
+    // A button whose change is in flight looks pending (kept across re-renders).
+    const btn = (cls, a, label, op) => (st.pendingForms.has(opKey(ed, op))
+      ? `<button class="${cls} pending" data-a="${a}" aria-busy="true">${label}</button>`
+      : `<button class="${cls}" data-a="${a}">${label}</button>`);
     const errors = validateZone(d, defsWithDraft());
     const zoneOpts = defsWithDraft().map((z) => [z.id, z.name]);
     const archOpts = ARCHETYPES.map((a) => [a, a]);
@@ -220,11 +248,11 @@ export function setupZones({ st, call, toast, render, esc, isAdmin, pushRoute })
     </div>
     </form>
     ${isAdmin() ? `${!ed.isNew ? `<section class="box" aria-labelledby="zone-more-h"><h2 id="zone-more-h">Other actions</h2><div class="acts flush">
-      ${DEFAULT_ZONES.some((z) => z.id === d.id) ? '<button class="btn" data-a="zoneReset">Restore built-in version</button>' : ''}
-      <button class="btn danger" data-a="zoneDelete">Delete zone</button></div></section>` : ''}
+      ${DEFAULT_ZONES.some((z) => z.id === d.id) ? btn('btn', 'zoneReset', 'Restore built-in version', 'reset') : ''}
+      ${btn('btn danger', 'zoneDelete', 'Delete zone', 'delete')}</div></section>` : ''}
     <div class="zone-savebar">
       <p class="note" id="zone-save-note" aria-live="polite">${savebarNote(errors)}</p>
-      <button class="btn primary${saving ? ' pending' : ''}" data-a="zoneSave"${saving ? ' aria-busy="true"' : ''}>${ed.isNew ? 'Create zone' : 'Save changes'}</button>
+      ${btn('btn primary', 'zoneSave', ed.isNew ? 'Create zone' : 'Save changes', 'save')}
       <button class="btn" data-a="zoneBack">Cancel</button>
     </div>` : '<p class="note">Only admins can edit zones.</p>'}`;
   }
@@ -286,9 +314,7 @@ export function setupZones({ st, call, toast, render, esc, isAdmin, pushRoute })
       case 'zoneAddPortal': d.portals.push({ x: 1, y: 1, to: OVERWORLD_ID, tx: 1, ty: 1, minLevel: 0, label: 'A path' }); st.focusNext = `#zf-portals-${d.portals.length - 1}-label`; render(); return true;
       case 'zoneDelPortal': d.portals.splice(Number(v), 1); st.focusNext = '#zs-paths-h'; render(); return true;
       case 'zoneSave': {
-        // One save at a time per zone; the flag lives in state so re-renders keep it.
-        const key = saveKey(ed);
-        if (st.pendingForms.has(key)) { toast('Still working on the last request.'); return true; }
+        if (zoneWaiting(ed)) return true;
         const errors = validateZone(d, defsWithDraft());
         if (errors.length) {
           // Point at the problems instead of a vague message.
@@ -298,26 +324,19 @@ export function setupZones({ st, call, toast, render, esc, isAdmin, pushRoute })
           toast(`Fix the ${errors.length === 1 ? 'problem' : `${errors.length} problems`} listed under Preview and problems first.`, true);
           return true;
         }
-        st.pendingForms.add(key);
-        render();
-        let saved = false;
-        try {
+        const saved = await zoneOp(ed, 'save', async () => {
           const res = await call('saveZone', { zone: d, isNew: ed.isNew });
           st.zones = res.zones;
           loadZones(res.zones.map((r) => r.data));
           st.zoneEdit = null;
-          saved = true;
           toast(ed.isNew ? 'Zone created.' : 'Zone saved.');
-        } catch (e) {
-          toast(e.message, true); // the draft stays as it was
-        } finally {
-          st.pendingForms.delete(key);
-        }
+        });
         render();
         if (saved) pushRoute();
         return true;
       }
       case 'zoneDelete': {
+        if (zoneWaiting(ed)) return true;
         // Don't ask about a delete the server would refuse (it checks again anyway).
         const blockers = deleteBlockers(ed.originalId, ZONE_DEFS);
         if (blockers.length) { toast(`${d.name} can’t be deleted. ${blockers.join(' ')}`, true); return true; }
@@ -326,30 +345,31 @@ export function setupZones({ st, call, toast, render, esc, isAdmin, pushRoute })
           points: ['Heroes in it are moved to a safe place the next time they act.', 'Any active world-boss hunt in it is cancelled.', 'This can’t be undone here; the definition is kept in the audit log.'],
           typeToConfirm: d.name, confirm: 'Delete zone', cancel: 'Keep zone',
         })) return true;
-        try {
+        const deleted = await zoneOp(ed, 'delete', async () => {
           const res = await call('deleteZone', { id: ed.originalId });
           st.zones = res.zones;
           loadZones(res.zones.map((r) => r.data));
           st.zoneEdit = null;
           toast('Zone deleted.');
-          render();
-          pushRoute();
-        } catch (e) { toast(e.message, true); }
+        });
+        render();
+        if (deleted) pushRoute();
         return true;
       }
       case 'zoneReset': {
+        if (zoneWaiting(ed)) return true;
         if (!await ask({
           title: `Restore the built-in ${d.name}?`,
           points: ['Your edits to it are replaced by the original version.', 'The edited version is kept in the audit log.'],
           confirm: 'Restore built-in version', cancel: 'Keep my edits',
         })) return true;
-        try {
+        const restored = await zoneOp(ed, 'reset', async () => {
           const res = await call('resetZone', { id: ed.originalId });
           st.zones = res.zones;
           loadZones(res.zones.map((r) => r.data));
-          startEdit(ed.originalId, { push: false });
           toast('Restored.');
-        } catch (e) { toast(e.message, true); }
+        });
+        if (restored && st.zoneEdit === ed) startEdit(ed.originalId, { push: false }); else render();
         return true;
       }
       default: return false;

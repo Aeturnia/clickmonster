@@ -551,3 +551,172 @@ test('P4-02 changing the role of existing staff says which way it changes', asyn
   assert.equal(calls(backend, 'setStaff').length, 0);
   await done(ctx);
 });
+
+// P4-03: every state-changing button runs once at a time per action and target. The fake backend
+// logs these actions the way the server does, so a duplicate request shows as a duplicate entry.
+const auditCount = (backend, action) => backend.adminData().log.filter((l) => l.action === action).length;
+const dialogOpen = (page) => page.evaluate(() => !!document.getElementById('confirm')?.open);
+// Waits until the fake backend has received n requests for an action (the first press landed).
+async function sent(backend, action, n = 1) {
+  for (let i = 0; i < 200 && calls(backend, action).length < n; i++) await new Promise((r) => setTimeout(r, 25));
+  assert.equal(calls(backend, action).length, n, `${action} sent`);
+}
+
+test('P4-03 Dismiss report pressed repeatedly while delayed: one request, one resolution', async () => {
+  const ctx = await admin({ path: '/admin.html#chat', wait: '.report' });
+  const { page, backend } = ctx;
+  const dismiss = '[data-a="resolveReport"][data-v="900"]';
+  const release = backend.hold('resolveReport');
+  await page.click(dismiss);
+  await sent(backend, 'resolveReport');
+  await page.click(dismiss);
+  await page.click(dismiss);
+  await page.waitForTimeout(250);
+  assert.equal(calls(backend, 'resolveReport').length, 1, 'repeated presses sent nothing');
+  await toastSays(page, /Still working/);
+  assert.equal(await busy(page, dismiss), 'true', 'shown as pending');
+  assert.equal((await focusInfo(page)).a, 'resolveReport', 'focus stays on the pending button');
+  release();
+  await page.waitForSelector(dismiss, { state: 'detached' });
+  await settle(page);
+  assert.equal(calls(backend, 'resolveReport').length, 1);
+  assert.equal(auditCount(backend, 'chat:resolveReport'), 1, 'one resolution in the audit log');
+  await noAxe(page, 'after dismissing');
+  await done(ctx);
+});
+
+test('P4-03 a quick player action pressed repeatedly: one character update', async () => {
+  const ctx = await admin({ path: '/admin.html#player/char-player', wait: '#player-title' });
+  const { page, backend } = ctx;
+  const heal = '[data-a="quick"][data-v="heal"]';
+  const release = backend.hold('update');
+  await page.click(heal);
+  await sent(backend, 'update');
+  await page.click(heal);
+  await page.click(heal);
+  await page.waitForTimeout(250);
+  assert.equal(calls(backend, 'update').length, 1, 'repeated presses sent nothing');
+  await toastSays(page, /Still working/);
+  assert.equal(await busy(page, heal), 'true', 'shown as pending');
+  await noAxe(page, 'quick action pending');
+  release();
+  await page.waitForSelector(`${heal}:not([aria-busy])`);
+  await settle(page);
+  assert.equal(calls(backend, 'update').length, 1, 'exactly one update');
+  assert.equal(auditCount(backend, 'edit'), 1, 'one edit in the audit log');
+  await done(ctx);
+});
+
+test('P4-03 a confirmed action pressed again while pending: no second dialog, no second request', async () => {
+  const ctx = await admin({ path: '/admin.html#world', wait: '[data-a="endEvent"]' });
+  const { page, backend } = ctx;
+  const end = '[data-a="endEvent"][data-v="ev-1"]';
+  const release = backend.hold('endEvent');
+  await page.click(end);
+  await page.click('#confirm [data-r="ok"]');
+  await sent(backend, 'endEvent');
+  await page.click(end);
+  await page.waitForTimeout(250);
+  assert.equal(await dialogOpen(page), false, 'no second dialog');
+  await toastSays(page, /Still working/);
+  assert.equal(await busy(page, end), 'true', 'shown as pending');
+  assert.equal(calls(backend, 'endEvent').length, 1);
+  release();
+  await page.waitForSelector(end, { state: 'detached' });
+  await settle(page);
+  assert.deepEqual([calls(backend, 'endEvent').length, auditCount(backend, 'world:endEvent')], [1, 1]);
+  await done(ctx);
+});
+
+test('P4-03 zone Save, Delete and Restore on one zone: never two at once', async () => {
+  const ctx = await admin({ path: '/admin.html#zone/marsh', wait: '#zone-form' });
+  const { page, backend } = ctx;
+  // Restore is confirmed and held: Delete and Save are refused without a dialog or a request.
+  const releaseReset = backend.hold('resetZone');
+  await page.click('[data-a="zoneReset"]');
+  await page.click('#confirm [data-r="ok"]');
+  await sent(backend, 'resetZone');
+  await page.click('[data-a="zoneDelete"]');
+  await page.waitForTimeout(250);
+  assert.equal(await dialogOpen(page), false, 'Delete asks nothing while Restore is sending');
+  await toastSays(page, /Still working on the last change to this zone/);
+  assert.equal(await busy(page, '[data-a="zoneReset"]'), 'true', 'Restore shown as pending');
+  await noAxe(page, 'zone restore pending');
+  await page.click('[data-a="zoneSave"]');
+  await page.click('[data-a="zoneReset"]');
+  await page.waitForTimeout(250);
+  assert.equal(await dialogOpen(page), false);
+  assert.deepEqual([calls(backend, 'resetZone').length, calls(backend, 'deleteZone').length, calls(backend, 'saveZone').length], [1, 0, 0]);
+  releaseReset();
+  await page.waitForSelector('[data-a="zoneReset"]:not([aria-busy])');
+  await settle(page);
+  // Save is held: Delete and Restore are refused.
+  const releaseSave = backend.hold('saveZone');
+  await page.click('[data-a="zoneSave"]');
+  await sent(backend, 'saveZone');
+  await page.click('[data-a="zoneDelete"]');
+  await page.click('[data-a="zoneReset"]');
+  await page.waitForTimeout(250);
+  assert.equal(await dialogOpen(page), false, 'no dialog while Save is sending');
+  assert.deepEqual([calls(backend, 'resetZone').length, calls(backend, 'deleteZone').length, calls(backend, 'saveZone').length], [1, 0, 1]);
+  releaseSave();
+  await page.waitForSelector('#zone-form', { state: 'detached' });
+  await settle(page);
+  assert.deepEqual([auditCount(backend, 'zone:reset'), auditCount(backend, 'zone:delete'), auditCount(backend, 'zone:edit')], [1, 0, 1]);
+  await done(ctx);
+});
+
+test('P4-03 a failed action clears its pending state, keeps the error and focus, and can be retried', async () => {
+  const ctx = await admin({ path: '/admin.html#hunts', wait: '[data-a="cancelHunt"]' });
+  const { page, backend } = ctx;
+  const cancel = '[data-a="cancelHunt"][data-v="hunt-1"]';
+  const release = backend.hold('cancelHunt');
+  backend.failNext('cancelHunt', 500, 'The hunt could not be cancelled. Try again.');
+  await page.click(cancel);
+  await page.click('#confirm [data-r="ok"]');
+  await page.waitForSelector(`${cancel}[aria-busy="true"]`);
+  release();
+  await page.waitForFunction(() => /could not be cancelled/.test(document.getElementById('alerts').textContent));
+  const st = await page.evaluate((sel) => ({ busy: document.querySelector(sel).getAttribute('aria-busy'), pending: document.querySelector(sel).classList.contains('pending'), focus: document.activeElement.dataset.a }), cancel);
+  assert.deepEqual(st, { busy: null, pending: false, focus: 'cancelHunt' });
+  await page.waitForTimeout(3000); // the problem stays (successes fade after 2.6s)
+  assert.match(await page.textContent('#alerts'), /could not be cancelled/);
+  await page.click(cancel);
+  await page.click('#confirm [data-r="ok"]');
+  await toastSays(page, /Hunt cancelled/);
+  await settle(page);
+  assert.equal(calls(backend, 'cancelHunt').length, 2, 'the failed request and the retry');
+  assert.equal(auditCount(backend, 'hunt:cancel'), 1);
+  await done(ctx);
+});
+
+test('P4-03 independent actions keep their own pending state; one finishing clears only its own', async () => {
+  const ctx = await admin({ path: '/admin.html#chat', wait: '.report' });
+  const { page, backend } = ctx;
+  const dismiss = '[data-a="resolveReport"][data-v="901"]';
+  const remove = '.report [data-a="chatDelete"][data-v="12"]';
+  const releaseDismiss = backend.hold('resolveReport');
+  const releaseRemove = backend.hold('chatDelete');
+  await page.click(dismiss);
+  await sent(backend, 'resolveReport');
+  await page.click(remove);
+  await page.click('#confirm [data-r="ok"]');
+  await sent(backend, 'chatDelete');
+  const bothBefore = [await busy(page, dismiss), await busy(page, remove)];
+  // Removing the message finishes and the reports and chat log are fetched again and redrawn.
+  const fetchesBefore = calls(backend, 'chatReports').length;
+  releaseRemove();
+  await page.waitForSelector(remove, { state: 'detached' });
+  assert.ok(calls(backend, 'chatReports').length > fetchesBefore, 'the lists were refreshed');
+  await page.click(dismiss);
+  await page.waitForTimeout(250);
+  assert.equal(calls(backend, 'resolveReport').length, 1, 'Dismiss report still sends nothing more after the refresh');
+  assert.deepEqual(bothBefore, ['true', 'true'], 'both were shown as pending');
+  assert.equal(await busy(page, dismiss), 'true', 'Dismiss report is still pending after the refresh');
+  releaseDismiss();
+  await page.waitForSelector(dismiss, { state: 'detached' });
+  await settle(page);
+  assert.deepEqual([calls(backend, 'chatDelete').length, calls(backend, 'resolveReport').length], [1, 1]);
+  assert.deepEqual([auditCount(backend, 'chat:delete'), auditCount(backend, 'chat:resolveReport')], [1, 1]);
+  await done(ctx);
+});

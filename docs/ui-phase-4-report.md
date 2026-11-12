@@ -160,7 +160,7 @@ The review accepted the Phase 4 design: grouped navigation, cards in a narrow co
   - "P4-02 granting moderator…": a normal dialog with no typing, permissions stated, and axe passing. Cancel sends nothing, and confirming sends exactly one request.
   - "P4-02 changing the role of existing staff…": the moderator-to-admin and admin-to-moderator titles, and the demotion note.
 
-**Noted, not changed.** Some button-driven admin actions also have no single-flight guard: quick actions on a player record, Remove item, Dismiss report, Remove from staff, End event, Cancel hunt, Delete zone, Restore built-in zone, Delete news and Remove message. All except Dismiss report and the quick actions already confirm first. The orders named `submitting()` and zone Save, so these are left for the reviewer to decide.
+**Noted, not changed.** Some button-driven admin actions also have no single-flight guard: quick actions on a player record, Remove item, Dismiss report, Remove from staff, End event, Cancel hunt, Delete zone, Restore built-in zone, Delete news and Remove message. All except Dismiss report and the quick actions already confirm first. The orders named `submitting()` and zone Save, so these were left for the reviewer to decide. The re-review asked for them: see P4-03 below.
 
 ### Results
 All on this laptop (Windows 11, Node 22.16, Playwright 1.63.0 Chromium), fake backend.
@@ -191,3 +191,55 @@ All on this laptop (Windows 11, Node 22.16, Playwright 1.63.0 Chromium), fake ba
 - **Screen readers:** announcement of the new dialogs and of the pending Save button. Checked in the DOM and by axe only.
 - **Real devices.**
 - **A real Supabase backend:** the tests hold and fail requests in the fake backend; no request was sent to the live project.
+
+## Review corrections (PR #13 re-review)
+
+The re-review accepted P4-01 and P4-02 at `bdb1f4d` and asked for one more correction.
+
+**P4-03: protect the remaining admin button actions.**
+- *Cause:* ten state-changing buttons sent their request on every press. Some also asked their confirmation again while the first request was still running: quick actions on a player record, Remove item, Delete news, Remove chat message, Dismiss report, End event, Cancel hunt, Remove from staff, Delete zone and Restore built-in zone. Several of the server's handlers write an audit entry on every call even when nothing changes; for example, resolving an already-resolved report logs again. So repeated presses could also duplicate audit records.
+- *Fix, using the P4-01 pattern* (the same `st.pendingForms` set; no new framework):
+  - **Stable keys:** each action has a key naming the action and its target: `resolveReport:<report>`, `chatDelete:<message>`, `endEvent:<event>`, `cancelHunt:<hunt>`, `deleteEvent:<news id>`, `removeStaff:<email>`, and `quick:<player>:<action>` / `removeItem:<player>:<item>`.
+  - **Before anything else:** a press while that key is in flight says "Still working on the last request." and returns before any confirmation, so no second dialog opens and nothing is sent. The Phase 3 confirmations are otherwise unchanged and none were added.
+  - **Pending drawn from state:** after every render, `markPending()` gives each button whose key is in flight the `pending` class and `aria-busy`. It survives re-renders and data refreshes, such as the chat lists being fetched again after another action.
+  - **Clearing:** `pendingWhile(key, fn)` sets the flag, runs the request and clears the flag in `finally`. A failure stays on screen as a problem, focus stays on the button, and it can be pressed again. Actions that refresh a list afterwards (Dismiss report, Remove message, Delete news, Cancel hunt) stay pending until the refreshed list has arrived, so a stale button can't be pressed in between.
+  - **Independent actions** have different keys, so one finishing never clears another.
+  - **Zones:** Save, Delete and Restore on the same zone share the prefix `zone:<id>:`. While any of them is in flight, the others say "Still working on the last change to this zone." and neither ask nor send. Each button shows its own pending state.
+- *Fake backend (tests only):* it now mirrors the server's effects for these actions, so a duplicate request shows up as a duplicate audit entry or a server refusal:
+  - resolving a report marks it resolved, and resolving it again is logged again, as on the server;
+  - End event, Cancel hunt, Delete news, setStaff, and zone save, delete and restore are logged;
+  - End event and Cancel hunt refuse an event or hunt that is already gone;
+  - zones are stored, so a deleted zone is refused the second time.
+
+  Nothing in the server, the schema, the API or the permissions changed.
+- *Tests* (`tests/ui/admin-console.test.mjs`). Each first waits for the first request to reach the fake backend, then presses again, and only then checks the pending look:
+  - "P4-03 Dismiss report pressed repeatedly while delayed…": three presses send one `resolveReport`, with one `chat:resolveReport` audit entry. The button is pending and keeps focus, and axe passes afterwards.
+  - "P4-03 a quick player action pressed repeatedly…": three presses of Full heal send one `update`, with one `edit` audit entry. Axe passes on the pending state.
+  - "P4-03 a confirmed action pressed again while pending…": End event is confirmed and held. A second press opens no dialog and sends nothing, and there is one `world:endEvent` entry.
+  - "P4-03 zone Save, Delete and Restore on one zone…": while Restore is held, Delete, Save and Restore open no dialog and send nothing. Axe passes on that state. While Save is held, Delete and Restore are refused. The totals are one reset, no delete and one save, matching the audit log.
+  - "P4-03 a failed action clears its pending state…": Cancel hunt fails while held. Pending clears, focus stays on the button, and the error is still shown after 3 seconds. The retry succeeds, with one `hunt:cancel` entry.
+  - "P4-03 independent actions keep their own pending state…": Dismiss report and Remove message are both held. Remove message finishes and the lists are fetched again. Dismiss report is still pending and a press sends nothing, and each action has exactly one request and one audit entry.
+
+### Results (P4-03)
+All on this laptop, fake backend.
+
+- `npm test` 24 of 24 and `npm run test:ui` **81 of 81 in each of 3 consecutive full runs** (75 earlier tests plus 6 new).
+- **New tests against the reviewed commit** (`UI_PUBLIC_DIR` set to the `bdb1f4d` checkout, with the updated fake backend): all 6 fail. Five fail on the behaviour itself:
+  - Dismiss report: 3 requests instead of 1;
+  - quick action: 3 updates instead of 1;
+  - End event: a second dialog opened;
+  - zone: Delete asked while Restore was sending;
+  - independent actions: Dismiss report sent a second request after the refresh.
+
+  The failure-and-retry test fails only on the missing pending state. The old code had no pending state to clear, and its failure path already let you retry. It is kept as a guard.
+- **Pending states, every action** (`docs/ui-audit/phase-4/corrections-p4-03/`): each of the 10 buttons was pressed with its request held, then pressed again, at 390 and 1440 (20 scenes).
+  - **After:** 0 axe violations of any impact, one request each, no second dialog, and the button shown as pending in all 20.
+  - **On `bdb1f4d`:** 0 axe violations. But nothing showed as pending in any scene; the quick action and Dismiss report sent 2 requests; and the 8 confirmed actions opened a second confirmation. Raw data: `summary-p4-03-after.json`, `summary-p4-03-before.json`.
+- **Admin accessibility sweep** (`tools/admin-shots.mjs`, 60 captures): **0 violations of any impact**, 0 page overflow, 0 targets under 24px. Raw data: `docs/ui-audit/phase-4/summary-after-p4-03.json`.
+- The new tests also run axe on the pending quick action, the pending zone restore and the reports list after a dismissal.
+
+### Not verified (P4-03)
+
+- **Screen readers:** announcement of `aria-busy` on the pending buttons and of the "Still working" toast. Checked in the DOM and by axe only.
+- **Real devices.**
+- **The live backend:** the duplicate-audit behaviour was read from `supabase/functions/admin/index.ts` and modelled in the fake backend, not observed on the live project.

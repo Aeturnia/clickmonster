@@ -44,7 +44,9 @@ const st = {
   world: null, hunts: null, economy: null, zones: null, zoneEdit: null, chat: null, reports: null, chatQ: {}, focusNext: null, returnFocus: null,
   reviews: {}, // report id -> { open, player, loading, done }
   formErrors: {}, // form id -> server error shown inside the form
-  pendingForms: new Set(), // forms (and `zone:<id>` saves) whose request is running; each has its own flag
+  // Requests in flight, one flag each: form ids, button actions (`action:target`, see actionKey)
+  // and zone changes (`zone:<id>:<op>`). A key is stable across re-renders.
+  pendingForms: new Set(),
   clearForms: new Set(), // forms to show fresh (not restored) on the next render, after a success
 };
 
@@ -611,6 +613,7 @@ function render() {
   root.innerHTML = html;
   restoreForms(root, saved);
   st.clearForms.clear();
+  markPending(root);
 
   // 1. An explicit target (e.g. a record that just loaded) waits until it exists.
   if (st.focusNext) {
@@ -772,6 +775,35 @@ function validate(id, form) {
   return false;
 }
 
+// Button actions that change data. Each runs once at a time per target: the key names the
+// action and what it acts on, so other buttons (and other targets) are never blocked or cleared.
+const MUTATIONS = new Set(['quick', 'removeItem', 'deleteEvent', 'chatDelete', 'resolveReport', 'endEvent', 'cancelHunt', 'removeStaff']);
+function actionKey(a, v) {
+  if (!MUTATIONS.has(a)) return null;
+  return a === 'quick' || a === 'removeItem' ? `${a}:${st.player?.player.id}:${v}` : `${a}:${v}`;
+}
+// Draws the pending look on every button whose action is in flight, after any re-render.
+function markPending(root) {
+  if (!st.pendingForms.size) return;
+  for (const el of root.querySelectorAll('[data-a][data-v]')) {
+    if (st.pendingForms.has(actionKey(el.dataset.a, el.dataset.v))) { el.classList.add('pending'); el.setAttribute('aria-busy', 'true'); }
+  }
+}
+// Runs a button action's request under its key. A failure stays on screen as a problem; the
+// button is usable again either way.
+async function pendingWhile(key, fn) {
+  st.pendingForms.add(key);
+  render();
+  try {
+    await fn();
+  } catch (err) {
+    toast(err.message, true);
+  } finally {
+    st.pendingForms.delete(key);
+  }
+  render();
+}
+
 // True (and says so) while this form's request is still running, so a second press sends nothing.
 function stillWorking(id) {
   if (!st.pendingForms.has(id)) return false;
@@ -849,7 +881,10 @@ document.addEventListener('click', async (e) => {
   if (a === 'open') openPlayer(v);
   if (a === 'back') { st.player = null; st.focusNext = st.returnFocus || null; render(); pushRoute(); load('players'); }
   if (a === 'review') toggleReview(v);
-  if (a === 'quick') editPlayer({ [v]: true });
+  // A press while the same action on the same target is in flight: nothing is sent or asked.
+  const key = actionKey(a, v);
+  if (key && stillWorking(key)) return;
+  if (a === 'quick') await pendingWhile(key, () => editPlayer({ [v]: true }));
   if (a === 'removeItem') {
     const p = st.player?.player;
     const item = p?.data.inventory.find((i) => String(i.uid) === v);
@@ -858,33 +893,34 @@ document.addEventListener('click', async (e) => {
       title: `Remove ${d?.name || 'this item'} from ${p?.name || 'the hero'}?`,
       points: [`The item${item?.gems.length ? ' and the gems socketed in it are' : ' is'} deleted, not returned to the shop.`, 'The change is recorded in the audit log.'],
       confirm: 'Remove item', cancel: 'Keep it',
-    })) editPlayer({ removeItem: Number(v) }, 'Item removed.');
+    })) await pendingWhile(key, () => editPlayer({ removeItem: Number(v) }, 'Item removed.'));
   }
   if (a === 'deleteEvent' && await ask({ title: 'Delete this news item?', points: ['It disappears from the news feed for every player.'], confirm: 'Delete', cancel: 'Keep it' })) {
-    try { await call('deleteEvent', { id: v }); toast('Deleted.'); } catch (err) { toast(err.message, true); }
-    load('announce');
+    await pendingWhile(key, async () => {
+      try { await call('deleteEvent', { id: v }); toast('Deleted.'); } finally { await load('announce'); }
+    });
   }
   if (a === 'chatDelete' && await ask({ title: 'Remove this message for everyone?', points: ['Players see "message removed" in its place.', 'The original text stays in the moderation log.'], confirm: 'Remove message', cancel: 'Keep it' })) {
-    try { await call('chatDelete', { id: v }); toast('Removed.'); load('chat'); } catch (err) { toast(err.message, true); }
+    await pendingWhile(key, async () => { await call('chatDelete', { id: v }); toast('Removed.'); await load('chat'); });
   }
   if (a === 'resolveReport') {
-    try {
+    // Pending until the refreshed list arrives, so the report can't be dismissed twice.
+    await pendingWhile(key, async () => {
       await call('resolveReport', { id: v });
       delete st.reviews[v];
       toast('Report dismissed.');
       st.focusNext = '#reports-title';
-      load('chat');
-    } catch (err) { toast(err.message, true); }
+      await load('chat');
+    });
   }
   if (a === 'endEvent' && await ask({ title: 'End this event now?', points: ['Its bonuses stop for every player straight away.'], confirm: 'End event', cancel: 'Keep it running' })) {
-    try { st.world = await call('endEvent', { id: v }); toast('Event ended.'); render(); } catch (err) { toast(err.message, true); }
+    await pendingWhile(key, async () => { st.world = await call('endEvent', { id: v }); toast('Event ended.'); });
   }
   if (a === 'cancelHunt' && await ask({ title: 'Cancel this hunt?', points: ['The world boss disappears and nobody is rewarded, including players who already hit it.'], confirm: 'Cancel hunt', cancel: 'Keep it running' })) {
-    try { await call('cancelHunt', { id: v }); toast('Hunt cancelled.'); load('hunts'); } catch (err) { toast(err.message, true); }
+    await pendingWhile(key, async () => { await call('cancelHunt', { id: v }); toast('Hunt cancelled.'); await load('hunts'); });
   }
   if (a === 'removeStaff' && await ask({ title: `Remove ${v} from staff?`, points: ['They lose access to this console straight away.', 'They keep their player account.'], confirm: 'Remove from staff', cancel: 'Cancel' })) {
-    try { st.staff = (await call('setStaff', { email: v, role: null })).staff; toast('Removed.'); } catch (err) { toast(err.message, true); }
-    render();
+    await pendingWhile(key, async () => { st.staff = (await call('setStaff', { email: v, role: null })).staff; toast('Removed.'); });
   }
 });
 
