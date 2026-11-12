@@ -16,11 +16,11 @@ export const VARIANTS = {
 export const VARIANT_IDS = Object.keys(VARIANTS);
 
 // Roll for a variant. Bosses are never variants. `boosted` (a quest target) is 3x as likely.
-export function rollVariant(rng, isBoss = false, boosted = null) {
+export function rollVariant(rng, isBoss = false, boosted = null, eliteMult = 1) {
   if (isBoss) return null;
   let r = rng();
   for (const id of VARIANT_IDS) {
-    r -= VARIANTS[id].chance * (id === boosted ? 3 : 1);
+    r -= VARIANTS[id].chance * eliteMult * (id === boosted ? 3 : 1);
     if (r < 0) return id;
   }
   return null;

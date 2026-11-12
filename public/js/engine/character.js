@@ -7,6 +7,7 @@ import { parseGem } from '../data/gems.js';
 import {
   MASTERIES, masteryStart, masteryCap, masteryArmor, masteryGainChance,
 } from '../data/masteries.js';
+import { mult } from './world-config.js';
 
 export const SAVE_VERSION = 1;
 export const NAME_RE = /^[A-Za-z][A-Za-z '-]{1,17}$/;
@@ -212,7 +213,7 @@ export function trainMastery(char, m, rng, bonus = 0) {
   const cur = char.masteries[m];
   if (cur >= cap) return null;
   let gain = bonus;
-  if (rng() < masteryGainChance(cur)) gain += 1;
+  if (rng() < masteryGainChance(cur) * mult('mastery')) gain += 1;
   if (!gain) return null;
   char.masteries[m] = Math.min(cap, cur + gain);
   return char.masteries[m];

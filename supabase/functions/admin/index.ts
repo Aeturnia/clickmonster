@@ -9,6 +9,8 @@ import { ZONES } from './js/data/zones.js';
 import { STATS } from './js/data/stats.js';
 import { MASTERIES, masteryCap } from './js/data/masteries.js';
 import { parseGem } from './js/data/gems.js';
+import { MULT_KEYS, MULT_MAX } from './js/engine/world-config.js';
+import { suggestedHuntHp } from './js/engine/hunt.js';
 
 const db = createClient(
   Deno.env.get('SUPABASE_URL')!,
@@ -128,6 +130,7 @@ async function updatePlayer(staff: Staff, id: string, patch: any) {
   requireAdmin(staff);
   const row = await loadCharacter(id);
   const c = row.data;
+  c.__wealthBefore = (c.gold || 0) + (c.bank || 0);
   const changes: Record<string, unknown> = {};
   const num = (v: any, min = 0) => {
     const n = Math.floor(Number(v));
@@ -184,7 +187,10 @@ async function updatePlayer(staff: Staff, id: string, patch: any) {
   }
   if (!Object.keys(changes).length) throw new AdminError('Nothing changed.');
   c.hp = Math.min(c.hp, maxHp(c));
+  const goldDelta = (c.gold + c.bank) - (row.data.__wealthBefore ?? 0);
+  delete c.__wealthBefore;
   await saveCharacter(row, c);
+  if (goldDelta) await db.rpc('ledger_add', { p_source: 'admin', p_amount: goldDelta });
   await log(staff, 'edit', { id: row.id, name: row.name }, changes);
   return { player: (await loadCharacter(id)) };
 }
@@ -254,6 +260,82 @@ async function setStaff(staff: Staff, email: string, role: string | null) {
   return { staff: await listStaff() };
 }
 
+// ---------------------------------------------------------------- world settings
+async function getWorld() {
+  const { data, error } = await db.from('world_config').select('data, updated_at').eq('id', 1).single();
+  if (error) throw error;
+  return data;
+}
+
+async function saveWorld(staff: Staff, data: any, action: string, details: unknown) {
+  const { error } = await db.from('world_config').update({ data, updated_at: new Date().toISOString() }).eq('id', 1);
+  if (error) throw error;
+  await log(staff, action, null, details);
+  return await getWorld();
+}
+
+function cleanMults(input: any) {
+  const out: Record<string, number> = {};
+  for (const k of MULT_KEYS) {
+    if (input?.[k] == null || input[k] === '') continue;
+    const v = Number(input[k]);
+    if (!Number.isFinite(v) || v < 0 || v > MULT_MAX) throw new AdminError(`${k} must be between 0 and ${MULT_MAX}.`);
+    out[k] = v;
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------- hunts
+async function listHunts() {
+  const { data, error } = await db.from('hunts').select('*').order('created_at', { ascending: false }).limit(20);
+  if (error) throw error;
+  const ids = data.map((h: any) => h.id);
+  const { data: hits } = ids.length ? await db.from('hunt_hits').select('*').in('hunt_id', ids) : { data: [] };
+  return data.map((h: any) => ({
+    ...h,
+    top: (hits || []).filter((x: any) => x.hunt_id === h.id).sort((a: any, b: any) => b.damage - a.damage).slice(0, 5),
+    hunters: (hits || []).filter((x: any) => x.hunt_id === h.id).length,
+  }));
+}
+
+async function startHunt(staff: Staff, a: any) {
+  const zone = ZONES[a.zone];
+  if (!zone) throw new AdminError('Pick a zone.');
+  const name = String(a.name || '').trim().slice(0, 60);
+  if (!name) throw new AdminError('Name the boss.');
+  const level = Math.max(1, Math.min(10000, Math.floor(Number(a.level) || 1)));
+  const hp = Math.max(1000, Math.floor(Number(a.hp) || suggestedHuntHp(level)));
+  const hours = Math.max(0.25, Math.min(24 * 14, Number(a.hours) || 24));
+  const reward = {
+    gold: Math.max(0, Math.floor(Number(a.gold) || 0)),
+    xp: Math.max(0, Math.floor(Number(a.xp) || 0)),
+    relic: a.relic !== false,
+  };
+  const { data, error } = await db.from('hunts').insert({
+    zone: zone.id, name, level, max_hp: hp, hp, reward, ends_at: new Date(Date.now() + hours * 3600000).toISOString(),
+  }).select('id').single();
+  if (error) throw error;
+  await db.from('events').insert({ kind: 'hunt', text: `A hunt begins! ${name} (level ${level}) has appeared in ${zone.name}.` });
+  await log(staff, 'hunt:start', { name }, { zone: zone.id, level, hp, hours, reward });
+  return { id: data.id };
+}
+
+async function cancelHunt(staff: Staff, id: string) {
+  const { data, error } = await db.from('hunts').update({ status: 'cancelled' }).eq('id', id).eq('status', 'active').select('name');
+  if (error) throw error;
+  if (!data?.length) throw new AdminError('That hunt is not active.');
+  await log(staff, 'hunt:cancel', { name: data[0].name }, null);
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------- economy
+async function economy(days = 14) {
+  const since = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
+  const { data, error } = await db.from('ledger').select('*').gte('day', since).order('day', { ascending: false });
+  if (error) throw error;
+  return { rows: data };
+}
+
 // ---------------------------------------------------------------- dispatch
 async function handle(staff: Staff, action: string, a: any) {
   switch (action) {
@@ -289,6 +371,41 @@ async function handle(staff: Staff, action: string, a: any) {
       return { log: data };
     }
     case 'staff': return { staff: await listStaff() };
+    case 'world': return await getWorld();
+    case 'setBase': {
+      requireAdmin(staff);
+      const w = await getWorld();
+      const base = { ...w.data.base, ...cleanMults(a.base) };
+      return await saveWorld(staff, { ...w.data, base }, 'world:base', base);
+    }
+    case 'startEvent': {
+      requireAdmin(staff);
+      const name = String(a.name || '').trim().slice(0, 60);
+      if (!name) throw new AdminError('Name the event.');
+      const hours = Number(a.hours);
+      if (!(hours > 0 && hours <= 24 * 30)) throw new AdminError('Duration must be between 0 and 720 hours.');
+      const mults = cleanMults(a.mults);
+      if (!Object.keys(mults).length) throw new AdminError('Set at least one multiplier.');
+      const w = await getWorld();
+      const now = Date.now();
+      const ev = { id: crypto.randomUUID(), name, until: new Date(now + hours * 3600000).toISOString(), ...mults };
+      const events = [...(w.data.events || []).filter((e: any) => new Date(e.until).getTime() > now), ev];
+      const res = await saveWorld(staff, { ...w.data, events }, 'world:event', ev);
+      await db.from('events').insert({ kind: 'announce', text: `Event started: ${name}! Ends in ${hours} hour${hours === 1 ? '' : 's'}.` });
+      return res;
+    }
+    case 'endEvent': {
+      requireAdmin(staff);
+      const w = await getWorld();
+      const ev = (w.data.events || []).find((e: any) => e.id === a.id);
+      if (!ev) throw new AdminError('No such event.');
+      const events = (w.data.events || []).filter((e: any) => e.id !== a.id);
+      return await saveWorld(staff, { ...w.data, events }, 'world:endEvent', { name: ev.name });
+    }
+    case 'hunts': return { hunts: await listHunts(), suggest: Object.fromEntries([10, 20, 30, 40, 50, 60, 75].map((l) => [l, suggestedHuntHp(l)])) };
+    case 'startHunt': requireAdmin(staff); return await startHunt(staff, a);
+    case 'cancelHunt': requireAdmin(staff); return await cancelHunt(staff, String(a.id));
+    case 'economy': return await economy(Number(a.days) || 14);
     case 'setStaff': return await setStaff(staff, a.email, a.role ?? null);
     case 'meta': return {
       zones: Object.values(ZONES).map((z: any) => ({ id: z.id, name: z.name, size: z.size })),
