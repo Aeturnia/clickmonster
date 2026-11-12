@@ -35,7 +35,7 @@ function detailsText(action, d) {
 }
 const untilText = (t) => (new Date(t).getFullYear() > 9000 ? 'permanent' : `until ${when(t)}`);
 
-const st = { phase: 'loading', me: null, tab: 'dashboard', q: '', players: null, player: null, stats: null, log: null, events: null, staff: null, world: null, hunts: null, economy: null, zones: null, zoneEdit: null, chat: null, reports: null, chatQ: {} };
+const st = { phase: 'loading', me: null, tab: 'dashboard', q: '', players: null, player: null, stats: null, log: null, events: null, staff: null, world: null, hunts: null, economy: null, zones: null, zoneEdit: null, chat: null, reports: null, chatQ: {}, focusNext: null, returnFocus: null };
 
 // Problems stay until dismissed (or until the connection recovers); successes are brief.
 const problems = [];
@@ -221,7 +221,7 @@ function viewPlayer() {
   const { player: p, history, actions, email } = st.player;
   const c = p.data;
   return `<button class="btn sm" data-a="back">Back to search</button>
-    <div class="box" style="margin-top:12px"><h2>${esc(p.name)} ${sanctionPills(p)}</h2>
+    <div class="box" style="margin-top:12px"><h2 id="player-title" tabindex="-1">${esc(p.name)} ${sanctionPills(p)}</h2>
       <p class="small muted">Level ${c.level} ${RACES[c.race]?.name || ''}, in ${esc(ZONES[c.loc.zone]?.name || c.loc.zone)} at ${c.loc.x}, ${c.loc.y}. Last seen ${ago(p.updated_at)}. Created ${when(p.created_at)}.${email ? ` Email: ${esc(email)}.` : ''}</p>
       <p class="small">Gold ${fmt(c.gold)} carried, ${fmt(c.bank)} banked. Kills ${fmt(c.kills)}, deaths ${fmt(c.deaths)}, quests ${fmt(c.questsDone || 0)}, duels won ${fmt(c.pvpWins || 0)}.</p>
     </div>
@@ -387,16 +387,56 @@ function viewChat() {
     </form>`;
 }
 
+// ---- Keyboard focus across full re-renders.
+// A stable selector for the focused control, so focus can move to its replacement.
+function focusKey(el) {
+  if (!el || el === document.body || !el.dataset) return null;
+  if (el.id) return `#${CSS.escape(el.id)}`;
+  const d = el.dataset;
+  const v = d.v != null ? `[data-v="${CSS.escape(d.v)}"]` : ':not([data-v])';
+  if (d.a) return `[data-a="${CSS.escape(d.a)}"]${v}`;
+  if (d.f) return `[data-f="${CSS.escape(d.f)}"]`;
+  if (d.toggle) return `[data-toggle="${CSS.escape(d.toggle)}"]`;
+  if (d.list) return `[data-list="${CSS.escape(d.list)}"][value="${CSS.escape(el.value)}"]`;
+  if (d.owpick) return `[data-owpick="${CSS.escape(d.owpick)}"]`;
+  if (el.name && el.form?.id) return `#${CSS.escape(el.form.id)} [name="${CSS.escape(el.name)}"]`;
+  return null;
+}
+const usable = (el) => !!el && el.isConnected && !el.disabled && el.getClientRects().length > 0;
+const SECTION_LABEL = { dashboard: 'Dashboard', players: 'Players', world: 'World', hunts: 'Hunts', economy: 'Economy', zones: 'Zones', chat: 'Chat moderation', announce: 'Announcements', log: 'Audit log', staff: 'Staff' };
+
 function render() {
+  const root = $('#admin');
+  const active = document.activeElement;
+  const hadFocus = active && root.contains(active);
+  const key = hadFocus ? focusKey(active) : null;
+  const caret = hadFocus && 'selectionStart' in active ? [active.selectionStart, active.selectionEnd] : null;
   let html;
   if (st.phase === 'loading') html = '<div class="intro"><h1>ClickMonster Admin</h1><p>Loading</p></div>';
   else if (st.phase === 'login') html = viewLogin();
   else if (st.phase === 'denied') html = viewDenied();
   else {
     const body = { dashboard: viewDashboard, players: viewPlayers, world: viewWorld, hunts: viewHunts, economy: viewEconomy, zones: zones.view, chat: viewChat, announce: viewAnnounce, log: viewLog, staff: viewStaff }[st.tab]();
-    html = header() + body;
+    const section = st.tab === 'players' && st.player ? `Player: ${st.player.player.name}` : SECTION_LABEL[st.tab] || st.tab;
+    html = `${header()}<h2 class="sr-only" id="section-title" tabindex="-1">${esc(section)}</h2>${body}`;
   }
-  $('#admin').innerHTML = html;
+  root.innerHTML = html;
+
+  // 1. An explicit target (e.g. a record that just loaded) waits until it exists.
+  if (st.focusNext) {
+    const target = $(st.focusNext);
+    if (usable(target)) { target.focus({ preventScroll: true }); st.focusNext = null; return; }
+  }
+  if (!hadFocus) return;
+  // 2. The same control after the re-render.
+  const again = key && root.querySelector(key);
+  if (usable(again)) {
+    again.focus({ preventScroll: true });
+    if (caret && 'setSelectionRange' in again) { try { again.setSelectionRange(...caret); } catch { /* not a text field */ } }
+    return;
+  }
+  // 3. Otherwise the section heading, so focus never drops to the page body.
+  $('#section-title')?.focus({ preventScroll: true });
 }
 
 // ---------------------------------------------------------------- loading
@@ -421,10 +461,15 @@ async function load(tab = st.tab) {
 }
 
 async function openPlayer(id) {
+  // Remember how we got here so "Back to search" can return focus to this player's link.
+  st.returnFocus = `.row-link[data-v="${CSS.escape(id)}"]`;
   st.tab = 'players';
   st.player = null;
   render();
-  try { st.player = await call('player', { id }); } catch (e) { toast(e.message, true); }
+  try {
+    st.player = await call('player', { id });
+    st.focusNext = '#player-title';
+  } catch (e) { toast(e.message, true); }
   render();
   window.scrollTo(0, 0);
 }
@@ -462,7 +507,7 @@ document.addEventListener('click', async (e) => {
   if (a === 'tab') { st.tab = v; st.player = null; render(); load(v); }
   if (a === 'refresh') load();
   if (a === 'open') openPlayer(v);
-  if (a === 'back') { st.player = null; render(); load('players'); }
+  if (a === 'back') { st.player = null; st.focusNext = st.returnFocus || null; render(); load('players'); }
   if (a === 'quick') editPlayer({ [v]: true });
   if (a === 'removeItem' && confirm('Remove this item from the hero?')) editPlayer({ removeItem: Number(v) }, 'Item removed.');
   if (a === 'deleteEvent' && confirm('Delete this news item?')) {

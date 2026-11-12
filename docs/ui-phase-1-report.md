@@ -13,7 +13,7 @@ Branch: `claude/ui-phase-1-foundation`. Scope as approved in the Phase 0 review,
 | Dialogs | The bottom sheets (shop, bank, quests, item, level-up) and the chat drawer are native `<dialog>` elements opened with `showModal()`, keeping the bottom-sheet look. **Initial focus:** the sheet heading, or the chat message box. **Containment** and inert background come from the native dialog. **Escape and backdrop tap** dismiss. **On close**, focus returns to the opener, then to its re-rendered equivalent, then to the screen heading if the trigger is gone (for example after selling the item that opened the sheet). In chat, Escape closes an open message menu first. | A3, A4, decision 1 |
 | Focus across re-renders | `paint()` remembers the focused control's `data-a`/`data-v`/`id`, plus the caret position for text fields, and moves focus to the replacement. If the control no longer exists: in battle focus goes to Melee; when a battle ends, to Fight again or Continue; otherwise to the screen's heading. | A5, F4 |
 | Semantics | Each screen has a visually hidden `<h1>` (`#screen-title`, focusable by script). Landmarks: header, main, aside (chat bar), region (actions), nav. Tabs have `aria-current="page"`, and segmented controls and chips have `aria-pressed`. | A9, A12 |
-| Battle log and announcements | The log is focusable (`tabindex=0`), `role="log"`, labelled, and not live itself. New lines are announced once through a polite `#sr-status` region. Floating numbers are `aria-hidden` and have a dark backing so they're readable over the bars. | A6, R7 (partly) |
+| Battle log and announcements | The log is focusable (`tabindex=0`), `role="log"`, labelled, and not live itself (`aria-live="off"`). **Announcements are batched per action:** the new lines produced by one action (your attack, the monster's reply, and any result lines such as victory, gold and XP) are joined into one message and sent once through the polite `#sr-status` region. Lines aren't announced individually, and earlier lines aren't repeated. Floating numbers are `aria-hidden` and have a dark backing so they're readable over the bars. | A6, R7 (partly) |
 | Map | Each square's accessible name says what is there, for example "You are here. Town: Bramblebrook Meadows Village. Square 5, 5" or "Road to the Overworld, requires level 20. Square 5, 10. Walk here". The current square has `aria-current="location"`, and the map is a labelled group. | A11 |
 | Chat | Messages are buttons in a single-tab-stop list. Arrow keys, Home and End move between them, and Enter opens the action menu (Whisper, Ignore, Report, plus Remove for staff). Messages are 28 px tall, up from 22. Send errors appear inline under the box (`role="alert"`, `aria-invalid`) and stay until a message goes through or the player dismisses them. | A4, A15, decision 3 |
 | Errors | Errors persist in a stacked region under the HUD (inside an open dialog when one is open) until dismissed or resolved. A later success of the same action clears its error, and any successful request clears connection errors. Different errors don't overwrite each other, and repeats show a count. Successes stay as brief toasts. The newest error has `role="alert"`. | A7, F2, decision 3 |
@@ -25,11 +25,11 @@ Branch: `claude/ui-phase-1-foundation`. Scope as approved in the Phase 0 review,
 ## Test results
 
 - `npm test` (engine): **24 / 24 pass**, unchanged.
-- `npm run test:ui`: **20 / 20 pass, three consecutive runs** (about 40 s each). They cover:
+- `npm run test:ui`: **27 / 27 pass, three consecutive runs** (about 45 s each). There are 20 original tests and 7 added in the review corrections below. They cover:
   - axe with zero serious or critical violations on explore, shop, bank, battle, battle result, hero, gear, map and chat in the game, and on dashboard, players, player editor, zones, zone editor and chat moderation in admin
   - the visible focus ring
   - sheet dialog initial focus, containment over 30 Tab presses, Escape, backdrop, restoration, and the missing-trigger fallback
-  - battle focus across re-renders, the log role, label and tab stop, and announcements
+  - battle focus across re-renders, the log role, label and tab stop, and the batched announcement
   - the log's recent and older distinction without contrast failures
   - the chat dialog: keyboard open, roving messages, the menu, Escape order and restoration
   - inline chat errors persisting until success
@@ -91,3 +91,22 @@ These are in `docs/ui-audit/phase-1/`, captured with the same fake data, as `bef
 - **Double-tap guard.** Battle actions within 250 ms of the previous one are still silently ignored (existing behaviour). Phase 3 will make the pending state visible instead.
 - **Destructive confirmations** still use `confirm()` and `prompt()`. A styled confirmation dialog is Phase 3.
 - **Running the UI tests elsewhere** needs a Playwright Chromium (`npx playwright install chromium`) plus one network fetch for the supabase-js module, unless `tests/ui/.cache/` is present.
+
+## Review corrections (PR #10, changes requested)
+
+These were addressed in a follow-up commit on the same branch. They're limited corrections: no visual redesign, no game-rule, API, schema or production-dependency changes.
+
+| # | Finding | Correction | Regression tests |
+|---|---|---|---|
+| 1 | A success toast could stay inside a sheet dialog after a successful action closed that sheet, for example Buy and equip, leaving it hidden. | One owner, `placeOverlays()` in `main.js`, decides where the toast and the problems area live: inside the open modal dialog if there is one, otherwise `<body>`. It runs when either is shown, after every render, and on the `close` event of **every** dialog, so the chat drawer is covered too. | *success message stays visible when the action closes its sheet* (Buy and equip, then the toast is visible under `<body>`, not inside the closed dialog); *success message shown in chat stays visible after chat closes* |
+| 2 | Realtime chat updates replaced the chat bar, the channel tabs and the error area wholesale, so whichever had keyboard focus was destroyed. | `setHtml()` in `chat-ui.js` only replaces markup that changed, and then moves focus and the caret to the equivalent control (by `data-c`/`data-v` or `id`), with sensible fallbacks. It's used for the chat bar, channel tabs, message list (including open message-action menus) and error area. The roving tab stop follows the message that owns the focus. | *realtime: a new message keeps focus on the chat bar*; *realtime: focus survives on a channel tab, a message and a menu action*, which also checks that typing continues uninterrupted. Updates are injected through the fake Realtime socket while each control has focus. |
+| 3 | The admin `render()` replaced the whole console. Section changes, asynchronous loads and opening a player record dropped keyboard focus. | `render()` now (a) honours an explicit pending focus target once it exists, (b) otherwise refocuses the same control after the re-render, including the caret in text fields, and (c) otherwise falls back to a visually hidden section heading (`#section-title`), never `<body>`. Opening a player moves focus to the record's heading after it loads, and "Back to search" returns focus to that player's link after the list reloads. | Keyboard-only: *switching sections keeps focus on the section tab through async loading*; *opening a player moves focus to the record, Back returns to the row*; *searching keeps focus and caret in the search box* |
+| 4 | The report said each line was announced once; the code batches each action's lines. | Report corrected (see the Battle log row above). The behaviour is unchanged: batching gives one coherent message per turn and avoids a burst of polite announcements. | Existing battle test |
+
+**Verification:**
+
+- All 7 new tests were run against the uncorrected Phase 1 code and **all 7 failed**. With the corrections they pass.
+- `npm test`: 24 / 24.
+- `npm run test:ui`: 27 / 27 in three consecutive runs.
+- The 48-capture axe sweep (`tools/ui-shots.mjs`, 320, 390 and 1440 px) has **0 serious or critical violations, and 0 violations of any impact**, on the WCAG A/AA rule sets.
+- No test made a request outside the fake backend.

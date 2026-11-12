@@ -102,6 +102,34 @@ export function setupChat({ sb, api, getChar, toast, esc, zoneName }) {
     paint();
   }
 
+  // ------------------------------------------------------------ focus-safe updates
+  // Live messages refresh the bar, tabs, list and error area. Replace their markup only when it
+  // changed, and keep keyboard focus (and the caret) on the equivalent control afterwards.
+  const lastHtml = new WeakMap();
+  const keyOf = (el) => {
+    if (el.id) return `#${CSS.escape(el.id)}`;
+    const { c, v } = el.dataset;
+    if (!c) return null;
+    return `[data-c="${CSS.escape(c)}"]${v != null ? `[data-v="${CSS.escape(v)}"]` : ':not([data-v])'}`;
+  };
+  function setHtml(el, html, fallback) {
+    if (!el || lastHtml.get(el) === html) return false;
+    const active = document.activeElement;
+    const inside = active && active !== el && el.contains(active);
+    const key = inside ? keyOf(active) : null;
+    const caret = inside && 'selectionStart' in active ? [active.selectionStart, active.selectionEnd] : null;
+    el.innerHTML = html;
+    lastHtml.set(el, html);
+    if (inside) {
+      const next = (key && el.querySelector(key)) || (fallback && fallback());
+      if (next) {
+        next.focus({ preventScroll: true });
+        if (caret && 'setSelectionRange' in next) { try { next.setSelectionRange(...caret); } catch { /* not a text field */ } }
+      }
+    }
+    return true;
+  }
+
   // ------------------------------------------------------------ rendering
   // Messages are buttons in a single-tab-stop list (arrow keys move between them).
   // Activating one opens a small action menu right below it.
@@ -142,11 +170,11 @@ export function setupChat({ sb, api, getChar, toast, esc, zoneName }) {
   }
 
   function paintBar() {
-    if (!st.visible || !st.started) { bar.innerHTML = ''; return; }
+    if (!st.visible || !st.started) { setHtml(bar, ''); return; }
     const unreadTotal = TABS.reduce((n, [k]) => n + st.unread[k], 0);
     const unread = TABS.filter(([k]) => st.unread[k]).map(([k, l]) => `${l} ${st.unread[k]}`).join(', ');
-    bar.innerHTML = `<button class="chatbar" data-c="toggle" aria-haspopup="dialog" aria-label="Open chat${unreadTotal ? `, ${unreadTotal} unread` : ''}">
-      <span class="chatbar-text">${latestLine()}</span>${unread ? `<span class="chatbar-unread">${unread}</span>` : ''}</button>`;
+    setHtml(bar, `<button class="chatbar" data-c="toggle" aria-haspopup="dialog" aria-label="Open chat${unreadTotal ? `, ${unreadTotal} unread` : ''}">
+      <span class="chatbar-text">${latestLine()}</span>${unread ? `<span class="chatbar-unread">${unread}</span>` : ''}</button>`);
   }
 
   function tabsHtml() {
@@ -198,16 +226,16 @@ export function setupChat({ sb, api, getChar, toast, esc, zoneName }) {
     if (panel && panel.dataset.tab === st.tab && drawer.open) {
       const el = drawer.querySelector('#chat-list');
       const active = document.activeElement;
-      const focusedLine = active && el.contains(active) ? { c: active.dataset.c, v: active.dataset.v } : null;
+      // The message that owns the focus: the focused line itself, or the line whose menu is focused.
+      const ownLine = active && el.contains(active)
+        ? (active.dataset.c === 'menu' ? active.dataset.v : active.closest('.chat-item')?.querySelector('.chat-line')?.dataset.v)
+        : null;
       const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
-      el.innerHTML = listHtml();
-      drawer.querySelector('.chat-tabs').innerHTML = tabsHtml();
-      drawer.querySelector('#chat-error-slot').innerHTML = errorHtml();
-      syncRoving(focusedLine?.v);
-      if (focusedLine) {
-        const again = el.querySelector(`[data-c="${focusedLine.c}"][data-v="${CSS.escape(focusedLine.v || '')}"]`) || el.querySelector('.chat-line[tabindex="0"]');
-        again?.focus({ preventScroll: true });
-      }
+      const tabsEl = drawer.querySelector('.chat-tabs');
+      setHtml(el, listHtml(), () => el.querySelector('.chat-line[tabindex="0"]') || el.querySelector('.chat-line'));
+      syncRoving(ownLine);
+      setHtml(tabsEl, tabsHtml(), () => tabsEl.querySelector('button.on'));
+      setHtml(drawer.querySelector('#chat-error-slot'), errorHtml(), () => drawer.querySelector('#chat-input'));
       if (atBottom) el.scrollTop = el.scrollHeight;
       return;
     }
@@ -283,7 +311,7 @@ export function setupChat({ sb, api, getChar, toast, esc, zoneName }) {
   function setError(msg) {
     st.error = msg;
     const slot = drawer.querySelector('#chat-error-slot');
-    if (slot) slot.innerHTML = errorHtml();
+    if (slot) setHtml(slot, errorHtml(), () => drawer.querySelector('#chat-input'));
     const input = drawer.querySelector('#chat-input');
     if (input) {
       if (msg) { input.setAttribute('aria-invalid', 'true'); input.setAttribute('aria-describedby', 'chat-error'); }

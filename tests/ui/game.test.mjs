@@ -333,3 +333,100 @@ test('reduced motion is respected', async () => {
   noLiveAccess(ctx);
   await ctx.context.close();
 });
+
+// ---------------------------------------------------------------- review corrections (PR #10)
+
+test('success message stays visible when the action closes its sheet', async () => {
+  const ctx = await game();
+  const { page } = ctx;
+  await page.click('[data-a="shop"]'); await settle(page);
+  await page.click('[data-a="shopslot"][data-v="helm"]'); await settle(page);
+  await page.click('[data-a="buyequip"]'); // a successful transaction that closes the sheet
+  await page.waitForFunction(() => !document.getElementById('sheet').open);
+  await page.waitForFunction(() => document.getElementById('toast')?.classList.contains('show'));
+  const t = await page.evaluate(() => {
+    const el = document.getElementById('toast');
+    const r = el.getBoundingClientRect();
+    return { text: el.textContent, inClosedDialog: !!el.closest('dialog:not([open])'), parent: el.parentElement.tagName, visible: r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== 'hidden' };
+  });
+  assert.match(t.text, /Bought and equipped/);
+  assert.equal(t.inClosedDialog, false, 'not left inside the closed dialog');
+  assert.equal(t.parent, 'BODY');
+  assert.equal(t.visible, true);
+  assert.equal(await page.locator('#toast').isVisible(), true);
+  noLiveAccess(ctx);
+  await ctx.context.close();
+});
+
+test('success message shown in chat stays visible after chat closes', async () => {
+  const ctx = await game();
+  const { page } = ctx;
+  await page.click('.chatbar'); await page.waitForSelector('#chat[open]');
+  await page.click('.chat-line[data-v="2"]');
+  await page.click('.chat-menu [data-c="ignore"]'); // confirm() is accepted by the harness
+  await page.waitForFunction(() => /Ignoring/.test(document.getElementById('toast')?.textContent || ''));
+  await page.keyboard.press('Escape'); await settle(page);
+  await page.keyboard.press('Escape'); await settle(page);
+  assert.equal(await page.evaluate(() => document.getElementById('chat').open), false);
+  assert.equal(await page.evaluate(() => document.getElementById('toast').parentElement.tagName), 'BODY');
+  noLiveAccess(ctx);
+  await ctx.context.close();
+});
+
+const incoming = (id, text, channel = 'global') => ({
+  id, channel, zone: channel === 'zone' ? 'bramblebrook' : null, sender_id: 'char-other', sender_name: 'Musa', sender_role: null,
+  recipient_id: null, recipient_name: null, text, deleted_at: null, created_at: new Date().toISOString(),
+});
+
+test('realtime: a new message keeps focus on the chat bar', async () => {
+  const ctx = await game();
+  const { page, backend } = ctx;
+  await page.focus('.chatbar');
+  backend.broadcast('chat_messages', 'INSERT', incoming(501, 'Live message one'));
+  await page.waitForFunction(() => /Live message one/.test(document.querySelector('.chatbar')?.textContent || ''));
+  assert.match(await page.getAttribute('.chatbar', 'aria-label'), /1 unread/);
+  assert.equal((await focusInfo(page)).a, 'toggle', 'focus is still on the chat bar');
+  noLiveAccess(ctx);
+  await ctx.context.close();
+});
+
+test('realtime: focus survives on a channel tab, a message and a menu action', async () => {
+  const ctx = await game();
+  const { page, backend } = ctx;
+  await page.click('.chatbar'); await page.waitForSelector('#chat[open]');
+
+  // A channel tab (not the current one) whose unread count changes.
+  await page.focus('.chat-tabs [data-v="zone"]');
+  backend.broadcast('chat_messages', 'INSERT', incoming(601, 'Zone news', 'zone'));
+  await page.waitForFunction(() => !!document.querySelector('.chat-tabs [data-v="zone"] .count'));
+  let f = await focusInfo(page);
+  assert.deepEqual([f.a, f.v], ['tab', 'zone'], 'focus stays on the Zone tab');
+
+  // A message line while new messages arrive in the open channel.
+  await page.focus('.chat-line[data-v="1"]');
+  backend.broadcast('chat_messages', 'INSERT', incoming(602, 'Another global line'));
+  await page.waitForSelector('.chat-line:has-text("Another global line")');
+  f = await focusInfo(page);
+  assert.deepEqual([f.a, f.v], ['menu', '1'], 'focus stays on the same message');
+
+  // A message-action button inside an open menu.
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Tab');
+  assert.equal((await focusInfo(page)).a, 'whisper');
+  backend.broadcast('chat_messages', 'INSERT', incoming(603, 'Yet another line'));
+  await page.waitForSelector('.chat-line:has-text("Yet another line")');
+  f = await focusInfo(page);
+  assert.equal(f.a, 'whisper', 'focus stays on the Whisper action');
+  assert.equal(await page.getAttribute('.chat-line[data-v="1"]', 'tabindex'), '0', 'the roving tab stop follows the focused message');
+
+  // Typing in the message box while messages arrive.
+  await page.focus('#chat-input');
+  await page.keyboard.type('half a sentence');
+  backend.broadcast('chat_messages', 'INSERT', incoming(604, 'Interrupting line'));
+  await page.waitForSelector('.chat-line:has-text("Interrupting line")');
+  assert.equal((await focusInfo(page)).id, 'chat-input');
+  await page.keyboard.type(' continues');
+  assert.equal(await page.inputValue('#chat-input'), 'half a sentence continues');
+  noLiveAccess(ctx);
+  await ctx.context.close();
+});

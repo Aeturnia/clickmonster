@@ -115,10 +115,30 @@ function ensureEl(id, attrs) {
   return el;
 }
 
+// The toast and the problems area must sit inside an open modal dialog (or the backdrop
+// hides them) and back on the page once it closes. One owner decides where they live;
+// it runs when they're shown, after every render, and whenever any dialog closes.
+function placeOverlays() {
+  const host = document.querySelector('dialog[open]') || document.body;
+  for (const el of [document.getElementById('toast'), document.getElementById('alerts')]) {
+    if (el && el.parentNode !== host) host.appendChild(el);
+  }
+  return host;
+}
+for (const d of document.querySelectorAll('dialog')) d.addEventListener('close', () => { placeOverlays(); positionToast(); });
+
+function positionToast() {
+  const el = document.getElementById('toast');
+  if (!el) return;
+  // Sit just above the bottom controls so it never covers the screen title.
+  const anchor = el.parentNode === document.body && ($('#dock:not(:empty)') || $('#nav:not(:empty)'));
+  el.style.top = 'auto';
+  el.style.bottom = anchor ? `${window.innerHeight - anchor.getBoundingClientRect().top + 10}px` : '24px';
+}
+
 function renderAlerts() {
   const el = ensureEl('alerts', { 'aria-label': 'Problems' });
-  const host = document.querySelector('dialog[open]') || document.body;
-  if (el.parentNode !== host) host.appendChild(el);
+  const host = placeOverlays();
   const top = $('#top');
   el.style.top = host === document.body && top && top.offsetHeight ? `${Math.round(top.getBoundingClientRect().bottom) + 8}px` : 'calc(12px + env(safe-area-inset-top))';
   const last = ui.errors.length - 1;
@@ -133,13 +153,8 @@ let toastTimer;
 function toast(msg, kind = '') {
   if (kind === 'bad') { addError(msg); return; }
   const el = ensureEl('toast', { role: 'status', 'aria-live': 'polite' });
-  // Show inside an open modal dialog, otherwise the dialog's backdrop would hide it.
-  const host = document.querySelector('dialog[open]') || document.body;
-  if (el.parentNode !== host) host.appendChild(el);
-  // Sit just above the bottom controls so it never covers the screen title.
-  const anchor = $('#dock:not(:empty)') || $('#nav:not(:empty)');
-  el.style.top = 'auto';
-  el.style.bottom = anchor ? `${window.innerHeight - anchor.getBoundingClientRect().top + 10}px` : '24px';
+  placeOverlays();
+  positionToast();
   el.textContent = msg;
   el.className = `show ${kind}`;
   clearTimeout(toastTimer);
@@ -873,7 +888,8 @@ function render() {
   chat.setVisible(inGame);
   if (focusLost && !sheetDlg.open) focusFallback();
   syncSheet(viewSheet());
-  renderAlerts();
+  renderAlerts(); // also re-homes the toast if a dialog just closed
+  positionToast();
 
   const viewKey = `${ui.phase}:${!!char}:${ui.tab}:${!!char?.battle}`;
   if (viewKey !== lastView) { mainEl.scrollTop = 0; lastView = viewKey; }

@@ -72,3 +72,68 @@ test('admin: errors stay until dismissed', async () => {
   noLiveAccess(ctx);
   await ctx.context.close();
 });
+
+// ---------------------------------------------------------------- review corrections (PR #10)
+async function tabUntil(page, predicate, max = 60, back = false) {
+  for (let i = 0; i < max; i++) {
+    await page.keyboard.press(back ? 'Shift+Tab' : 'Tab');
+    const f = await focusInfo(page);
+    if (predicate(f)) return f;
+  }
+  return null;
+}
+
+test('admin keyboard: switching sections keeps focus on the section tab through async loading', async () => {
+  const ctx = await admin();
+  const { page } = ctx;
+  await page.evaluate(() => document.activeElement.blur());
+  const f = await tabUntil(page, (x) => x.a === 'tab' && x.v === 'players');
+  assert.ok(f, 'Players tab reachable');
+  await page.keyboard.press('Enter');
+  await page.waitForSelector('.row-link'); // the list arrives asynchronously
+  const after = await focusInfo(page);
+  assert.deepEqual([after.a, after.v], ['tab', 'players']);
+  assert.equal(await page.getAttribute('[data-a="tab"][data-v="players"]', 'aria-current'), 'page');
+  noLiveAccess(ctx);
+  await ctx.context.close();
+});
+
+test('admin keyboard: opening a player moves focus to the record, Back returns to the row', async () => {
+  const ctx = await admin();
+  const { page } = ctx;
+  await page.evaluate(() => document.activeElement.blur());
+  await tabUntil(page, (x) => x.a === 'tab' && x.v === 'players');
+  await page.keyboard.press('Enter');
+  await page.waitForSelector('.row-link');
+  const row = await tabUntil(page, (x) => x.a === 'open');
+  assert.ok(row, 'a player link is reachable');
+  await page.keyboard.press('Enter');
+  await page.waitForSelector('#player-title');
+  await page.waitForFunction(() => document.activeElement?.id === 'player-title');
+  const back = await tabUntil(page, (x) => x.a === 'back', 10, true);
+  assert.ok(back, 'Back to search is reachable');
+  await page.keyboard.press('Enter');
+  await page.waitForFunction((v) => document.activeElement?.classList.contains('row-link') && document.activeElement.dataset.v === v, row.v);
+  noLiveAccess(ctx);
+  await ctx.context.close();
+});
+
+test('admin keyboard: searching keeps focus and caret in the search box', async () => {
+  const ctx = await admin();
+  const { page } = ctx;
+  await page.evaluate(() => document.activeElement.blur());
+  await tabUntil(page, (x) => x.a === 'tab' && x.v === 'players');
+  await page.keyboard.press('Enter');
+  await page.waitForSelector('.row-link');
+  await tabUntil(page, (x) => x.id === 'q');
+  await page.keyboard.type('Mu');
+  await page.keyboard.press('Enter');
+  await page.waitForSelector('.row-link');
+  await page.waitForTimeout(200);
+  const f = await focusInfo(page);
+  assert.equal(f.id, 'q');
+  await page.keyboard.type('sa');
+  assert.equal(await page.inputValue('#q'), 'Musa');
+  noLiveAccess(ctx);
+  await ctx.context.close();
+});
