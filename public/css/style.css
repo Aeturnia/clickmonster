@@ -279,15 +279,15 @@ p { margin: 0 0 8px; }
 .down { color: var(--bad); font-weight: 700; }
 
 /* ---------------------------------------------------------------- map */
-/* Squares fill the width but never shrink below a comfortable tap size (32px); larger zones
-   scroll inside their own frame, which the hero's square is centred in. */
-.map-scroll { margin: 12px 0; position: relative; }
-.map-scroll.big {
-  overflow: auto; overscroll-behavior: contain; max-height: min(64dvh, 640px);
-  border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 4px; background: #0d0a08;
-}
-.map { display: grid; gap: 3px; grid-template-columns: repeat(var(--n), minmax(32px, 1fr)); width: max(100%, calc(var(--n) * 35px - 3px)); max-width: calc(var(--n) * 72px); }
-.map-scroll.big .map { width: calc(var(--n) * 37px - 3px); max-width: none; }
+/* Squares fill the width but never shrink below a comfortable tap size (32px). A map that does not
+   fit scrolls inside its own frame (never the screen), centred on the hero's square. */
+.map-scroll { margin: 12px 0; position: relative; max-width: 100%; overflow: auto; overscroll-behavior: contain; max-height: min(64dvh, 640px); }
+.map-scroll.scrolls { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 4px; background: #0d0a08; }
+/* Wide enough for 33px squares (32px minimum) (scrolling if needed); otherwise fill the width, but no taller than the
+   frame and no squares bigger than 72px. */
+.map { display: grid; gap: 3px; grid-template-columns: repeat(var(--n), minmax(32px, 1fr));
+  width: max(calc(var(--n) * 36px - 3px), min(100%, calc(var(--n) * 72px), min(64dvh, 640px) - 10px)); }
+.map-tools[hidden] { display: none; }
 .map-tools { display: flex; align-items: center; gap: 10px; justify-content: space-between; margin-top: 10px; }
 .map button {
   appearance: none; aspect-ratio: 1; min-height: 32px; border: 0; border-radius: 4px; padding: 0; cursor: pointer;

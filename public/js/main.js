@@ -155,6 +155,17 @@ function syncViewport() {
   root.setProperty('--vvh', `${Math.round(vv.height)}px`);
   root.setProperty('--kb', `${covered}px`);
   positionToast();
+  // With the keyboard up over a sheet, keep the field being typed in and the buttons that act on
+  // it (the next row of buttons, such as Deposit and Withdraw) in view.
+  const field = document.activeElement;
+  if (covered > 0 && field?.matches?.('dialog[open] input')) {
+    let next = (field.closest('label') || field).nextElementSibling;
+    while (next && !next.querySelector('button:not([disabled])')) next = next.nextElementSibling;
+    requestAnimationFrame(() => {
+      next?.scrollIntoView({ block: 'nearest' });
+      field.scrollIntoView({ block: 'nearest' });
+    });
+  }
 }
 if (window.visualViewport) {
   window.visualViewport.addEventListener('resize', syncViewport);
@@ -651,17 +662,29 @@ function viewMap() {
       <span class="nm">${esc(p.name)}<small>${esc(p.sub)}</small></span>
       <span class="go">${here ? 'Here' : esc(directionTo(char, p.x, p.y))}</span></button>`;
   });
-  const big = zone.size > 12;
   return `
     <div class="place-row"><h2>${esc(zone.name)}</h2><span class="coords">${char.loc.x}, ${char.loc.y}</span></div>
     <p class="small muted" style="margin-top:6px">${esc(zone.desc)}</p>
-    ${big ? `<div class="map-tools"><span class="small muted">${zone.size} by ${zone.size}. Drag to look around.</span>${btn('mapcenter', null, 'Center on me', 'sm')}</div>` : ''}
-    <div class="map-scroll${big ? ' big' : ''}" id="map-scroll">
+    <div class="map-tools" id="map-tools" hidden><span class="small muted">${zone.size} by ${zone.size}. Drag to look around.</span>${btn('mapcenter', null, 'Center on me', 'sm')}</div>
+    <div class="map-scroll" id="map-scroll">
       <div class="map ${zone.pvp ? 'pvp' : ''}" id="map" role="group" aria-label="Map of ${esc(zone.name)}, ${zone.size} by ${zone.size} squares" aria-describedby="map-help" style="--n:${zone.size}">${cells.join('')}</div>
     </div>
     <div class="legend"><span><b>T</b> Town</span><span><b>P</b> Path</span><span><b>X</b> Locked path</span><span><b>B</b> Boss</span><span id="map-help">Tap a square to walk there. With a keyboard, arrow keys move between squares and Enter walks.</span></div>
     ${placeRows.length ? `<h3>Places</h3><div class="rows">${placeRows.join('')}</div>` : ''}`;
 }
+
+// Any map wider or taller than its space scrolls inside its own frame (whatever the zone size and
+// screen); the frame and the Center on me button only appear when it does.
+function syncMapFrame() {
+  const box = $('#map-scroll');
+  if (!box) return;
+  const map = box.firstElementChild;
+  const over = map.offsetWidth > box.clientWidth + 1 || box.scrollHeight > box.clientHeight + 1;
+  box.classList.toggle('scrolls', over);
+  const tools = $('#map-tools');
+  if (tools) tools.hidden = !over;
+}
+window.addEventListener('resize', () => { if ($('#map-scroll')) { syncMapFrame(); if (char) centerMap(char.loc.x, char.loc.y); } });
 
 // Scroll the map so a square sits in the middle of the visible area (the map scrolls on its own,
 // the rest of the screen stays put).
@@ -673,6 +696,12 @@ function centerMap(x, y) {
   const c = cell.getBoundingClientRect();
   box.scrollLeft += c.left - b.left - (box.clientWidth - c.width) / 2;
   box.scrollTop += c.top - b.top - (box.clientHeight - c.height) / 2;
+  // On short screens the frame can be taller than the visible part of the screen area:
+  // scroll that too, just enough to show the square.
+  const main = $('#main').getBoundingClientRect();
+  const r = cell.getBoundingClientRect();
+  if (r.bottom > main.bottom - 8) $('#main').scrollTop += r.bottom - main.bottom + 8;
+  else if (r.top < main.top + 8) $('#main').scrollTop -= main.top + 8 - r.top;
 }
 
 // ---------------------------------------------------------------- sheets
@@ -969,6 +998,7 @@ function render() {
   // The map keeps where you panned it, and recentres when you arrive or move.
   const box = $('#map-scroll');
   if (box) {
+    syncMapFrame();
     const mapKey = locKey();
     if (viewChanged || mapKey !== ui.mapKey || !mapScroll) { ui.mapKey = mapKey; centerMap(char.loc.x, char.loc.y); }
     else if (box !== mapBox) [box.scrollLeft, box.scrollTop] = mapScroll;

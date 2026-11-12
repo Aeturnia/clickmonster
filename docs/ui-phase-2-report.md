@@ -11,7 +11,7 @@ It makes no changes to game rules, server APIs, the database or production depen
 | 1. 320px HUD and action dock | HUD 95 → 66px. Dock 229 → 111px in town. Content area at 320×640 up from 224 to 375px; monster rows visible up from 0 to 2. |
 | 2. Phone landscape | Two-column layout below 540px tall. Content up from 106 to 390px, rows up from 0 to 3. The battle log goes from no room to 285px of space. |
 | 3. Chat with the on-screen keyboard | The drawer follows `visualViewport`, so the message box stays above an overlay (iOS-style) keyboard at every size tested. Before, it was hidden behind the keyboard at every size. |
-| 4. Map for 40×40 zones | A scrollable frame, centred on the hero. Squares go from 20 to 34px. Tab stops go from 1600 to 1. Arrow, Home/End and PageUp/PageDown keys, a "Center on me" button and a Places list. axe `target-size` (serious) fixed. |
+| 4. Map for 40×40 zones | A scrollable frame, centred on the hero. Squares go from 20 to 33px. Tab stops go from 1600 to 1. Any map that doesn't fit scrolls in its own frame, whatever the zone size (corrected in review, P2-01). Arrow, Home/End and PageUp/PageDown keys, a "Center on me" button and a Places list. axe `target-size` (serious) fixed. |
 | 5. Explore hierarchy and combat | Shorter town line. The victory summary now follows the latest log line, next to the actions. Damage numbers are centred over the HP bar instead of covering names. |
 | 6. Tablet and desktop | Same two-column layout. Monster rows: 4 → 8 at 1024×768 and 6 → 8 at 1440×900. Battle log room: 361 → 663px and 493 → 795px. |
 
@@ -36,7 +36,7 @@ Both columns were measured by the same tool, `tools/ui-metrics.mjs`, using the f
 | 1440×900 | open: rows / battle log room | 6 / 493 | 8 / 795 |
 | 390×844, 200% text | content height | 138 | 311 |
 | all sizes | chat input visible with a 45% overlay keyboard | no (all 7 sizes) | yes (all 7 sizes) |
-| all sizes | 40×40 map: square / hero visible / tab stops | 20px / no / 1600 | 34px / yes / 1 |
+| all sizes | 40×40 map: square / hero visible / tab stops | 20px / no / 1600 | 33px / yes / 1 |
 
 | AC | Criterion | Status |
 |---|---|---|
@@ -90,8 +90,9 @@ Both columns were measured by the same tool, `tools/ui-metrics.mjs`, using the f
 - The chat panel uses most of a short screen (at least 320px when possible) instead of a fixed 72%.
 
 **Map** (`viewMap`, `centerMap`, `mapKeys`):
-- Zones larger than 12×12 show in a bordered frame that scrolls on its own (`overscroll-behavior: contain`, at most 64% of the screen height).
-- Squares are at least 32px, and 34px as measured.
+- Every map sits in its own scroll container (`overscroll-behavior: contain`, at most 64% of the screen height), so a map never makes the screen scroll sideways.
+- When the map does not fit, a frame and the "Center on me" button appear, measured after each render and on resize.
+- Squares are at least 32px, and 33px as measured. Small maps fill the width, up to 72px squares and no taller than the frame.
 - The map centres on the hero on arrival and after each move. It keeps a manual pan across re-renders (for example HP regeneration ticks).
 - "Center on me" recentres and focuses the hero square.
 - Squares use a roving tabindex:
@@ -111,7 +112,7 @@ Both columns were measured by the same tool, `tools/ui-metrics.mjs`, using the f
 ## Tests
 
 - `npm test` (engine): 24 of 24 pass.
-- `npm run test:ui`: 37 of 37 pass, three consecutive runs.
+- `npm run test:ui`: 37 of 37 pass, three consecutive runs (39 after the review corrections, below).
   - The 27 Phase 1 tests pass with no changes.
   - 10 new tests are in `tests/ui/responsive.test.mjs`, one or more per acceptance criterion.
 - **The new tests fail on the old code.** Run against `main`'s `public/` (via `UI_PUBLIC_DIR`), all 10 fail for the expected reasons. Examples:
@@ -122,6 +123,60 @@ Both columns were measured by the same tool, `tools/ui-metrics.mjs`, using the f
 - The fixtures are deterministic. The fake backend fails any test that makes an unexpected request, and no test reaches the live Supabase project.
 - **Keyboard simulation.** `fakeKeyboard()` and `setKeyboard()` replace `window.visualViewport` with a stub whose height shrinks while the page keeps its size. That is how iOS Safari presents the keyboard. The Phase 2 baseline simulated it by resizing the window; that always passed in Chromium and did not show the bug.
 - **Harness fix.** `UI_PUBLIC_DIR` now accepts an absolute path (`path.resolve`, not `path.join`).
+
+## Review corrections (PR #11 review)
+
+The review accepted the design. It asked for two corrections and settled three questions.
+
+**Decisions taken:**
+- AC-7 accepted as revised (reachable by scrolling); location details are not collapsed.
+- Gem count may be hidden in the compact HUD.
+- The desktop side column stays as it is: no minimap or extra chat surface in Phase 2.
+
+**P2-01 — medium maps overflowed at 320px.**
+- *Cause:* the scrolling frame was only used for zones larger than 12×12. A 10×10 map at 32px squares (347px) is wider than the 288px content area at 320px, so `#main` scrolled sideways. The built-in 10×10 Bramblebrook Meadows map was affected.
+- *Fix:*
+  - Every map is now inside `#map-scroll` (`overflow: auto`).
+  - `syncMapFrame()` measures after each render and on resize. When the map overflows, it adds the frame and shows the size note and "Center on me".
+  - Centring also scrolls `#main` just enough to bring the hero square into view when the frame is taller than the visible screen area. Before, at 320×640, the hero square could sit under the chat bar.
+- Hero centring, roving focus, focus restoration after walking and manual panning are unchanged.
+- *Test:* `P2-01 maps of every size scroll inside their own frame at 320px` covers 7×7, 10×10, 12×12 and 40×40, with the hero in the far corner. It checks:
+  - no sideways scrolling of `#main` or the page;
+  - the frame fits the screen area;
+  - the map scrolls inside the frame (10×10 and up);
+  - squares are at least 32px;
+  - the hero square is visible inside the frame and on screen;
+  - one tab stop and no axe violations;
+  - arrow keys reach the far corner and it scrolls into view;
+  - Enter walks, focus stays on the square and the hero stays visible;
+  - a manual pan survives re-renders, and "Center on me" is offered.
+- The test fails on Phase 2 as reviewed (b582885) with "10x10: the screen area does not scroll sideways", and passes now.
+- Screenshots: `reviewed-320-map-meadows.png` / `corrected-320-map-meadows.png` and the same for 12×12.
+
+**P2-02 — bank sheet with the keyboard.**
+- *Inspection:*
+  - The dialog and its inner `.panel` share the same height cap, `min(90dvh, var(--vvh) - 8px)`.
+  - The more specific `dialog#sheet .panel` rule overrides the generic `.panel { max-height: 90dvh }`.
+  - The dialog is `overflow: visible` and only the panel scrolls, so the two constraints cannot clip each other. The new test confirms the panel never extends past the dialog.
+- *Usability gap found:* with the keyboard up at 320×640, the amount field stayed visible but the Deposit and Withdraw buttons sat under the keyboard until you scrolled the sheet.
+- *Fix:* when the keyboard opens over an input in an open dialog, `syncViewport()` scrolls the next row of enabled buttons into view, and then the field.
+- *iOS panning:* iOS also pans the visible area up when focusing an input. The fake keyboard now models this through `visualViewport.offsetTop`, and the sheet stays inside the panned visible area.
+- *Test:* `P2-02 bank sheet` runs at 320×640, 390×844 and 844×390 with a 45% overlay keyboard. It checks:
+  - the sheet lies inside the visible area, including when panned;
+  - the panel is not clipped;
+  - focus stays in the field;
+  - the field, Deposit and Withdraw are in view without the player scrolling;
+  - Close can be scrolled into view above the keyboard;
+  - a typed deposit goes through with the keyboard up;
+  - Escape dismisses and returns focus to Bank.
+- The test fails on `main` with "320x640: sheet 222-640 inside visible 352". Phase 2 as reviewed already kept the sheet above the keyboard; the buttons-in-view check was added with this fix.
+- Screenshots: `before-320-bank-keyboard.png` and `after-320-bank-keyboard.png`. On the smallest screen, Close scrolls out of view while typing; it is one scroll up, and Escape also closes the sheet.
+
+**Validation after the corrections:**
+- `npm test`: 24 of 24 pass.
+- `npm run test:ui`: 39 of 39 pass, three runs in a row (the 37 from before plus the two above).
+- axe across all 85 screens: 0 violations of any impact.
+- `metrics-after.json` and the `after-*` map screenshots were refreshed.
 
 ## Accessibility results
 
@@ -154,8 +209,8 @@ These were not tested and should be checked on devices before or after merge:
 - Modernizing destructive confirmations.
 - Feedback when a battle double tap is blocked.
 
-## Open questions for review
+## Review decisions
 
-1. AC-7 at 200% text: accept "reachable by scrolling" as written, or collapse the location block at large text sizes?
-2. Hiding the gem count on very narrow screens and in landscape (it is on the Gear tab): acceptable?
-3. The wide layout leaves empty space in the side column on tall desktop screens. A minimap or inline chat could use it in a later phase.
+1. AC-7: the revised scrolling-based criterion is accepted.
+2. Gem count: hiding it in the compact HUD is approved; it stays on the Gear tab.
+3. Desktop side column: left as it is in Phase 2. The future desktop layout is tracked in `docs/backlog.md`.

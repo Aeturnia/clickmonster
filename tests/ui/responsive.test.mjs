@@ -143,7 +143,7 @@ test('AC-5 map 40x40: comfortable squares, centred on the hero, one tab stop', a
       const box = document.getElementById('map-scroll').getBoundingClientRect();
       return {
         cells: cells.length, cell: Math.round(Math.min(c.width, c.height)), tabStops: cells.filter((x) => x.tabIndex >= 0).length,
-        meVisible: me.top >= box.top && me.bottom <= Math.min(box.bottom, innerHeight) && me.left >= box.left && me.right <= Math.min(box.right, innerWidth),
+        meVisible: me.top >= box.top && me.bottom <= Math.min(box.bottom, document.getElementById('main').getBoundingClientRect().bottom) && me.left >= box.left && me.right <= Math.min(box.right, innerWidth),
         hOverflow: document.documentElement.scrollWidth > innerWidth + 1,
       };
     });
@@ -232,6 +232,137 @@ test('AC-8 axe: new layouts have no serious or critical violations', async () =>
     assert.deepEqual((await axe(page)).map((v) => v.id), [], `${w}x${h} explore`);
     await step(page, '[data-a="tab"][data-v="map"]');
     assert.deepEqual((await axe(page)).map((v) => v.id), [], `${w}x${h} map`);
+    await done(ctx);
+  }
+});
+
+// ---------------------------------------------------------------- review corrections (PR #11)
+
+test('P2-01 maps of every size scroll inside their own frame at 320px, never the screen', async () => {
+  for (const size of [7, 10, 12, 40]) {
+    // The hero stands in a corner, far from where the map starts scrolled.
+    const ctx = await open(320, 640, { hero: { zone: 'test-expanse', x: size, y: size }, zones: [bigZone(size)] });
+    const { page } = ctx;
+    await step(page, '[data-a="tab"][data-v="map"]');
+    const m = await page.evaluate(() => {
+      const main = document.getElementById('main');
+      const box = document.getElementById('map-scroll');
+      const b = box.getBoundingClientRect();
+      const cells = [...document.querySelectorAll('.map [data-a="walk"]')];
+      const c = cells[0].getBoundingClientRect();
+      const me = document.querySelector('.map [aria-current="location"]').getBoundingClientRect();
+      return {
+        mainSideways: main.scrollWidth > main.clientWidth + 1,
+        pageSideways: document.documentElement.scrollWidth > innerWidth + 1,
+        boxInside: b.left >= main.getBoundingClientRect().left - 1 && b.right <= main.getBoundingClientRect().right + 1,
+        boxScrolls: box.scrollWidth > box.clientWidth + 1,
+        cell: Math.round(Math.min(c.width, c.height)),
+        meVisible: me.left >= b.left - 1 && me.right <= b.right + 1 && me.top >= b.top - 1 && me.bottom <= b.bottom + 1
+          && me.top >= main.getBoundingClientRect().top - 1 && me.bottom <= main.getBoundingClientRect().bottom + 1,
+        tabStops: cells.filter((x) => x.tabIndex >= 0).length,
+      };
+    });
+    assert.equal(m.mainSideways, false, `${size}x${size}: the screen area does not scroll sideways`);
+    assert.equal(m.pageSideways, false, `${size}x${size}: the page does not scroll sideways`);
+    assert.ok(m.boxInside, `${size}x${size}: the map frame fits the screen area`);
+    if (size >= 10) assert.ok(m.boxScrolls, `${size}x${size}: the map scrolls inside its frame`);
+    assert.ok(m.cell >= 32, `${size}x${size}: squares ${m.cell}px`);
+    assert.ok(m.meVisible, `${size}x${size}: hero square visible`);
+    assert.equal(m.tabStops, 1, `${size}x${size}: one tab stop`);
+    assert.deepEqual((await axe(page)).map((v) => v.id), [], `${size}x${size}: axe`);
+
+    // Keyboard: walk the focus to the far corner; it scrolls into view inside the frame.
+    await page.focus('.map [aria-current="location"]');
+    for (let i = 0; i < size; i++) { await page.keyboard.press('ArrowLeft'); await page.keyboard.press('ArrowUp'); }
+    const corner = await page.evaluate(() => {
+      const el = document.activeElement; const r = el.getBoundingClientRect(); const b = document.getElementById('map-scroll').getBoundingClientRect();
+      return { v: el.dataset.v, visible: r.left >= b.left - 1 && r.right <= b.right + 1 && r.top >= b.top - 1 && r.bottom <= b.bottom + 1 };
+    });
+    assert.equal(corner.v, '1,1');
+    assert.ok(corner.visible, `${size}x${size}: focused square scrolled into view`);
+    // Walk one square; focus stays on it and the map recentres on the hero.
+    await page.keyboard.press('ArrowRight');
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Enter'); await settle(page);
+    const walked = await page.evaluate(() => {
+      const me = document.querySelector('.map [aria-current="location"]').getBoundingClientRect(); const b = document.getElementById('map-scroll').getBoundingClientRect();
+      const m = document.getElementById('main').getBoundingClientRect();
+      return { at: [window.clickmonster.char.loc.x, window.clickmonster.char.loc.y], focus: document.activeElement.dataset.v, meVisible: me.left >= b.left - 1 && me.right <= b.right + 1 && me.top >= b.top - 1 && me.bottom <= b.bottom + 1 && me.top >= m.top - 1 && me.bottom <= m.bottom + 1 };
+    });
+    assert.deepEqual(walked.at, [2, 2]);
+    assert.equal(walked.focus, '2,2', `${size}x${size}: focus restored to the square`);
+    assert.ok(walked.meVisible, `${size}x${size}: hero visible after walking`);
+    if (size >= 10) {
+      // Manual panning survives re-renders.
+      await page.evaluate(() => { const b = document.getElementById('map-scroll'); b.scrollLeft = b.scrollWidth; });
+      const panned = await page.evaluate(() => document.getElementById('map-scroll').scrollLeft);
+      await page.evaluate(() => { window.clickmonster.char.hp -= 1; });
+      await page.waitForTimeout(1200);
+      assert.equal(await page.evaluate(() => document.getElementById('map-scroll').scrollLeft), panned, `${size}x${size}: pan kept`);
+      assert.ok(await page.isVisible('[data-a="mapcenter"]'), `${size}x${size}: Center on me offered`);
+    }
+    await done(ctx);
+  }
+});
+
+test('P2-02 bank sheet: amount, actions and Close stay usable above an overlay keyboard', async () => {
+  for (const [w, h] of [[320, 640], [390, 844], [844, 390]]) {
+    const ctx = await open(w, h, { keyboard: true });
+    const { page } = ctx;
+    await step(page, '[data-a="bank"]');
+    await page.waitForSelector('#sheet[open] #amount');
+    await page.focus('#amount');
+    await setKeyboard(page, Math.round(h * 0.45));
+    await page.waitForTimeout(250);
+    const geo = await page.evaluate(() => {
+      const vh = window.visualViewport.height;
+      const dlg = document.getElementById('sheet').getBoundingClientRect();
+      const panel = document.querySelector('#sheet .panel');
+      const p = panel.getBoundingClientRect();
+      return {
+        vh, dlgTop: dlg.top, dlgBottom: dlg.bottom, panelTop: p.top, panelBottom: p.bottom,
+        // Content the panel cannot show must be reachable by scrolling the panel itself.
+        panelScrolls: getComputedStyle(panel).overflowY === 'auto',
+        clipped: p.bottom > dlg.bottom + 1 || p.top < dlg.top - 1,
+      };
+    });
+    assert.ok(geo.dlgTop >= 0 && geo.dlgBottom <= geo.vh + 1, `${w}x${h}: sheet ${geo.dlgTop}-${geo.dlgBottom} inside visible ${geo.vh}`);
+    assert.equal(geo.clipped, false, `${w}x${h}: panel not clipped by the dialog`);
+    assert.ok(geo.panelBottom <= geo.vh + 1, `${w}x${h}: panel above the keyboard`);
+    assert.ok(geo.panelScrolls, 'panel scrolls');
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'amount', 'focus stays in the amount field');
+    // Without any scrolling by the player, the field and its Deposit and Withdraw buttons show.
+    const shown = await page.evaluate(() => ['#amount', '[data-a="deposit"][data-v="amount"]', '[data-a="withdraw"][data-v="amount"]'].every((sel) => {
+      const r = document.querySelector(sel).getBoundingClientRect(); return r.top >= 0 && r.bottom <= window.visualViewport.height + 1;
+    }));
+    assert.ok(shown, `${w}x${h}: amount field and its buttons in view above the keyboard`);
+    // Each control can be brought into view and lies above the keyboard.
+    for (const sel of ['#amount', '[data-a="deposit"][data-v="amount"]', '[data-a="withdraw"][data-v="amount"]', '#sheet [data-a="close"]']) {
+      const ok = await page.evaluate((s) => {
+        const el = document.querySelector(s); el.scrollIntoView({ block: 'nearest' });
+        const r = el.getBoundingClientRect();
+        return r.top >= 0 && r.bottom <= window.visualViewport.height + 1 && r.height >= 24;
+      }, sel);
+      assert.ok(ok, `${w}x${h}: ${sel} reachable above the keyboard`);
+    }
+    // iOS may also pan the visible area up; the sheet follows it.
+    await setKeyboard(page, Math.round(h * 0.45), 40);
+    await page.waitForTimeout(250);
+    const panned = await page.evaluate(() => {
+      const vv = window.visualViewport; const d = document.getElementById('sheet').getBoundingClientRect();
+      return { top: d.top, bottom: d.bottom, from: vv.offsetTop, to: vv.offsetTop + vv.height };
+    });
+    assert.ok(panned.top >= panned.from - 1 && panned.bottom <= panned.to + 1, `${w}x${h}: sheet ${panned.top}-${panned.bottom} within the panned visible area ${panned.from}-${panned.to}`);
+    await setKeyboard(page, Math.round(h * 0.45));
+    await page.waitForTimeout(250);
+    // Type an amount and deposit with the keyboard still up.
+    await page.fill('#amount', '1000');
+    const bank = await page.evaluate(() => window.clickmonster.char.bank);
+    await step(page, '[data-a="deposit"][data-v="amount"]');
+    assert.equal(await page.evaluate(() => window.clickmonster.char.bank), bank + 1000, 'deposit went through');
+    await page.keyboard.press('Escape'); await settle(page);
+    assert.equal(await page.evaluate(() => document.getElementById('sheet').open), false, 'Escape dismisses');
+    assert.equal(await page.evaluate(() => document.activeElement.dataset.a), 'bank', 'focus back on Bank');
     await done(ctx);
   }
 });

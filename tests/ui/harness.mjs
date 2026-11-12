@@ -416,17 +416,19 @@ export async function fakeKeyboard(page) {
   await page.addInitScript(() => {
     const vv = new EventTarget();
     let covered = 0;
+    let pan = 0;
     Object.defineProperties(vv, {
       width: { get: () => window.innerWidth },
       height: { get: () => window.innerHeight - covered },
-      offsetTop: { get: () => 0 }, offsetLeft: { get: () => 0 },
+      offsetTop: { get: () => pan }, offsetLeft: { get: () => 0 },
       pageTop: { get: () => window.scrollY }, pageLeft: { get: () => window.scrollX }, scale: { get: () => 1 },
     });
     Object.defineProperty(window, 'visualViewport', { configurable: true, get: () => vv });
-    window.__setKeyboard = (px) => { covered = px; vv.dispatchEvent(new Event('resize')); };
+    // pan: iOS also scrolls the visible area up (offsetTop) to reveal a focused input.
+    window.__setKeyboard = (px, p = 0) => { covered = px; pan = p; vv.dispatchEvent(new Event('resize')); vv.dispatchEvent(new Event('scroll')); };
   });
 }
-export const setKeyboard = (page, px) => page.evaluate((v) => window.__setKeyboard(v), px);
+export const setKeyboard = (page, px, pan = 0) => page.evaluate(([v, p]) => window.__setKeyboard(v, p), [px, pan]);
 
 // Layout measurements for the responsive acceptance criteria (run in the page).
 export const PAGE_METRICS = () => {
