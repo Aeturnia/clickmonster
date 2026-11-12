@@ -178,3 +178,20 @@ test('pvp: only in PvP zones, outside town, within level gap', async () => {
   assert.equal(d.notices.length, 1);
   assert.equal(a.battle.over, 'victory');
 });
+
+test('walkTo and buyAndEquip', async () => {
+  const { walkTo } = await import('../public/js/engine/world.js');
+  const { buyAndEquip } = await import('../public/js/engine/inventory.js');
+  const c = createCharacter('Walker', 'human');
+  walkTo(c, 2, 9);
+  assert.deepEqual([c.loc.x, c.loc.y], [2, 9]);
+  assert.throws(() => walkTo(c, 0, 3));
+  assert.throws(() => walkTo(c, 11, 3));
+  c.loc = { zone: 'ashford', ...{ x: ZONES.ashford.town.x, y: ZONES.ashford.town.y } };
+  c.gold = 100000;
+  const gold = c.gold;
+  assert.throws(() => buyAndEquip(c, 'sword_3'), /requirements/);
+  assert.equal(c.gold, gold, 'no gold spent on a failed buy & equip');
+  const item = buyAndEquip(c, 'helm_1');
+  assert.equal(c.equipment.helm, item.uid);
+});

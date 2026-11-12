@@ -95,3 +95,13 @@ export function extractGem(char, uid, index) {
   clampHp(char);
   return cost;
 }
+
+// One-tap purchase for gear you can use right away.
+export function buyAndEquip(char, baseId) {
+  if (!ITEMS[baseId]) throw new Error('No such item.');
+  requireOutOfBattle(char);
+  if (!meetsRequirements(char, baseId).ok) throw new Error('You don’t meet the requirements for that.');
+  const item = buy(char, baseId);
+  equip(char, item.uid);
+  return item;
+}
