@@ -48,6 +48,13 @@ the `staff` table on every request and records every action in `admin_log`.
 - **Admins**: everything above, plus permanent sanctions, the hero editor (level, XP, gold, bank,
   stats, masteries, location, items, gems), player emails, deleting news, and managing staff.
 - Jailed heroes can look around but not act; banned heroes can't play. Both see the reason.
+- **World** (admins): base multipliers for XP, gold, drops, elite chance and mastery gain, plus timed
+  events (e.g. double XP for 24 hours) that stack on top. Players see a banner while one runs.
+- **Hunts** (admins): world bosses with one shared health pool in a zone. Damage is scaled by level so
+  everyone can contribute; rewards are split by damage (2% minimum) and the killing blow adds a relic.
+  Rewards are delivered through `pending_rewards`, so offline hunters get them next time they play.
+- **Economy**: a daily ledger of gold created (loot, quests, hunts, selling, admin edits) and removed
+  (shops, healer, jeweler, deaths).
 
 ## Project layout
 

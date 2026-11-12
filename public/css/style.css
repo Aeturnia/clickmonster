@@ -312,3 +312,6 @@ input:focus { outline: 2px solid var(--gold); outline-offset: 1px; }
 
 .notice.bad { border-left-color: var(--bad); }
 .notice.announce { border-left-color: var(--xp); }
+
+.notice.event { border-left-color: var(--good); }
+.row.hunt .nm { color: #f2b45c; font-weight: 600; }

@@ -7,6 +7,7 @@ import { GEM_TYPES, GEM_TIERS } from './data/gems.js';
 import { ITEMS, itemDef, SLOT_LABEL } from './data/items.js';
 import { ZONES } from './data/zones.js';
 import { RACES } from './data/races.js';
+import { MULT_KEYS, MULT_LABEL, MULT_MAX } from './engine/world-config.js';
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -32,7 +33,7 @@ function detailsText(action, d) {
 }
 const untilText = (t) => (new Date(t).getFullYear() > 9000 ? 'permanent' : `until ${when(t)}`);
 
-const st = { phase: 'loading', me: null, tab: 'dashboard', q: '', players: null, player: null, stats: null, log: null, events: null, staff: null };
+const st = { phase: 'loading', me: null, tab: 'dashboard', q: '', players: null, player: null, stats: null, log: null, events: null, staff: null, world: null, hunts: null, economy: null };
 
 let toastTimer;
 function toast(msg, bad = false) {
@@ -84,7 +85,7 @@ function viewDenied() {
 }
 
 function header() {
-  const tabs = [['dashboard', 'Dashboard'], ['players', 'Players'], ['announce', 'Announce'], ['log', 'Log']];
+  const tabs = [['dashboard', 'Dashboard'], ['players', 'Players'], ['world', 'World'], ['hunts', 'Hunts'], ['economy', 'Economy'], ['announce', 'Announce'], ['log', 'Log']];
   if (isAdmin()) tabs.push(['staff', 'Staff']);
   return `<div class="a-head"><h1>ClickMonster Admin</h1>
       <span class="who">${esc(st.me.email)} <span class="pill ${st.me.role}">${st.me.role}</span>
@@ -244,13 +245,100 @@ function viewStaff() {
       <button class="btn primary" type="submit" style="align-self:end">Add</button></div></form>`;
 }
 
+function multInputs(prefix, values = {}, placeholder = '1') {
+  return MULT_KEYS.map((k) => `<label>${MULT_LABEL[k]}<input name="${prefix}.${k}" type="number" step="0.1" min="0" max="${MULT_MAX}" value="${values[k] ?? ''}" placeholder="${placeholder}"></label>`).join('');
+}
+
+function viewWorld() {
+  const w = st.world;
+  if (!w) return '<p class="muted">Loading.</p>';
+  const now = Date.now();
+  const events = (w.data.events || []).filter((e) => new Date(e.until).getTime() > now);
+  const admin = isAdmin();
+  return `<div class="box"><h2>Active events</h2>
+      ${events.length ? `<table>${events.map((e) => `<tr><td><b>${esc(e.name)}</b><br><span class="small muted">${MULT_KEYS.filter((k) => e[k] != null).map((k) => `${MULT_LABEL[k]} x${e[k]}`).join(', ')}</span></td>
+        <td class="small muted">ends ${when(e.until)}</td><td class="num">${admin ? `<button class="btn sm danger" data-a="endEvent" data-v="${e.id}">End now</button>` : ''}</td></tr>`).join('')}</table>`
+        : '<p class="small muted">No events running.</p>'}</div>
+    ${admin ? `<form id="event" class="box"><h2>Start an event</h2>
+      <p class="small muted">Multipliers stack on top of the base settings. Leave a box empty to leave it alone. Players see a banner and an announcement.</p>
+      <div class="form-grid">
+        <label style="grid-column:1/-1">Name<input name="name" required placeholder="Double XP weekend"></label>
+        <label>Hours<input name="hours" type="number" min="0.25" step="0.25" value="24" required></label>
+        ${multInputs('m', {}, 'unchanged')}
+        <button class="btn primary" type="submit" style="align-self:end">Start</button></div></form>
+    <form id="base" class="box"><h2>Base settings</h2>
+      <p class="small muted">Always in effect. 1 is normal, 2 is double, 0.5 is half. Maximum ${MULT_MAX}.</p>
+      <div class="form-grid">${multInputs('b', w.data.base)}<button class="btn primary" type="submit" style="align-self:end">Save</button></div></form>`
+    : `<div class="box"><h2>Base settings</h2><p class="small">${MULT_KEYS.map((k) => `${MULT_LABEL[k]} x${w.data.base?.[k] ?? 1}`).join(', ')}</p><p class="small faint">Only admins can change world settings.</p></div>`}`;
+}
+
+function viewHunts() {
+  const h = st.hunts;
+  if (!h) return '<p class="muted">Loading.</p>';
+  const now = Date.now();
+  const status = (x) => (x.status === 'active' && new Date(x.ends_at).getTime() < now ? 'expired' : x.status);
+  const zoneOpts = Object.values(ZONES).map((z) => `<option value="${z.id}">${esc(z.name)} (level ${z.levelRange[0]} to ${z.levelRange[1]})</option>`).join('');
+  return `${isAdmin() ? `<form id="hunt" class="box"><h2>Start a hunt</h2>
+      <p class="small muted">A world boss with one shared health pool. Everyone who hits it shares the gold and XP by damage done (2% minimum); the killing blow also earns a relic and 25% extra gold. Rewards arrive in players' banks. Leave health blank for a suggested value (about 300 hits from heroes at its level).</p>
+      <div class="form-grid">
+        <label style="grid-column:1/-1">Boss name<input name="name" required placeholder="The Ashen Colossus"></label>
+        <label style="grid-column:1/-1">Zone<select name="zone">${zoneOpts}</select></label>
+        <label>Level<input name="level" type="number" min="1" value="20" required></label>
+        <label>Health<input name="hp" type="number" min="1000" placeholder="suggested"></label>
+        <label>Hours<input name="hours" type="number" min="0.25" step="0.25" value="24"></label>
+        <label>Gold pool<input name="gold" type="number" min="0" value="20000"></label>
+        <label>XP pool<input name="xp" type="number" min="0" value="20000"></label>
+        <label>Relic for killer<select name="relic"><option value="yes">Yes</option><option value="no">No</option></select></label>
+        <button class="btn primary" type="submit" style="align-self:end">Start hunt</button></div></form>` : ''}
+    <div class="box"><h2>Hunts</h2>${!h.length ? '<p class="small muted">No hunts yet.</p>' : `<table>${h.map((x) => `<tr><td>
+        <b>${esc(x.name)}</b> <span class="small faint">${status(x)}</span><br>
+        <span class="small muted">Level ${x.level} in ${esc(ZONES[x.zone]?.name || x.zone)}. Health ${fmt(x.hp)} / ${fmt(x.max_hp)}. ${x.hunters} hunters. ${x.status === 'active' ? `Ends ${when(x.ends_at)}.` : x.killed_by_name ? `Killed by ${esc(x.killed_by_name)}.` : ''}</span>
+        ${x.top.length ? `<br><span class="small">Top: ${x.top.map((t) => `${esc(t.name)} ${fmt(t.damage)}`).join(', ')}</span>` : ''}
+      </td><td class="num">${isAdmin() && status(x) === 'active' ? `<button class="btn sm danger" data-a="cancelHunt" data-v="${x.id}">Cancel</button>` : ''}</td></tr>`).join('')}</table>`}</div>`;
+}
+
+const LEDGER_LABEL = {
+  monsters: 'Monster loot', quests: 'Quest rewards', hunt: 'Hunt rewards', selling: 'Selling to shops', admin: 'Admin edits',
+  shop: 'Shop purchases', healer: 'Healer', jeweler: 'Jeweler', death: 'Lost on death',
+};
+
+function viewEconomy() {
+  const e = st.economy;
+  if (!e) return '<p class="muted">Loading.</p>';
+  const days = [...new Set(e.rows.map((r) => r.day))].sort().reverse();
+  const sources = [...new Set(e.rows.map((r) => r.source))];
+  const total = (src) => e.rows.filter((r) => r.source === src).reduce((a, r) => a + Number(r.amount), 0);
+  const inflow = sources.filter((s) => total(s) > 0).sort((a, b) => total(b) - total(a));
+  const outflow = sources.filter((s) => total(s) < 0).sort((a, b) => total(a) - total(b));
+  const sum = (list) => list.reduce((a, s) => a + total(s), 0);
+  const row = (s) => `<tr><td>${esc(LEDGER_LABEL[s] || s)}</td><td class="num">${fmt(Math.abs(total(s)))}</td></tr>`;
+  const net = sum(inflow) + sum(outflow);
+  return `<div class="tiles">
+      <div class="tile"><b class="good">${fmt(sum(inflow))}</b><span>Gold created (14 days)</span></div>
+      <div class="tile"><b class="bad">${fmt(-sum(outflow))}</b><span>Gold removed (14 days)</span></div>
+      <div class="tile"><b>${net >= 0 ? '+' : ''}${fmt(net)}</b><span>Net change</span></div>
+      ${st.stats ? `<div class="tile"><b>${fmt(st.stats.goldCarried + st.stats.goldBanked)}</b><span>Gold in the world now</span></div>` : ''}
+    </div>
+    <div class="cols">
+      <div class="box"><h2>Where gold comes from</h2>${inflow.length ? `<table>${inflow.map(row).join('')}</table>` : '<p class="small muted">Nothing yet.</p>'}</div>
+      <div class="box"><h2>Where gold goes</h2>${outflow.length ? `<table>${outflow.map(row).join('')}</table>` : '<p class="small muted">Nothing yet.</p>'}
+        <p class="small faint">Gold moved between players (duels) and to or from the bank isn't counted.</p></div>
+    </div>
+    <div class="box"><h2>By day</h2>${days.length ? `<table><tr><th>Day</th><th class="num">In</th><th class="num">Out</th><th class="num">Net</th></tr>${days.map((d) => {
+      const rows = e.rows.filter((r) => r.day === d);
+      const inn = rows.filter((r) => r.amount > 0).reduce((a, r) => a + Number(r.amount), 0);
+      const out = rows.filter((r) => r.amount < 0).reduce((a, r) => a + Number(r.amount), 0);
+      return `<tr><td>${d}</td><td class="num good">${fmt(inn)}</td><td class="num bad">${fmt(-out)}</td><td class="num">${fmt(inn + out)}</td></tr>`;
+    }).join('')}</table>` : '<p class="small muted">No activity recorded yet.</p>'}</div>`;
+}
+
 function render() {
   let html;
   if (st.phase === 'loading') html = '<div class="intro"><h1>ClickMonster Admin</h1><p>Loading</p></div>';
   else if (st.phase === 'login') html = viewLogin();
   else if (st.phase === 'denied') html = viewDenied();
   else {
-    const body = { dashboard: viewDashboard, players: viewPlayers, announce: viewAnnounce, log: viewLog, staff: viewStaff }[st.tab]();
+    const body = { dashboard: viewDashboard, players: viewPlayers, world: viewWorld, hunts: viewHunts, economy: viewEconomy, announce: viewAnnounce, log: viewLog, staff: viewStaff }[st.tab]();
     html = header() + body;
   }
   $('#admin').innerHTML = html;
@@ -264,6 +352,9 @@ async function load(tab = st.tab) {
     if (tab === 'announce') st.events = (await call('events')).events;
     if (tab === 'log') st.log = (await call('log')).log;
     if (tab === 'staff') st.staff = (await call('staff')).staff;
+    if (tab === 'world') st.world = await call('world');
+    if (tab === 'hunts') st.hunts = (await call('hunts')).hunts;
+    if (tab === 'economy') { st.economy = await call('economy'); if (!st.stats) st.stats = await call('stats'); }
   } catch (e) { toast(e.message, true); }
   render();
 }
@@ -302,6 +393,12 @@ document.addEventListener('click', async (e) => {
   if (a === 'deleteEvent' && confirm('Delete this news item?')) {
     try { await call('deleteEvent', { id: v }); toast('Deleted.'); } catch (err) { toast(err.message, true); }
     load('announce');
+  }
+  if (a === 'endEvent' && confirm('End this event now?')) {
+    try { st.world = await call('endEvent', { id: v }); toast('Event ended.'); render(); } catch (err) { toast(err.message, true); }
+  }
+  if (a === 'cancelHunt' && confirm('Cancel this hunt? Nobody will be rewarded.')) {
+    try { await call('cancelHunt', { id: v }); toast('Hunt cancelled.'); load('hunts'); } catch (err) { toast(err.message, true); }
   }
   if (a === 'removeStaff' && confirm(`Remove ${v} from staff?`)) {
     try { st.staff = (await call('setStaff', { email: v, role: null })).staff; toast('Removed.'); } catch (err) { toast(err.message, true); }
@@ -348,6 +445,31 @@ document.addEventListener('submit', async (e) => {
   if (id === 'announce') {
     try { await call('announce', { text: $('#ann-text').value }); toast('Posted.'); } catch (err) { toast(err.message, true); }
     load('announce');
+  }
+  if (id === 'event' || id === 'base') {
+    const f = new FormData(e.target);
+    const prefix = id === 'event' ? 'm' : 'b';
+    const mults = {};
+    for (const k of MULT_KEYS) { const v = f.get(`${prefix}.${k}`); if (v !== '' && v != null) mults[k] = Number(v); }
+    try {
+      st.world = id === 'event'
+        ? await call('startEvent', { name: f.get('name'), hours: Number(f.get('hours')), mults })
+        : await call('setBase', { base: mults });
+      toast(id === 'event' ? 'Event started.' : 'Saved.');
+      render();
+    } catch (err) { toast(err.message, true); }
+  }
+  if (id === 'hunt') {
+    const f = new FormData(e.target);
+    if (!confirm(`Start the hunt for ${f.get('name')}?`)) return;
+    try {
+      await call('startHunt', {
+        name: f.get('name'), zone: f.get('zone'), level: f.get('level'), hp: f.get('hp') || null,
+        hours: f.get('hours'), gold: f.get('gold'), xp: f.get('xp'), relic: f.get('relic') === 'yes',
+      });
+      toast('Hunt started.');
+      load('hunts');
+    } catch (err) { toast(err.message, true); }
   }
   if (id === 'addstaff') {
     try { st.staff = (await call('setStaff', { email: $('#st-email').value, role: $('#st-role').value })).staff; toast('Added.'); } catch (err) { toast(err.message, true); }

@@ -290,3 +290,38 @@ test('quests: level and zone access gates', async () => {
   assert.equal(q.canAccept(c, home).ok, true);
   assert.equal(q.questTitle({ ...home, variant: 'ironhide' }).startsWith('Slay an Ironhide'), true);
 });
+
+test('world config multipliers and timed events', async () => {
+  const wc = await import('../public/js/engine/world-config.js');
+  const now = Date.now();
+  wc.setWorld({ base: { xp: 2 }, events: [{ name: 'Weekend', until: new Date(now + 3600e3).toISOString(), xp: 1.5, elite: 3 },
+    { name: 'Old', until: new Date(now - 1000).toISOString(), gold: 5 }] }, now);
+  assert.equal(wc.mult('xp'), 3);
+  assert.equal(wc.mult('elite'), 3);
+  assert.equal(wc.mult('gold'), 1, 'expired events are ignored');
+  assert.equal(wc.activeEvents().length, 1);
+  wc.setWorld({ base: { xp: 999 } }, now);
+  assert.equal(wc.mult('xp'), wc.MULT_MAX, 'clamped');
+  wc.setWorld(null);
+  assert.equal(wc.mult('xp'), 1);
+});
+
+test('hunts: shared damage scaling, boss fights at your level, reward shares', async () => {
+  const h = await import('../public/js/engine/hunt.js');
+  assert.equal(h.sharedDamage(100, 40, 10), 400, 'low level heroes count up to 4x');
+  assert.equal(h.sharedDamage(100, 10, 60), 50, 'high level heroes count at least half');
+  const hunt = { id: 'h', zone: 'ashford', name: 'The Great Beast', level: 40, hp: 1e6, max_hp: 1e6 };
+  assert.equal(h.huntCombatant(hunt, 5).level, 10);
+  const c = createCharacter('Hunter', 'orc');
+  c.loc = { zone: 'ashford', x: 3, y: 3 };
+  h.startHuntBattle(c, hunt);
+  let dealt = 0;
+  const rng = seeded(4);
+  while (!c.battle.over && c.battle.turn < 200) dealt += h.huntExchange(c, hunt, 'melee', rng);
+  assert.ok(dealt > 0);
+  assert.equal(c.battle.myDamage, dealt);
+  const shares = h.huntShares([{ character_id: 'a', name: 'A', damage: 900 }, { character_id: 'b', name: 'B', damage: 100 }, { character_id: 'z', name: 'Z', damage: 0 }], { gold: 1000, xp: 500 });
+  assert.equal(shares.length, 2);
+  assert.equal(shares[0].gold, 900);
+  assert.equal(shares[1].xp, 50);
+});

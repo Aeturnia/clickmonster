@@ -2,9 +2,11 @@
 // authority on all rolls, gold and stats. Rules are the shared engine in ./js
 // (a symlink to public/js), the exact same code the browser uses for display.
 import { createClient } from 'npm:@supabase/supabase-js@2.45.4';
-import { createCharacter, ensureCharacter, applyRegen, spendLevel } from './js/engine/character.js';
+import { createCharacter, ensureCharacter, applyRegen, spendLevel, addItem, gainXp } from './js/engine/character.js';
 import { move, walkTo, usePortal, heal } from './js/engine/world.js';
-import { startBattle, battleAction } from './js/engine/battle.js';
+import { startBattle, battleAction, randomRelic, MAX_INVENTORY } from './js/engine/battle.js';
+import { setWorld } from './js/engine/world-config.js';
+import { startHuntBattle, huntExchange, huntShares } from './js/engine/hunt.js';
 import { buy, buyAndEquip, sell, equip, unequip, socketGem, extractGem, deposit, withdraw } from './js/engine/inventory.js';
 import { duel } from './js/engine/pvp.js';
 import { hourBucket, generateQuests, accept, questMatches, grantQuestReward, questTitle } from './js/engine/quests.js';
@@ -64,6 +66,111 @@ async function saveRow(row: Row, char: any) {
 async function announce(kind: string, text: string) {
   const { error } = await admin.from('events').insert({ kind, text });
   if (error) console.error('announce failed', error);
+}
+
+// ---------------------------------------------------------------- world settings (cached briefly)
+let worldCache = { at: 0, data: null as any };
+async function loadWorld(now: number) {
+  if (now - worldCache.at > 20000) {
+    const { data } = await admin.from('world_config').select('data').eq('id', 1).maybeSingle();
+    worldCache = { at: now, data: data?.data || null };
+  }
+  setWorld(worldCache.data, now);
+}
+
+// ---------------------------------------------------------------- economy ledger
+async function ledger(source: string, amount: number) {
+  if (!amount) return;
+  const { error } = await admin.rpc('ledger_add', { p_source: source, p_amount: Math.round(amount) });
+  if (error) console.error('ledger failed', error);
+}
+const wealth = (c: any) => (c.gold || 0) + (c.bank || 0);
+const LEDGER_SOURCE: Record<string, string> = {
+  melee: 'monsters', cast: 'monsters', buy: 'shop', buyequip: 'shop', sell: 'selling', heal: 'healer', extract: 'jeweler',
+};
+
+// ---------------------------------------------------------------- pending rewards (hunts, gifts)
+// Returns the gold delivered (already recorded in the ledger under each reward's source).
+async function claimRewards(row: Row, char: any): Promise<number> {
+  const { data: open } = await admin.from('pending_rewards').select('id').eq('character_id', row.id).is('claimed_at', null).limit(20);
+  if (!open?.length) return 0;
+  let delivered = 0;
+  const { data: claimed, error } = await admin.from('pending_rewards').update({ claimed_at: new Date().toISOString() })
+    .in('id', open.map((r: any) => r.id)).is('claimed_at', null).select('*');
+  if (error) throw error;
+  for (const r of claimed || []) {
+    char.bank = (char.bank || 0) + Number(r.gold || 0);
+    if (r.xp) gainXp(char, Number(r.xp));
+    for (const it of r.items || []) if (char.inventory.length < MAX_INVENTORY) addItem(char, it.base, it.q || null);
+    for (const [k, n] of Object.entries(r.gems || {})) char.gems[k] = (char.gems[k] || 0) + Number(n);
+    const parts = [r.gold ? `${r.gold} gold (sent to your bank)` : '', r.xp ? `${r.xp} experience` : '', (r.items || []).length ? 'a rare item' : ''].filter(Boolean);
+    char.notices = [...(char.notices || []).slice(-9), { at: Date.now(), text: `${r.note || 'Reward'}: ${parts.join(', ')}.` }];
+    await ledger(r.source || 'rewards', Number(r.gold || 0));
+    delivered += Number(r.gold || 0);
+  }
+  return delivered;
+}
+
+// ---------------------------------------------------------------- hunts (world bosses)
+async function activeHunt(id: string) {
+  const { data } = await admin.from('hunts').select('*').eq('id', id).maybeSingle();
+  if (!data || data.status !== 'active' || new Date(data.ends_at).getTime() < Date.now()) return null;
+  return data;
+}
+
+async function finishHunt(huntId: string) {
+  const { data: hunt } = await admin.from('hunts').select('*').eq('id', huntId).single();
+  const { data: hits } = await admin.from('hunt_hits').select('*').eq('hunt_id', huntId);
+  const rows: any[] = huntShares(hits || [], hunt.reward).map((s: any) => ({
+    character_id: s.character_id, source: 'hunt', gold: s.gold, xp: s.xp, items: [], gems: {},
+    note: `Your ${Math.round(s.share * 100)}% share of the hunt for ${hunt.name}`,
+  }));
+  if (hunt.killed_by) {
+    rows.push({
+      character_id: hunt.killed_by, source: 'hunt', gold: Math.round((hunt.reward.gold || 0) * 0.25), xp: 0, gems: {},
+      items: hunt.reward.relic === false ? [] : [{ base: randomRelic(Math.random, hunt.level), q: 'relic' }],
+      note: `Killing blow on ${hunt.name}`,
+    });
+  }
+  if (rows.length) {
+    const { error } = await admin.from('pending_rewards').insert(rows);
+    if (error) throw error;
+  }
+  await announce('hunt', `${hunt.killed_by_name} landed the killing blow on ${hunt.name}! ${rows.length - 1} hunters share the reward.`);
+}
+
+// Returns gold delivered as rewards during this action (so it isn't counted twice).
+async function huntAction(row: Row, char: any, action: string): Promise<number> {
+  const b = char.battle;
+  const hunt = await activeHunt(b.hunt);
+  if (!hunt) {
+    b.over = 'ended';
+    b.log.push({ kind: 'info', text: 'The hunt is over.' });
+    return 0;
+  }
+  if (action === 'again') {
+    char.battle = null;
+    startHuntBattle(char, hunt);
+    return 0;
+  }
+  const mode = action === 'flee' ? 'flee' : action;
+  const dealt = huntExchange(char, hunt, mode);
+  if (dealt > 0) {
+    const { data, error } = await admin.rpc('hunt_hit', { p_hunt: hunt.id, p_char: row.id, p_name: char.name, p_damage: dealt });
+    if (error) throw error;
+    const r = data?.[0];
+    if (r) { b.hp = Number(r.hp); b.maxHp = Number(r.max_hp); }
+    if (r?.killed) {
+      b.over = 'victory';
+      b.log.push({ kind: 'win', text: `You landed the killing blow on ${hunt.name}!` });
+      await finishHunt(hunt.id);
+      return await claimRewards(row, char);
+    } else if (r && r.status !== 'active') {
+      if (!b.over) b.over = 'ended';
+      b.log.push({ kind: 'info', text: r.status === 'defeated' ? `${hunt.name} has already fallen.` : 'The hunt is over.' });
+    }
+  }
+  return 0;
 }
 
 // ---------------------------------------------------------------- sanctions
@@ -143,12 +250,13 @@ async function tryCompleteQuest(row: Row, char: any, now: number) {
     return;
   }
   const r = grantQuestReward(char, now);
+  await ledger('quests', r.gold);
   char.battle.log.push({ kind: 'win', text: `Quest complete! You earn ${r.xp} experience and ${r.gold} gold${r.gem ? ' and a gem' : ''}.` });
   await announce('quest', `${char.name} completed a quest: ${questTitle(q)}.`);
 }
 
 // ---------------------------------------------------------------- actions
-const FAST_ACTIONS = new Set(['melee', 'cast', 'flee', 'fight', 'again', 'move', 'walk']);
+const FAST_ACTIONS = new Set(['melee', 'cast', 'flee', 'fight', 'again', 'move', 'walk', 'hunt']);
 const MIN_ACTION_MS = 150;
 
 const ACTIONS: Record<string, (c: any, a: any) => unknown> = {
@@ -183,6 +291,7 @@ const ACTIONS: Record<string, (c: any, a: any) => unknown> = {
 
 async function handle(userId: string, action: string, args: any) {
   const now = Date.now();
+  await loadWorld(now);
 
   if (action === 'state') {
     const row = await loadRow({ user_id: userId });
@@ -190,10 +299,17 @@ async function handle(userId: string, action: string, args: any) {
     if (sanctionsOf(row).banned) return { char: row.data, sanctions: sanctionsOf(row) };
     applyRegen(row.data, now);
     const notice = await checkQuestStillOpen(row.data, now);
-    if (notice) {
-      row.data.notices = [...(row.data.notices || []).slice(-9), { at: now, text: notice }];
-      await saveRow(row, row.data);
+    const before = JSON.stringify(row.data.notices || []);
+    let changed = false;
+    const hb = row.data.battle;
+    if (hb?.hunt && !hb.over && !(await activeHunt(hb.hunt))) {
+      hb.over = 'ended';
+      hb.log.push({ kind: 'info', text: 'The hunt is over.' });
+      changed = true;
     }
+    if (notice) row.data.notices = [...(row.data.notices || []).slice(-9), { at: now, text: notice }];
+    await claimRewards(row, row.data);
+    if (changed || JSON.stringify(row.data.notices || []) !== before) await saveRow(row, row.data);
     return { char: row.data, sanctions: sanctionsOf(row) };
   }
 
@@ -225,6 +341,7 @@ async function handle(userId: string, action: string, args: any) {
   if (!row) throw new GameError('Create a hero first.', 404);
   enforceSanctions(row, action);
   const char = row.data;
+  await claimRewards(row, char);
 
   if (FAST_ACTIONS.has(action)) {
     if (now - (char.lastActionAt || 0) < MIN_ACTION_MS) throw new GameError('Slow down!', 429);
@@ -256,9 +373,29 @@ async function handle(userId: string, action: string, args: any) {
     return { char };
   }
 
+  if (action === 'hunt') {
+    const hunt = await activeHunt(String(args.huntId));
+    if (!hunt) throw new GameError('That hunt is over.');
+    startHuntBattle(char, hunt);
+    await saveRow(row, char);
+    return { char, sanctions: sanctionsOf(row) };
+  }
+
+  const wealthBefore = wealth(char);
+  if (char.battle?.hunt && ['melee', 'cast', 'flee', 'again'].includes(action)) {
+    if (action !== 'again' && char.battle.over) throw new GameError('This fight is over.');
+    const delivered = await huntAction(row, char, action);
+    const d = wealth(char) - wealthBefore - delivered;
+    await ledger(d < 0 ? 'death' : 'hunt', d);
+    await saveRow(row, char);
+    return { char, sanctions: sanctionsOf(row) };
+  }
+
   const fn = ACTIONS[action];
   if (!fn) throw new GameError('Unknown action.');
   fn(char, args || {});
+  const delta = wealth(char) - wealthBefore;
+  if (delta) await ledger(delta < 0 && (action === 'melee' || action === 'cast' || action === 'flee') ? 'death' : (LEDGER_SOURCE[action] || action), delta);
 
   const b = char.battle;
   if ((action === 'melee' || action === 'cast') && b?.over === 'victory') {

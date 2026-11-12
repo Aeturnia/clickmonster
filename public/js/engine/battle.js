@@ -11,6 +11,7 @@ import { playerCombatant, gainXp, maxHp, gemEffects, trainMastery, deathPenalty,
 import { resolveAttack } from './combat.js';
 import { monstersHere, respawnPoint } from './world.js';
 import { randInt, pick, clamp } from './util.js';
+import { mult } from './world-config.js';
 
 export const MAX_INVENTORY = 40;
 const GEM_CHANCE = 0.05;
@@ -22,7 +23,7 @@ export function startBattle(char, monsterId, rng = Math.random) {
   if (char.hp <= 0) throw new Error('You are too weak to fight. Rest or visit a healer.');
   const q = char.quest;
   const boosted = q && q.zone === char.loc.zone ? q.variant : null;
-  const variant = rollVariant(rng, !!MONSTERS[monsterId].boss, boosted);
+  const variant = rollVariant(rng, !!MONSTERS[monsterId].boss, boosted, mult('elite'));
   const mon = monsterCombatant(monsterId, variant);
   const log = [{ kind: variant ? 'elite' : 'info', text: `You face ${aName(mon.def)}!` }];
   if (variant) log.push({ kind: 'elite', text: VARIANTS[variant].desc });
@@ -40,7 +41,7 @@ function randomGem(rng, level, bump = 0) {
   return `${pick(rng, Object.keys(GEM_TYPES))}:${Math.min(5, gemTierForLevel(level) + bump)}`;
 }
 
-function randomRelic(rng, level) {
+export function randomRelic(rng, level) {
   const tier = tierForLevel(level);
   const kinds = [
     ...Object.keys(WEAPON_TYPES).map((t) => `${t}_${tier}`),
@@ -55,8 +56,8 @@ function rollLoot(def, variant, fx, rng) {
   const v = variant ? VARIANTS[variant] : {};
   const boss = !!def.boss;
   let gold = randInt(rng, 2 + def.level * 3, 4 + def.level * 6) * (boss ? 5 : 1) * (v.gold || 1);
-  gold = Math.round(gold * (1 + fx.gold / 100));
-  const drop = v.drop || 1;
+  gold = Math.round(gold * (1 + fx.gold / 100) * mult('gold'));
+  const drop = (v.drop || 1) * mult('drop');
   let gem = null;
   let relic = null;
   if (rng() < (boss ? 0.1 : RELIC_CHANCE) * drop) relic = randomRelic(rng, def.level);
@@ -141,7 +142,7 @@ function victory(char, b, def, rng) {
   const v = b.variant ? VARIANTS[b.variant] : {};
   const fx = gemEffects(char);
   b.log.push({ kind: 'win', text: `Victory! ${theName(def, true)} has been slain!` });
-  const xp = Math.round(xpReward(def.level, char.level, def.boss) * (v.xp || 1) * (1 + fx.xp / 100));
+  const xp = Math.round(xpReward(def.level, char.level, def.boss) * (v.xp || 1) * (1 + fx.xp / 100) * mult('xp'));
   const loot = rollLoot(def, b.variant, fx, rng);
   char.gold += loot.gold;
   char.kills += 1;

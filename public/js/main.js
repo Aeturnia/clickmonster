@@ -19,6 +19,8 @@ import { shopItems, isEquipped, sellPrice } from './engine/inventory.js';
 import { PVP_LEVEL_GAP } from './engine/pvp.js';
 import { sb, api, playersAt, recentEvents } from './net.js';
 import { questTitle, canAccept } from './engine/quests.js';
+import { setWorld, activeEvents, MULT_LABEL, MULT_KEYS } from './engine/world-config.js';
+import { huntCombatant } from './engine/hunt.js';
 
 // ---------------------------------------------------------------- state
 const PREFS_KEY = 'clickmonster.prefs';
@@ -49,6 +51,7 @@ const ui = {
   lastMonster: null,
   sanctions: null,
   announcement: null,
+  hunts: [],
 };
 
 const SEEN_KEY = 'clickmonster.seenAnnouncement';
@@ -236,8 +239,12 @@ function viewExplore() {
   const ann = ui.announcement && ui.announcement.id > seenAnnouncement() ? `<div class="notice announce">
       <p class="small" style="margin:0 0 4px"><b>Announcement</b></p><p class="small" style="margin:0">${esc(ui.announcement.text)}</p>
       <button class="textbtn" data-a="seenann">Dismiss</button></div>` : '';
+  const events = activeEvents().map((e) => {
+    const bits = MULT_KEYS.filter((k) => e[k] && e[k] !== 1).map((k) => `${MULT_LABEL[k]} x${e[k]}`).join(', ');
+    return `<div class="notice event"><p class="small" style="margin:0"><b>${esc(e.name)}</b>: ${bits}. ${timeLeft(new Date(e.until).getTime() - Date.now())} left.</p></div>`;
+  }).join('');
   return `
-    ${jail}${mute}${ann}
+    ${jail}${mute}${ann}${events}
     ${notices}
     ${questLine}
     <div class="place">
@@ -253,10 +260,21 @@ function viewExplore() {
     ${ui.list === 'monsters' ? monsterRows() : playerRows(zone)}`;
 }
 
+function huntRows() {
+  return ui.hunts.filter((h) => h.zone === char.loc.zone).map((h) => {
+    const pctLeft = Math.max(1, Math.round((h.hp / h.max_hp) * 100));
+    return `<button class="row hunt" data-a="hunt" data-v="${h.id}">
+      <span class="lv ${difficulty(h.level).cls}">Lv ${h.level}</span>
+      <span class="nm">${esc(h.name)}<small>World boss, ${pctLeft}% health left, ${timeLeft(new Date(h.ends_at).getTime() - Date.now())} remaining</small></span>
+      <span class="go">Join</span></button>`;
+  }).join('');
+}
+
 function monsterRows() {
   const mons = monstersHere(char);
-  if (!mons.length) return '<p class="empty">No monsters roam here.</p>';
-  return `<div class="rows">${mons.map((m) => {
+  const hunts = huntRows();
+  if (!mons.length && !hunts) return '<p class="empty">No monsters roam here.</p>';
+  return `<div class="rows">${hunts}${mons.map((m) => {
     const d = difficulty(m.level);
     return `<button class="row ${m.boss ? 'boss' : ''}" data-a="fight" data-v="${m.id}">
       <span class="lv ${d.cls}">Lv ${m.level}</span>
@@ -323,9 +341,20 @@ function logHtml(log) {
   return log.map((l, i) => `<p class="${l.kind}${i >= firstFresh ? ' fresh' : ''}${i === log.length - 1 ? ' latest' : ''}">${esc(l.text)}</p>`).join('');
 }
 
+function viewHuntBattle(b, you) {
+  const ended = b.over && b.over !== 'defeat';
+  return `<div class="versus" id="versus">${you}<div class="vs">vs</div>
+      <div class="side foe" id="fx-foe"><div class="side-name elite-name">${esc(b.name)}</div>
+        <div class="side-sub">World boss, level ${b.level}</div>
+        ${meter('Shared HP', b.hp, b.maxHp, 'foe big')}</div></div>
+    <div class="summary"><span>Your damage: ${fmt(b.myDamage || 0)}</span>${ended ? '' : '<span class="faint">Every hunter shares the reward</span>'}</div>
+    <div class="log" id="log">${logHtml(b.log)}</div>`;
+}
+
 function viewBattle() {
   const b = char.battle;
   const you = `<div class="side you" id="fx-you"><div class="side-name">${esc(char.name)}</div><div class="side-sub">Lv ${char.level}</div>${meter('HP', char.hp, maxHp(char), 'big')}</div>`;
+  if (b.hunt) return viewHuntBattle(b, you);
   if (b.pvp) {
     return `<div class="versus" id="versus">${you}<div class="vs">vs</div>
         <div class="side foe" id="fx-foe"><div class="side-name">${esc(b.opponent)}</div><div class="side-sub">${b.over === 'victory' ? 'Defeated' : 'Victorious'}</div></div></div>
@@ -348,6 +377,20 @@ function viewBattle() {
 
 function dockBattle() {
   const b = char.battle;
+  if (b.hunt) {
+    if (b.over) {
+      const live = ui.hunts.some((h) => h.id === b.hunt);
+      return `<div class="dock-battle">${live && b.over !== 'victory' ? btn('again', null, 'Attack again', 'big primary wide') : ''}${btn('done', null, 'Continue', live && b.over !== 'victory' ? 'wide flee ghost' : 'big primary wide')}</div>`;
+    }
+    const boss = huntCombatant({ name: b.name, level: b.level }, char.level);
+    const p = playerCombatant(char);
+    const wName = p.melee.type === 'fists' ? 'Fists' : WEAPON_TYPES[p.melee.type].label;
+    return `<div class="dock-battle">
+      ${btn('melee', null, `Melee<small>${wName}, ${pct(meleeChance(p, boss))} hit</small>`, 'big primary')}
+      ${btn('cast', null, `Cast<small>${ELEMENT_LABEL[p.spell.element]}, ${pct(spellChance(p, boss))} cast</small>`, 'big')}
+      ${btn('flee', null, 'Fall back', 'wide flee ghost')}
+    </div>`;
+  }
   if (!b.over) {
     const mon = monsterCombatant(b.monsterId, b.variant);
     const p = playerCombatant(char);
@@ -736,7 +779,7 @@ function playEffects(entries) {
 }
 
 // ---------------------------------------------------------------- actions
-const BATTLE_ACTIONS = new Set(['melee', 'cast', 'flee', 'again', 'fight', 'attack']);
+const BATTLE_ACTIONS = new Set(['melee', 'cast', 'flee', 'again', 'fight', 'attack', 'hunt']);
 
 // Actions that only change what's on screen.
 function handleLocal(a, v) {
@@ -767,6 +810,7 @@ function remoteCall(a, v) {
     case 'move': return ['move', { dir: v }];
     case 'walk': { const [x, y] = v.split(',').map(Number); return x === char.loc.x && y === char.loc.y ? null : ['walk', { x, y }]; }
     case 'fight': ui.lastMonster = v; return ['fight', { monsterId: v }];
+    case 'hunt': return ['hunt', { huntId: v }];
     case 'melee': case 'cast': case 'flee': case 'again': case 'done': case 'dismiss': case 'portal': return [a, {}];
     case 'heal': return ['heal', {}, `Healed for ${healCost(char)} gold.`];
     case 'buy': return ['buy', { itemId: v }, `Bought ${ITEMS[v].name}. It is in your pack.`];
@@ -808,7 +852,12 @@ async function runRemote(a, v, el) {
     if (msg) toast(msg);
     if (action === 'create' && char) { ui.tab = 'explore'; toast(`Welcome to ${ZONES[char.loc.zone].name}, ${char.name}.`); }
     if (action === 'sell' || action === 'buyequip') ui.sheet = null;
-    if (action === 'fight' || action === 'attack') ui.tab = 'explore';
+    if (action === 'fight' || action === 'attack' || action === 'hunt') ui.tab = 'explore';
+    if (char?.battle?.hunt && ['melee', 'cast'].includes(action)) {
+      const h = ui.hunts.find((x) => x.id === char.battle.hunt);
+      if (h) h.hp = char.battle.hp;
+      if (char.battle.over === 'victory' || char.battle.over === 'ended') loadHunts();
+    }
     if (char && before && char.loc.zone !== before.zone && char.battle?.over !== 'defeat') toast(`You travel to ${ZONES[char.loc.zone].name}.`);
     if (action === 'accept' || action === 'abandon') loadBoard();
   } catch (err) {
@@ -918,6 +967,28 @@ setInterval(() => {
 }, 1000);
 
 setInterval(() => { if (document.visibilityState === 'visible') refreshPlayers(); }, 15000);
+setInterval(() => {
+  if (document.visibilityState !== 'visible' || !char) return;
+  loadHunts();
+  loadWorldConfig();
+}, 30000);
+
+async function loadWorldConfig() {
+  try {
+    const { data } = await sb.from('world_config').select('data').eq('id', 1).maybeSingle();
+    setWorld(data?.data || null);
+    render();
+  } catch { /* keep defaults */ }
+}
+
+async function loadHunts() {
+  try {
+    const { data } = await sb.from('hunts').select('id, zone, name, level, hp, max_hp, ends_at')
+      .eq('status', 'active').gt('ends_at', new Date().toISOString()).limit(20);
+    ui.hunts = data || [];
+    render();
+  } catch { /* not important */ }
+}
 
 async function loadAnnouncement() {
   try {
@@ -936,6 +1007,8 @@ async function loadHero() {
     ui.sanctions = res.sanctions || null;
     ui.phase = 'game';
     loadAnnouncement();
+    loadWorldConfig();
+    loadHunts();
   } catch (err) {
     toast(err.message, 'bad');
     ui.phase = 'auth';
