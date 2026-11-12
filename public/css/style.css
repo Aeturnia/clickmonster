@@ -309,3 +309,6 @@ input:focus { outline: 2px solid var(--gold); outline-offset: 1px; }
 .quest-row { align-items: flex-start; }
 .quest-row .nm { font-size: 15px; }
 .news p { margin: 0 0 6px; }
+
+.notice.bad { border-left-color: var(--bad); }
+.notice.announce { border-left-color: var(--xp); }
