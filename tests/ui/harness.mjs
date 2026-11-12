@@ -159,7 +159,9 @@ export class FakeBackend {
         const p = this.players.find((x) => x.id === args.targetId);
         if (!p) throw Object.assign(new Error('They are no longer here.'), { status: 400 });
         const t = createCharacter(p.name, p.race, now);
-        t.level = p.level; t.loc = { zone: p.zone, x: p.x, y: p.y }; t.gold = p.gold ?? 500; t.hp = maxHp(t);
+        t.level = p.level; t.loc = { zone: p.zone, x: p.x, y: p.y }; t.gold = p.gold ?? 500;
+        if (p.stats) Object.assign(t.stats, p.stats); // a test can make the opponent stronger
+        t.hp = maxHp(t);
         duel(c, t, rng);
       },
       accept: () => accept(c, this.quests.find((q) => q.id === args.questId), now),
@@ -325,7 +327,10 @@ export async function attach(context, backend, baseUrl) {
       push(table, type, record) {
         for (const b of bindings) {
           if (b.table !== table || (b.event !== '*' && b.event !== type)) continue;
-          const payload = { data: { type, table, schema: 'public', record, columns: [], commit_timestamp: new Date().toISOString(), errors: null }, ids: [b.id] };
+          // Like Supabase, updates and deletes also carry the old row (at least its key).
+          const data = { type, table, schema: 'public', record, columns: [], commit_timestamp: new Date().toISOString(), errors: null };
+          if (type !== 'INSERT') data.old_record = { id: record.id };
+          const payload = { data, ids: [b.id] };
           ws.send(frame(b.joinRef, null, b.topic, 'postgres_changes', payload));
         }
       },

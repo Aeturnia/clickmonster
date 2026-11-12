@@ -5,6 +5,7 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { setup, signIn, settle, FakeBackend, makeHero, axe, fixedQuest } from './harness.mjs';
+import { xpToNext } from '../../public/js/engine/character.js';
 
 let env;
 before(async () => { env = await setup(); });
@@ -359,5 +360,126 @@ test('empty and loading states follow one pattern: statement, then what to do', 
   });
   assert.equal(empty.busy, null);
   assert.match(empty.hint, /refreshes on its own/);
+  await done(ctx);
+});
+
+// ---------------------------------------------------------------- review corrections (PR #12)
+
+const live = (id, text, extra = {}) => ({
+  id, channel: 'global', zone: null, sender_id: 'char-other', sender_name: 'Musa', sender_role: null,
+  recipient_id: null, recipient_name: null, text, deleted_at: null, created_at: new Date().toISOString(), ...extra,
+});
+
+test('P3-01 focus returns to the replacement of a re-rendered trigger, or to a sensible fallback', async () => {
+  const ctx = await game();
+  const { page, backend } = ctx;
+  await page.click('.chatbar'); await page.waitForSelector('#chat[open]');
+  await page.click('.chat-line[data-v="7"]');
+  await page.focus('[data-c="report"][data-v="7"]');
+  await page.evaluate(() => { document.querySelector('[data-c="report"][data-v="7"]').__original = true; });
+  await page.keyboard.press('Enter');
+  await page.waitForSelector('#confirm[open]');
+  // A Realtime message arrives while the question is open and re-renders the chat list.
+  backend.broadcast('chat_messages', 'INSERT', live(801, 'Fresh news from the meadows'));
+  await page.waitForFunction(() => /Fresh news/.test(document.getElementById('chat-list').textContent));
+  assert.equal(await page.evaluate(() => document.querySelector('[data-c="report"][data-v="7"]').__original), undefined, 'the trigger was replaced');
+  await page.keyboard.press('Escape');
+  const back = await page.evaluate(() => ({ c: document.activeElement.dataset.c, v: document.activeElement.dataset.v, connected: document.activeElement.isConnected }));
+  assert.deepEqual(back, { c: 'report', v: '7', connected: true }, 'focus on the replacement Report button');
+  assert.equal(calls(backend, 'report'), 0, 'cancelled: nothing sent');
+
+  // The trigger disappears entirely: a moderator removes the message meanwhile (no Report on it now).
+  await page.keyboard.press('Enter');
+  await page.waitForSelector('#confirm[open]');
+  backend.broadcast('chat_messages', 'UPDATE', live(7, '', { deleted_at: new Date().toISOString(), created_at: CHAT[0].created_at }));
+  await page.waitForFunction(() => !document.querySelector('[data-c="report"][data-v="7"]'));
+  await page.keyboard.press('Escape');
+  const fb = await page.evaluate(() => ({ c: document.activeElement.dataset.c, v: document.activeElement.dataset.v, inChat: !!document.activeElement.closest('#chat') }));
+  assert.deepEqual(fb, { c: 'menu', v: '7', inChat: true }, "focus falls back to the message's line");
+  assert.equal(await page.evaluate(() => document.getElementById('chat').open), true, 'the chat stays open');
+  assert.equal(calls(backend, 'report'), 0);
+  await done(ctx);
+});
+
+test('P3-02 an error that arrives while a confirmation is open survives its closing', async () => {
+  const ctx = await game();
+  const { page, backend } = ctx;
+  await tap(page, '[data-a="quests"]');
+  await page.waitForSelector('[data-a="accept"]');
+  await tap(page, '[data-a="accept"]');
+  await page.keyboard.press('Escape'); await settle(page);
+  await page.evaluate(() => { document.getElementById('toast').__original = true; });
+  // Reopen the board; its refresh is slow and then fails.
+  const release = backend.hold('quests');
+  backend.failNext('quests', 500, 'The quest board is unavailable right now.');
+  await page.waitForTimeout(270);
+  await page.click('[data-a="quests"]'); // the board shows "Reading the board" while it waits
+  await page.waitForSelector('#sheet[open] [data-a="abandon"]');
+  await page.click('#sheet [data-a="abandon"]');
+  await page.waitForSelector('#confirm[open]');
+  release();
+  await page.waitForFunction(() => /quest board is unavailable/.test(document.getElementById('alerts')?.textContent || ''));
+  const during = await page.evaluate(() => ({ host: document.getElementById('alerts').parentElement.id, visible: document.getElementById('alerts').getClientRects().length > 0 }));
+  assert.deepEqual(during, { host: 'confirm', visible: true }, 'shown above the open confirmation');
+  assert.deepEqual((await axe(page)).map((v) => v.id), [], 'axe: confirmation over a sheet, with an error');
+  await page.evaluate(() => { document.getElementById('alerts').__original = true; });
+  await page.keyboard.press('Escape');
+  const after = await page.evaluate(() => {
+    const a = document.getElementById('alerts');
+    return {
+      sameAlerts: a?.__original === true, sameToast: document.getElementById('toast')?.__original === true,
+      text: a?.textContent.replace(/\s+/g, ' ').trim(), host: a?.parentElement.id, visible: !!a && a.getClientRects().length > 0,
+      confirmChildren: [...document.getElementById('confirm').children].map((c) => c.id),
+    };
+  });
+  assert.ok(after.sameAlerts && after.sameToast, 'the shared toast and problem list were not destroyed');
+  assert.match(after.text, /The quest board is unavailable right now\./);
+  assert.equal(after.host, 'sheet', 'moved to the sheet still open underneath');
+  assert.ok(after.visible);
+  assert.deepEqual(after.confirmChildren, ['confirm-content'], 'nothing shared left behind in the closed dialog');
+  assert.equal(calls(backend, 'abandon'), 0, 'cancelled: nothing sent');
+  assert.ok(await page.evaluate(() => !!window.clickmonster.char.quest), 'still on the quest');
+  // Still dismissible.
+  await page.click('#alerts [data-a="dismissError"]');
+  assert.equal(await page.evaluate(() => document.querySelectorAll('#alerts .alert').length), 0);
+  await done(ctx);
+});
+
+test('P3-03 a lost duel shows the gold and the experience actually lost', async () => {
+  const hero = makeHero({ level: 35, zone: 'duskhollow', x: 2, y: 2, gold: 4321 });
+  hero.xp = 300;
+  const champion = { ...MUSA, level: 40, stats: { str: 900, dex: 900, int: 900, wis: 900, vit: 900 } };
+  const backend = new FakeBackend({ hero, players: [champion], chat: structuredClone(CHAT), quests: [fixedQuest()] });
+  const ctx = await env.page({ backend, viewport: { width: 390, height: 844 }, mobile: true });
+  const { page } = ctx;
+  await signIn(page, env.url, 'player');
+  await page.waitForSelector('[data-a="move"]'); await settle(page);
+  const before = await page.evaluate(() => ({ gold: window.clickmonster.char.gold, xp: window.clickmonster.char.xp, level: window.clickmonster.char.level }));
+  await tap(page, '[data-a="list"][data-v="players"]');
+  await page.waitForSelector('[data-a="attack"]');
+  await page.click('[data-a="attack"]');
+  await page.click('#confirm [data-r="ok"]'); await settle(page);
+  await page.waitForSelector('.outcome');
+  const out = await page.evaluate(() => {
+    const c = window.clickmonster.char;
+    return {
+      over: c.battle.over, pvp: c.battle.pvp, gold: c.gold, xp: c.xp, level: c.level,
+      logMentionsXp: c.battle.log.some((l) => /experience/.test(l.text)),
+      title: document.querySelector('.outcome .outcome-title')?.textContent,
+      chips: [...document.querySelectorAll('.outcome .losses li')].map((l) => l.textContent),
+    };
+  });
+  assert.equal(out.pvp, true);
+  assert.equal(out.over, 'defeat');
+  assert.equal(out.level, before.level);
+  assert.equal(out.logMentionsXp, false, "the duel's log does not mention experience (why the state is used)");
+  const goldLost = before.gold - out.gold;
+  const xpLost = before.xp - out.xp;
+  assert.equal(goldLost, 4321);
+  assert.equal(xpLost, Math.min(300, Math.floor(xpToNext(35) * 0.2)));
+  assert.ok(xpLost > 0);
+  assert.equal(out.title, 'Defeated');
+  assert.deepEqual(out.chips, [`Lost ${goldLost.toLocaleString('en-US')} gold`, `Lost ${xpLost} XP`, 'Back in town']);
+  assert.deepEqual((await axe(page)).map((v) => v.id), [], 'axe: duel result');
   await done(ctx);
 });

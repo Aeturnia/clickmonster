@@ -119,6 +119,56 @@ axe-core 4.10.2, all impacts including minor:
 
 The "before" confirmations were native browser dialogs, which a headless browser can't screenshot. Their text is recorded in `axe-states-before.json` (`native`), and the before images show the screen underneath.
 
+## Review corrections (PR #12 review)
+
+The review accepted the design and the confirmation tiers, and approved not confirming ordinary transactions whose cost is shown. No percentage-of-gold threshold is added. Three findings were corrected.
+
+**P3-01 — Focus restoration when the trigger is re-rendered.**
+- *Cause:* `confirm.js` remembered only the element that opened it. A re-render during the question (for example a Realtime chat message repainting the list) replaced that element, so focus was lost on closing.
+- *Fix:*
+  - `ask()` also records a stable key for the trigger: its id, or its `data-a`/`data-c` plus `data-v` (the same scheme as the game's focus preservation).
+  - On closing, focus goes to the original if it is still usable, else to its replacement found by key, else to a contextual fallback:
+    - **Chat:** the message's line, else the message box (`fallback` on each chat question).
+    - **Game:** the heading or first control of the sheet or chat still open underneath, else the screen's usual fallback (`setConfirmFallback`).
+    - **Admin:** the player or section heading.
+- *Test:* "P3-01 focus returns to the replacement…".
+  - While a chat report question is open, a Realtime message re-renders the list (the original Report button is checked to be gone). Escape lands on the replacement Report button.
+  - Then a Realtime update removes the message, so it has no Report button at all. Escape lands on the message's line, and the chat stays open.
+  - Nothing is sent either time.
+
+**P3-02 — Shared notifications destroyed with the question.**
+- *Cause:* while a confirmation is open, the game moves its toast and problem list into it (so they show above the backdrop). Closing cleared the dialog with `innerHTML = ''`, which destroyed them.
+- *Fix:*
+  - The question lives in its own `#confirm-content`, and only that is cleared.
+  - Anything else in the dialog is moved back to the page, intact, before the game re-homes it to the topmost open dialog.
+- *Test:* "P3-02 an error that arrives while a confirmation is open…".
+  - The quest board's refresh is held, the Abandon question is opened, then the refresh fails.
+  - The error appears above the question; axe passes on this nested state (question over sheet, with an error).
+  - After Escape:
+    - the same toast and problem-list elements still exist;
+    - the error text is intact and visible, now in the sheet underneath, and can still be dismissed;
+    - nothing shared is left in the closed dialog;
+    - nothing is sent, and the quest is kept.
+
+**P3-03 — Experience lost in a duel.**
+- *Cause:* a lost duel costs carried gold and experience. The engine's duel log names only the gold, and the outcome panel read the losses from the log.
+- *Fix:* `trackChanges()` already snapshots the hero before each action. On a defeat it now records the measured `gold` and `xp` lost (same level before and after), tied to that battle, and the outcome panel uses those figures. The closing log lines are used only after a reload, when no measurement exists.
+- No server, engine or API change.
+- *Test:* "P3-03 a lost duel shows the gold and the experience actually lost". A level 35 hero carrying 4,321 gold and 300 XP attacks a much stronger player and loses. The test checks that:
+  - the duel log doesn't mention experience;
+  - the chips read exactly "Lost 4,321 gold", "Lost 300 XP" and "Back in town";
+  - those figures match the before and after state and the engine's rule (`min(xp, 20% of a level)`);
+  - axe passes on the duel result.
+
+**Harness fix found along the way.** The fake Realtime socket sent `UPDATE` events without `old_record`. supabase-js threw on them, so no test had exercised a Realtime update before. It now sends the row's key, as Supabase does.
+
+**Validation after the corrections:**
+- All three new tests fail against the reviewed commit (2cd0553) for the reasons above, and pass now.
+- `npm test`: 24 of 24 pass.
+- `npm run test:ui`: CORRECTION_RUNS.
+- Cancelling sends no destructive action: every confirmation test asserts zero calls for the action after Cancel, Escape or a tap outside.
+- axe passes on the new nested-dialog state and the duel result (in the tests above), and on the interaction-state sweep (CORRECTION_AXE).
+
 ## Not verified
 
 - Real devices: iOS VoiceOver and Android TalkBack with the `alertdialog`, and how `role="status"` toasts are read for refused taps.
@@ -128,4 +178,4 @@ The "before" confirmations were native browser dialogs, which a headless browser
 ## Deferred
 
 - Phase 4 (admin console) is not started.
-- Selling without gems, healing and extracting do not ask (tier 4). If you'd prefer a confirmation above some share of carried gold, it's a small rule to add.
+- Selling without gems, healing and extracting do not ask (tier 4). The review approved this; no gold-share threshold is added.

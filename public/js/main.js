@@ -12,7 +12,7 @@ import {
   maxHp, xpToNext, totalStats, gemBonuses, totalArmor, playerCombatant,
   applyRegen, healCost, findItem, equippedItem, meetsRequirements, NAME_RE, deathPenalty,
 } from './engine/character.js';
-import { ask, onConfirmClose } from './confirm.js';
+import { ask, onConfirmClose, setConfirmFallback } from './confirm.js';
 import { currentZone, featuresAt, inTown, monstersHere, directionTo } from './engine/world.js';
 import { monsterCombatant } from './engine/monster.js';
 import { meleeChance, spellChance, meleeBase, spellBase } from './engine/combat.js';
@@ -151,6 +151,14 @@ function placeOverlays() {
 }
 for (const d of document.querySelectorAll('dialog')) d.addEventListener('close', () => { placeOverlays(); positionToast(); });
 onConfirmClose(() => { placeOverlays(); positionToast(); });
+// After a confirmation whose control was re-rendered away: inside the sheet or chat still open
+// underneath (its heading, else its first control), otherwise the screen's usual fallback.
+setConfirmFallback(() => {
+  const under = [...document.querySelectorAll('dialog[open]')].pop();
+  if (under) return under.querySelector('#sheet-title, [tabindex="-1"], button:not([disabled]), input:not([disabled])');
+  focusFallback();
+  return null;
+});
 
 // The on-screen keyboard. iOS (and Android without resizes-content) shrink only the visual
 // viewport, leaving bottom-anchored dialogs behind the keyboard. Expose the visible height and
@@ -511,11 +519,13 @@ function outcomeHtml(b) {
     return `<div class="outcome win"><p class="outcome-title">Victory</p>${items || ups ? `<ul class="rewards" aria-label="Rewards">${items}${ups}</ul>` : ''}</div>`;
   }
   if (b.over === 'defeat') {
-    // The losses, read from the log's closing lines ("having lost 120 gold and 40 experience",
-    // or in a duel "takes 120 of your gold").
+    // The losses: the measured change in the hero, recorded when the defeat happened here.
+    // After a reload, what the closing log lines say ("having lost 120 gold and 40 experience";
+    // a duel's log names only the gold).
     const tail = b.log.slice(-3).map((l) => l.text).join(' ');
-    const gold = Number((tail.match(/lost (\d+) gold|takes (\d+) of your gold/) || []).slice(1).find(Boolean) || 0);
-    const xp = Number((tail.match(/(\d+) experience/) || [])[1] || 0);
+    const seen = ui.losses && ui.losses.first === b.log[0]?.text && ui.losses.length === b.log.length ? ui.losses : null;
+    const gold = seen ? seen.gold : Number((tail.match(/lost (\d+) gold|takes (\d+) of your gold/) || []).slice(1).find(Boolean) || 0);
+    const xp = seen ? seen.xp : Number((tail.match(/(\d+) experience/) || [])[1] || 0);
     const losses = [gold ? `<li>Lost ${fmt(gold)} gold</li>` : '', xp ? `<li>Lost ${fmt(xp)} XP</li>` : '', /wake up in town/.test(tail) ? '<li>Back in town</li>' : ''].join('');
     return `<div class="outcome loss"><p class="outcome-title">Defeated</p>${losses ? `<ul class="rewards losses" aria-label="Losses">${losses}</ul>` : ''}<p class="outcome-text">Gold in the bank is safe.</p></div>`;
   }
@@ -1077,6 +1087,15 @@ function trackChanges(action, before) {
     ui.turnLog.marks.push({ start: before.battleLog, turn: b.turn });
   }
   if (!char || !before) return;
+  // A defeat's real cost, from the hero before and after (a duel's log names the gold but not
+  // the experience). Kept with the battle it belongs to.
+  if (b?.over === 'defeat' && ['melee', 'cast', 'flee', 'attack'].includes(action)) {
+    ui.losses = {
+      first: b.log[0]?.text, length: b.log.length,
+      gold: Math.max(0, before.gold - char.gold),
+      xp: char.level === before.level ? Math.max(0, before.xp - char.xp) : 0,
+    };
+  }
   const gold = char.gold - before.gold;
   // XP gained: across a level-up the bar restarts, so take the reward when there is one.
   const xp = char.level > before.level ? (b?.rewards?.xp || 0) : char.xp - before.xp;

@@ -344,6 +344,9 @@ export function setupChat({ sb, api, getChar, toast, esc, zoneName }) {
 
   // The message a menu acts on, from whichever channel holds it.
   const findMsg = (id) => Object.values(st.msgs).flat().find((m) => String(m.id) === String(id));
+  // Where focus goes if the menu button that asked was re-rendered away (a Realtime update):
+  // the message's line, else the message box.
+  const backTo = (id) => (id != null && drawer.querySelector(`.chat-line[data-v="${CSS.escape(String(id))}"]`)) || drawer.querySelector('#chat-input:not([disabled])') || drawer.querySelector('.chat-tabs button.on');
   const quote = (m) => (m ? `${m.sender_name}: "${m.text.length > 120 ? `${m.text.slice(0, 117)}...` : m.text}"` : '');
 
   async function onAction(c, v) {
@@ -369,7 +372,7 @@ export function setupChat({ sb, api, getChar, toast, esc, zoneName }) {
         if (!await ask({
           title: `Ignore ${v}?`,
           points: ["You won't see their messages or whispers.", 'You can stop ignoring them from the list at the top of the chat.'],
-          confirm: 'Ignore', cancel: 'Cancel', tone: 'normal',
+          confirm: 'Ignore', cancel: 'Cancel', tone: 'normal', fallback: () => backTo(),
         })) return;
         try { await api('ignore', { name: v }); await loadMeta(); toast(`Ignoring ${v}.`); } catch (err) { setError(err.message); }
         st.menuFor = null; paint(); return;
@@ -382,7 +385,7 @@ export function setupChat({ sb, api, getChar, toast, esc, zoneName }) {
           lead: quote(findMsg(v)),
           points: ['A moderator will review it. The sender is not told who reported it.'],
           input: { label: 'Why are you reporting it? (optional)', maxlength: 200 },
-          confirm: 'Send report', cancel: 'Cancel', tone: 'normal',
+          confirm: 'Send report', cancel: 'Cancel', tone: 'normal', fallback: () => backTo(v),
         });
         if (!res) return;
         const reason = res.value || '';
@@ -394,7 +397,7 @@ export function setupChat({ sb, api, getChar, toast, esc, zoneName }) {
           title: 'Remove this message for everyone?',
           lead: quote(findMsg(v)),
           points: ['It is replaced by "message removed" for all players. The original stays in the moderation log.'],
-          confirm: 'Remove message', cancel: 'Keep it',
+          confirm: 'Remove message', cancel: 'Keep it', fallback: () => backTo(v),
         })) return;
         try { await api('modDelete', { messageId: v }); toast('Removed.'); } catch (err) { setError(err.message); }
         st.menuFor = null; paint(); drawer.querySelector(`.chat-line[data-v="${v}"]`)?.focus(); return;

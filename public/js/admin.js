@@ -10,7 +10,9 @@ import { ITEMS, itemDef, SLOT_LABEL } from './data/items.js';
 import { ZONES } from './data/zones.js';
 import { RACES } from './data/races.js';
 import { MULT_KEYS, MULT_LABEL, MULT_MAX } from './engine/world-config.js';
-import { ask } from './confirm.js';
+import { ask, setConfirmFallback } from './confirm.js';
+// After a confirmation whose button was re-rendered away: the section heading.
+setConfirmFallback(() => document.getElementById('player-title') || document.getElementById('section-title') || document.querySelector('.a-tabs [aria-current]'));
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
