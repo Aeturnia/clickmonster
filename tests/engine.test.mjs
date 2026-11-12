@@ -325,3 +325,30 @@ test('hunts: shared damage scaling, boss fights at your level, reward shares', a
   assert.equal(shares[0].gold, 900);
   assert.equal(shares[1].xp, 50);
 });
+
+test('zone definitions: compile, validate, live reload, and safety moves', async () => {
+  const zmod = await import('../public/js/data/zones.js');
+  const { validateZone, deleteBlockers, blankZone } = await import('../public/js/engine/zone-validate.js');
+  const { ensureCharacter } = await import('../public/js/engine/character.js');
+  const defs = zmod.DEFAULT_ZONES;
+  for (const d of defs) assert.deepEqual(validateZone(d, defs), [], `${d.id} should be valid`);
+  // A broken zone is rejected with readable reasons.
+  const bad = { ...blankZone('bad-zone'), size: 5, town: { x: 9, y: 9, name: 'T' }, monsters: [{ name: 'A', level: 0, arch: 'x', verb: '' }, { name: 'a', level: 1, arch: 'brute', verb: 'x' }], portals: [{ x: 1, y: 1, to: 'nowhere', tx: 1, ty: 1 }] };
+  const errs = validateZone(bad, defs);
+  for (const re of [/town is outside/, /level must be/, /pick a type/, /verb/, /Two monsters/, /doesn't exist/]) assert.ok(errs.some((e) => re.test(e)), `expected ${re}`);
+  assert.ok(deleteBlockers('ashford', defs).length, 'starter zones are protected');
+  assert.deepEqual(deleteBlockers('marsh', defs), []);
+  // Add a zone on the Overworld: a path appears there automatically.
+  const fresh = { ...blankZone('test-wilds'), overworld: [3, 3] };
+  assert.deepEqual(validateZone(fresh, defs), []);
+  zmod.loadZones([...defs, fresh]);
+  assert.ok(zmod.ZONES['test-wilds']);
+  assert.ok(zmod.ZONES.overworld.features.some((f) => f.to === 'test-wilds' && f.x === 3 && f.y === 3));
+  assert.ok(zmod.MONSTERS['test-wilds:wild-beast']);
+  // Remove it again: a hero standing there is moved home.
+  const c = createCharacter('Wanderer', 'gnome');
+  c.loc = { zone: 'test-wilds', x: 2, y: 2 };
+  zmod.loadZones(defs);
+  ensureCharacter(c);
+  assert.equal(c.loc.zone, 'cogwhistle');
+});

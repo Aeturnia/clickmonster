@@ -6,6 +6,7 @@ import { createCharacter, ensureCharacter, applyRegen, spendLevel, addItem, gain
 import { move, walkTo, usePortal, heal } from './js/engine/world.js';
 import { startBattle, battleAction, randomRelic, MAX_INVENTORY } from './js/engine/battle.js';
 import { setWorld } from './js/engine/world-config.js';
+import { loadZones } from './js/data/zones.js';
 import { startHuntBattle, huntExchange, huntShares } from './js/engine/hunt.js';
 import { buy, buyAndEquip, sell, equip, unequip, socketGem, extractGem, deposit, withdraw } from './js/engine/inventory.js';
 import { duel } from './js/engine/pvp.js';
@@ -69,13 +70,24 @@ async function announce(kind: string, text: string) {
 }
 
 // ---------------------------------------------------------------- world settings (cached briefly)
-let worldCache = { at: 0, data: null as any };
+// Read on every request (one small row) so admin changes apply immediately.
+let worldData: any = null;
 async function loadWorld(now: number) {
-  if (now - worldCache.at > 20000) {
-    const { data } = await admin.from('world_config').select('data').eq('id', 1).maybeSingle();
-    worldCache = { at: now, data: data?.data || null };
-  }
-  setWorld(worldCache.data, now);
+  const { data } = await admin.from('world_config').select('data').eq('id', 1).maybeSingle();
+  worldData = data?.data || null;
+  setWorld(worldData, now);
+}
+
+// ---------------------------------------------------------------- zones (editable world, cached briefly)
+// Zones reload whenever an admin bumps world_config.zonesVersion (and at least every 10 minutes).
+let zonesLoaded = { version: null as any, at: 0 };
+async function loadWorldZones(now: number) {
+  const version = worldData?.zonesVersion ?? 0;
+  if (zonesLoaded.version === version && now - zonesLoaded.at < 600000) return;
+  const { data, error } = await admin.from('zones').select('data').order('sort');
+  if (error) { console.error('zones load failed', error); return; }
+  if (data?.length) loadZones(data.map((r: any) => r.data));
+  zonesLoaded = { version, at: now };
 }
 
 // ---------------------------------------------------------------- economy ledger
@@ -292,6 +304,7 @@ const ACTIONS: Record<string, (c: any, a: any) => unknown> = {
 async function handle(userId: string, action: string, args: any) {
   const now = Date.now();
   await loadWorld(now);
+  await loadWorldZones(now);
 
   if (action === 'state') {
     const row = await loadRow({ user_id: userId });

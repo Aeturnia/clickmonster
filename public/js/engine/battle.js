@@ -71,6 +71,11 @@ const playerMastery = (player, mode) => (mode === 'melee' ? player.melee.type : 
 export function battleAction(char, mode, rng = Math.random) {
   const b = char.battle;
   if (!b || b.over || b.pvp) throw new Error('You are not in a fight.');
+  if (!MONSTERS[b.monsterId]) {
+    b.over = 'ended';
+    b.log.push({ kind: 'info', text: 'Your foe has vanished from the world.' });
+    return b;
+  }
   const mon = monsterCombatant(b.monsterId, b.variant);
   const def = mon.def;
   const player = playerCombatant(char);

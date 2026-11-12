@@ -44,6 +44,13 @@
     .pill.moderator { background: #1f3346; color: #a9c8ee; }
     .bar-row { display: grid; grid-template-columns: 90px 1fr 40px; gap: 8px; align-items: center; font-size: 13px; margin: 4px 0; }
     .bar-row i { display: block; height: 8px; background: var(--gold); border-radius: 4px; }
+    .zone-cols { display: grid; grid-template-columns: 1fr; gap: 16px; }
+    @media (min-width: 860px) { .zone-cols { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); } .zone-side { position: sticky; top: 12px; } }
+    label.chk { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; color: var(--text); text-transform: none; letter-spacing: 0; font-weight: 500; margin-right: 12px; min-height: 36px; }
+    label.chk input { width: 18px; height: 18px; min-height: 0; margin: 0; }
+    .chips-wrap { display: flex; flex-wrap: wrap; gap: 0 4px; }
+    .mon-row { padding: 8px 0; border-bottom: 1px solid var(--line); margin-bottom: 8px; }
+    .map button[data-owpick] { cursor: pointer; }
     pre { white-space: pre-wrap; word-break: break-all; font-size: 12px; color: var(--muted); margin: 0; max-width: 100%; }
   </style>
 </head>

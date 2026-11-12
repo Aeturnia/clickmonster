@@ -12,34 +12,41 @@ function m(name, level, arch, verb, opts = {}) {
 const ALL_WEAPONS = ['sword', 'axe', 'mace', 'dagger'];
 export const STARTER_EXIT_LEVEL = 20;
 
+// Zones are stored as plain definitions (see DEFAULT_ZONES below, and the `zones` table,
+// which admins edit). compileZone() turns a definition into the shape the engine uses.
+//
+// Definition fields:
+//   id, name, desc, size, starter, pvp
+//   minLevel   level needed to enter from the Overworld
+//   exitLevel  level needed to leave to the Overworld (starter zones: 20)
+//   overworld  [x, y] position on the Overworld map, or null (not reachable from it)
+//   entry      { x, y } where you arrive; the path back to the Overworld is placed here
+//   town       { x, y, name } or null
+//   shop       { tiers, weapons, elements, armor } or null (sold in the town)
+//   lairs      [{ x, y }] cells where the boss can be fought
+//   portals    [{ x, y, to, tx, ty, minLevel, label }] extra paths to other zones
+//   monsters   [{ name, level, arch, verb, element?, proper? }]
+//   boss       same shape as a monster, or null
 function starterZone({ id, name, desc, elements, monsters, boss, overworld }) {
   return {
-    id, name, desc, size: 10, starter: true, levelRange: [1, 20],
+    id, name, desc, size: 10, starter: true, pvp: false, minLevel: 0, exitLevel: STARTER_EXIT_LEVEL,
+    overworld, entry: { x: 5, y: 10 },
     town: { x: 5, y: 5, name: `${name} Village` },
     shop: { tiers: [1, 2, 3, 4], weapons: ALL_WEAPONS, elements, armor: true },
-    features: [
-      { type: 'portal', x: 5, y: 10, to: 'overworld', tx: overworld[0], ty: overworld[1],
-        minLevel: STARTER_EXIT_LEVEL, label: 'Road to the Overworld' },
-      { type: 'lair', x: 9, y: 2 },
-    ],
-    monsters, boss: { ...boss, boss: true },
-    overworld,
+    lairs: [{ x: 9, y: 2 }], portals: [],
+    monsters, boss,
   };
 }
 
 function adventureZone({ id, name, desc, minLevel, pvp, shop, monsters, boss, overworld }) {
+  const { townName, ...stock } = shop;
   return {
-    id, name, desc, size: 12, minLevel, pvp: !!pvp,
-    levelRange: [monsters[0].level, boss.level],
-    town: { x: 6, y: 6, name: shop.townName },
-    shop,
-    features: [
-      { type: 'portal', x: 6, y: 12, to: 'overworld', tx: overworld[0], ty: overworld[1], minLevel: 0,
-        label: 'Back to the Overworld' },
-      { type: 'lair', x: 2, y: 2 },
-    ],
-    monsters, boss: { ...boss, boss: true },
-    overworld,
+    id, name, desc, size: 12, starter: false, pvp: !!pvp, minLevel, exitLevel: 0,
+    overworld, entry: { x: 6, y: 12 },
+    town: { x: 6, y: 6, name: townName },
+    shop: stock,
+    lairs: [{ x: 2, y: 2 }], portals: [],
+    monsters, boss,
   };
 }
 
@@ -200,14 +207,12 @@ const ADVENTURE = [
 ];
 
 const OVERWORLD = {
-  id: 'overworld', name: 'The Overworld', size: 7, levelRange: [20, 26],
+  id: 'overworld', name: 'The Overworld', size: 7, starter: false, pvp: false, minLevel: 0, exitLevel: 0,
   desc: 'The wide world beyond the starter lands. Each region leads to a new zone.',
+  overworld: null, entry: { x: 4, y: 4 },
   town: { x: 4, y: 4, name: 'Crossroads' },
   shop: { tiers: [4, 5], weapons: ALL_WEAPONS, elements: ['fire', 'frost', 'storm', 'holy', 'shadow'], armor: true },
-  features: [
-    ...STARTERS.map((z) => ({ type: 'portal', x: z.overworld[0], y: z.overworld[1], to: z.id, tx: 5, ty: 10, minLevel: 0, label: `Enter ${z.name}` })),
-    ...ADVENTURE.map((z) => ({ type: 'portal', x: z.overworld[0], y: z.overworld[1], to: z.id, tx: 6, ty: 12, minLevel: z.minLevel, label: `Enter ${z.name}` })),
-  ],
+  lairs: [], portals: [],
   monsters: [
     m('Roaming Ogre', 20, 'brute', 'clubs'),
     m('Dire Wolf', 21, 'quick', 'mauls'),
@@ -215,21 +220,64 @@ const OVERWORLD = {
     m('Road Wraith', 25, 'caster', 'chills', { element: 'shadow' }),
     m('Hill Giant', 26, 'brute', 'stomps'),
   ],
+  boss: null,
 };
 
+// Built-in world, used to seed the database and as a fallback if it can't be loaded.
+export const DEFAULT_ZONES = [...STARTERS, OVERWORLD, ...ADVENTURE];
+
+export const OVERWORLD_ID = 'overworld';
+
+export function slug(s) {
+  return String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+}
+
+// Definition -> engine shape (monster ids, features list, level range).
+export function compileZone(def, all) {
+  const z = JSON.parse(JSON.stringify(def));
+  z.monsters = (z.monsters || []).map((mon) => ({ ...mon, id: `${z.id}:${slug(mon.name)}` }));
+  z.boss = z.boss ? { ...z.boss, boss: true, id: `${z.id}:${slug(z.boss.name)}` } : null;
+  const features = [];
+  for (const l of z.lairs || []) if (z.boss) features.push({ type: 'lair', x: l.x, y: l.y });
+  for (const p of z.portals || []) features.push({ type: 'portal', minLevel: 0, ...p });
+  if (z.id === OVERWORLD_ID) {
+    // Paths from the Overworld into every zone placed on it.
+    for (const other of all) {
+      if (!other.overworld || other.id === OVERWORLD_ID) continue;
+      features.push({
+        type: 'portal', x: other.overworld[0], y: other.overworld[1], to: other.id,
+        tx: other.entry.x, ty: other.entry.y, minLevel: other.minLevel || 0, label: `Enter ${other.name}`,
+      });
+    }
+  } else if (z.overworld && z.entry) {
+    // Path back out to the Overworld at the zone's entry cell.
+    features.push({
+      type: 'portal', x: z.entry.x, y: z.entry.y, to: OVERWORLD_ID, tx: z.overworld[0], ty: z.overworld[1],
+      minLevel: z.exitLevel || 0, label: z.starter ? 'Road to the Overworld' : 'Back to the Overworld',
+    });
+  }
+  z.features = features;
+  const levels = [...z.monsters.map((x) => x.level), ...(z.boss ? [z.boss.level] : [])];
+  z.levelRange = levels.length ? [Math.min(...levels), Math.max(...levels)] : [1, 1];
+  return z;
+}
+
+// Live registries. They are replaced in place so every module that imported them sees updates.
 export const ZONES = {};
-for (const z of [...STARTERS, OVERWORLD, ...ADVENTURE]) {
-  z.monsters = z.monsters.map((mon) => ({ ...mon, id: `${z.id}:${slug(mon.name)}` }));
-  if (z.boss) z.boss = { ...z.boss, id: `${z.id}:${slug(z.boss.name)}` };
-  ZONES[z.id] = z;
-}
-
 export const MONSTERS = {};
-for (const z of Object.values(ZONES)) {
-  for (const mon of z.monsters) MONSTERS[mon.id] = mon;
-  if (z.boss) MONSTERS[z.boss.id] = z.boss;
+export let ZONE_DEFS = [];
+
+export function loadZones(defs) {
+  const list = defs && defs.length ? defs : DEFAULT_ZONES;
+  for (const k of Object.keys(ZONES)) delete ZONES[k];
+  for (const k of Object.keys(MONSTERS)) delete MONSTERS[k];
+  ZONE_DEFS = list;
+  for (const def of list) {
+    const z = compileZone(def, list);
+    ZONES[z.id] = z;
+    for (const mon of z.monsters) MONSTERS[mon.id] = mon;
+    if (z.boss) MONSTERS[z.boss.id] = z.boss;
+  }
 }
 
-function slug(s) {
-  return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-}
+loadZones(DEFAULT_ZONES);

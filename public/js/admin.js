@@ -1,6 +1,8 @@
 // Admin and moderator console. All checks happen on the server (`admin` edge function);
 // this page only renders what the server allows.
-import { sb } from './net.js';
+import { sb, fetchZoneDefs } from './net.js';
+import { setupZones } from './admin-zones.js';
+import { loadZones } from './data/zones.js';
 import { STATS, STAT_SHORT } from './data/stats.js';
 import { MASTERIES, MASTERY_LABEL, masteryCap } from './data/masteries.js';
 import { GEM_TYPES, GEM_TIERS } from './data/gems.js';
@@ -33,7 +35,7 @@ function detailsText(action, d) {
 }
 const untilText = (t) => (new Date(t).getFullYear() > 9000 ? 'permanent' : `until ${when(t)}`);
 
-const st = { phase: 'loading', me: null, tab: 'dashboard', q: '', players: null, player: null, stats: null, log: null, events: null, staff: null, world: null, hunts: null, economy: null };
+const st = { phase: 'loading', me: null, tab: 'dashboard', q: '', players: null, player: null, stats: null, log: null, events: null, staff: null, world: null, hunts: null, economy: null, zones: null, zoneEdit: null };
 
 let toastTimer;
 function toast(msg, bad = false) {
@@ -85,7 +87,7 @@ function viewDenied() {
 }
 
 function header() {
-  const tabs = [['dashboard', 'Dashboard'], ['players', 'Players'], ['world', 'World'], ['hunts', 'Hunts'], ['economy', 'Economy'], ['announce', 'Announce'], ['log', 'Log']];
+  const tabs = [['dashboard', 'Dashboard'], ['players', 'Players'], ['world', 'World'], ['hunts', 'Hunts'], ['economy', 'Economy'], ['zones', 'Zones'], ['announce', 'Announce'], ['log', 'Log']];
   if (isAdmin()) tabs.push(['staff', 'Staff']);
   return `<div class="a-head"><h1>ClickMonster Admin</h1>
       <span class="who">${esc(st.me.email)} <span class="pill ${st.me.role}">${st.me.role}</span>
@@ -338,7 +340,7 @@ function render() {
   else if (st.phase === 'login') html = viewLogin();
   else if (st.phase === 'denied') html = viewDenied();
   else {
-    const body = { dashboard: viewDashboard, players: viewPlayers, world: viewWorld, hunts: viewHunts, economy: viewEconomy, announce: viewAnnounce, log: viewLog, staff: viewStaff }[st.tab]();
+    const body = { dashboard: viewDashboard, players: viewPlayers, world: viewWorld, hunts: viewHunts, economy: viewEconomy, zones: zones.view, announce: viewAnnounce, log: viewLog, staff: viewStaff }[st.tab]();
     html = header() + body;
   }
   $('#admin').innerHTML = html;
@@ -352,6 +354,7 @@ async function load(tab = st.tab) {
     if (tab === 'announce') st.events = (await call('events')).events;
     if (tab === 'log') st.log = (await call('log')).log;
     if (tab === 'staff') st.staff = (await call('staff')).staff;
+    if (tab === 'zones') { st.zoneEdit = null; await zones.load(); return; }
     if (tab === 'world') st.world = await call('world');
     if (tab === 'hunts') st.hunts = (await call('hunts')).hunts;
     if (tab === 'economy') { st.economy = await call('economy'); if (!st.stats) st.stats = await call('stats'); }
@@ -378,11 +381,18 @@ async function editPlayer(patch, msg = 'Saved.') {
 }
 
 // ---------------------------------------------------------------- events
+const zones = setupZones({ st, call, toast, render, esc, isAdmin });
+document.addEventListener('input', (e) => zones.onInput(e));
+document.addEventListener('change', (e) => { if (e.target.dataset.toggle || e.target.dataset.list || e.target.tagName === 'SELECT') zones.onInput(e); });
+
 document.addEventListener('click', async (e) => {
+  const pick = e.target.closest('[data-owpick]');
+  if (pick) { zones.onPick(pick); return; }
   const el = e.target.closest('[data-a]');
   if (!el) return;
   const a = el.dataset.a;
   const v = el.dataset.v;
+  if (a.startsWith('zone') && await zones.onClick(a, v)) return;
   if (a === 'signout') { await sb.auth.signOut(); return; }
   if (a === 'tab') { st.tab = v; st.player = null; render(); load(v); }
   if (a === 'refresh') load();
@@ -494,4 +504,5 @@ sb.auth.onAuthStateChange((event, session) => {
   }, 0);
 });
 
+fetchZoneDefs().then((defs) => { if (defs) { loadZones(defs); render(); } }).catch(() => {});
 render();

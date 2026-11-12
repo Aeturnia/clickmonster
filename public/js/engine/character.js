@@ -63,6 +63,16 @@ export function ensureCharacter(char) {
     if (char.masteries[m] == null) char.masteries[m] = masteryStart(char.race, m);
   }
   if (char.quest === undefined) char.quest = null;
+  // The zone may have been deleted or resized by an admin: move the hero somewhere safe.
+  const z = char.loc && ZONES[char.loc.zone];
+  if (!z) {
+    const home = ZONES[RACES[char.race]?.startZone] || Object.values(ZONES)[0];
+    char.loc = { zone: home.id, x: home.town?.x || 1, y: home.town?.y || 1 };
+    char.battle = null;
+  } else if (char.loc.x > z.size || char.loc.y > z.size) {
+    char.loc = { zone: z.id, x: Math.min(char.loc.x, z.size), y: Math.min(char.loc.y, z.size) };
+    char.battle = null;
+  }
   if (char.questCooldownUntil == null) char.questCooldownUntil = 0;
   return char;
 }

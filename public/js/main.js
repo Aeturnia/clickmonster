@@ -6,7 +6,7 @@ import { ITEMS, SLOTS, SLOT_LABEL, WEAPON_TYPES, tierRoman, itemDef } from './da
 import { MASTERIES, MASTERY_LABEL, masteryCap, raceSpecialties } from './data/masteries.js';
 import { VARIANTS } from './data/variants.js';
 import { ELEMENT_LABEL } from './data/elements.js';
-import { ZONES, MONSTERS } from './data/zones.js';
+import { ZONES, MONSTERS, loadZones } from './data/zones.js';
 import { parseGem, extractCost } from './data/gems.js';
 import {
   maxHp, xpToNext, totalStats, gemBonuses, totalArmor, playerCombatant,
@@ -17,7 +17,7 @@ import { monsterCombatant } from './engine/monster.js';
 import { meleeChance, spellChance, meleeBase, spellBase } from './engine/combat.js';
 import { shopItems, isEquipped, sellPrice } from './engine/inventory.js';
 import { PVP_LEVEL_GAP } from './engine/pvp.js';
-import { sb, api, playersAt, recentEvents } from './net.js';
+import { sb, api, playersAt, recentEvents, fetchZoneDefs } from './net.js';
 import { questTitle, canAccept } from './engine/quests.js';
 import { setWorld, activeEvents, MULT_LABEL, MULT_KEYS } from './engine/world-config.js';
 import { huntCombatant } from './engine/hunt.js';
@@ -972,6 +972,27 @@ setInterval(() => {
   loadHunts();
   loadWorldConfig();
 }, 30000);
+// Pick up zone edits now and then (the server moves heroes out of removed areas).
+setInterval(async () => {
+  if (document.visibilityState !== 'visible' || !char) return;
+  await loadZoneDefs();
+  if (!ZONES[char.loc.zone]) {
+    try { char = (await api('state')).char; } catch { /* next action will sort it out */ }
+  }
+  render();
+}, 120000);
+
+let zonesLoaded = null;
+async function loadZoneDefs() {
+  try {
+    const defs = await fetchZoneDefs();
+    if (defs) loadZones(defs);
+  } catch { /* keep the built-in world */ }
+}
+function zonesReady() {
+  if (!zonesLoaded) zonesLoaded = loadZoneDefs();
+  return zonesLoaded;
+}
 
 async function loadWorldConfig() {
   try {
@@ -1002,6 +1023,7 @@ async function loadAnnouncement() {
 
 async function loadHero() {
   try {
+    await zonesReady();
     const res = await api('state');
     char = res.char;
     ui.sanctions = res.sanctions || null;
@@ -1032,6 +1054,7 @@ sb.auth.onAuthStateChange((event, newSession) => {
   }
 });
 
+zonesReady().then(render);
 render();
 
 // Expose for debugging from the browser console.
