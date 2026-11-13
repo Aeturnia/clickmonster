@@ -8,9 +8,9 @@ let env;
 before(async () => { env = await setup(); });
 after(async () => { await env?.close(); });
 
-async function open(w, h, { hero = {}, zones, keyboard = false, textScale } = {}) {
+async function open(w, h, { hero = {}, zones, keyboard = false, textScale, touch } = {}) {
   const backend = new FakeBackend({ hero: makeHero(hero), zones });
-  const ctx = await env.page({ backend, viewport: { width: w, height: h }, mobile: w < 900 });
+  const ctx = await env.page({ backend, viewport: { width: w, height: h }, mobile: touch ?? w < 900 });
   if (keyboard) await fakeKeyboard(ctx.page);
   if (textScale) await ctx.page.addInitScript((s) => document.addEventListener('DOMContentLoaded', () => { document.documentElement.style.fontSize = s; }), textScale);
   await signIn(ctx.page, env.url, 'player');
@@ -28,7 +28,17 @@ const battleMetrics = (page) => page.evaluate(() => {
   const log = document.getElementById('log').getBoundingClientRect();
   const main = document.getElementById('main').getBoundingClientRect();
   const inView = (sel) => { const b = document.querySelector(sel)?.getBoundingClientRect(); return !!b && b.top >= 0 && b.bottom <= innerHeight && b.left >= 0 && b.right <= innerWidth; };
-  return { logRoom: Math.round(Math.min(main.bottom, innerHeight) - log.top), melee: inView('[data-a="melee"]'), cast: inView('[data-a="cast"]') };
+  // Desktop layout (D-1): the screen is only as tall as its content, so the actions can sit
+  // under the fight; the log's room is how far it can grow before it scrolls, with the actions
+  // still on screen (owner decision, docs/desktop-scope.md).
+  const m = document.getElementById('main');
+  const logEl = document.getElementById('log');
+  const after = [...m.children].filter((e) => e !== logEl && e.getBoundingClientRect().top >= log.bottom - 1).reduce((a, e) => a + e.getBoundingClientRect().height, 0);
+  const growRoom = innerHeight - document.getElementById('dock').getBoundingClientRect().height - parseFloat(getComputedStyle(m).paddingBottom) - after - log.top;
+  return {
+    layout: document.getElementById('app').dataset.layout, logRoom: Math.round(Math.min(main.bottom, innerHeight) - log.top), logGrowRoom: Math.round(growRoom),
+    melee: inView('[data-a="melee"]'), cast: inView('[data-a="cast"]'),
+  };
 });
 function sound(m, label) {
   assert.equal(m.hOverflow, false, `${label}: no horizontal scrolling`);
@@ -193,8 +203,9 @@ test('AC-5 map keyboard: arrows move between squares, Enter walks, Center on me 
 });
 
 test('AC-6 tablet and desktop: two columns, long lists and a tall battle log', async () => {
-  for (const [w, h] of [[1024, 768], [1440, 900]]) {
-    const ctx = await open(w, h);
+  // 1440×900 with a mouse gets the desktop layout (D-1); with touch it keeps the two columns.
+  for (const [w, h, touch] of [[1024, 768, false], [1440, 900, false], [1440, 900, true]]) {
+    const ctx = await open(w, h, { touch });
     const { page } = ctx;
     await step(page, '[data-a="move"][data-v="n"]');
     const m = await page.evaluate(PAGE_METRICS);
@@ -203,7 +214,8 @@ test('AC-6 tablet and desktop: two columns, long lists and a tall battle log', a
     await step(page, '#main [data-a="fight"]');
     await step(page, '[data-a="melee"]');
     const b = await battleMetrics(page);
-    assert.ok(b.logRoom >= 400, `${w}px: battle log has ${b.logRoom}px`);
+    if (b.layout === 'desktop') assert.ok(b.logGrowRoom >= 400, `${w}px desktop: the battle log can grow to ${b.logGrowRoom}px before it scrolls`);
+    else assert.ok(b.logRoom >= 400, `${w}px${touch ? ' touch' : ''}: battle log has ${b.logRoom}px`);
     assert.ok(b.melee && b.cast, 'Melee and Cast on screen');
     await done(ctx);
   }
