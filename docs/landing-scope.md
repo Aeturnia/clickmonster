@@ -262,7 +262,8 @@ The owner also added requirement 7 (section 4): independent failure handling for
     - That check is only a hint for starting early; the client's own session restore decides (section 6, "One Supabase client").
   - **Anonymous visitors download no gameplay code.**
     - Reading the entrance, or its news, fetches no game module and no supabase-js.
-    - supabase-js loads when sign-in begins: the first focus or input in the sign-in or create-account form, or its submission.
+    - supabase-js loads when sign-in begins: the first focus or input that the visitor makes in the sign-in or create-account form, or its submission.
+    - The entrance doesn't autofocus the form, so loading the page alone never starts it. Sign-in is first in the reading and tab order, and visible without scrolling, instead.
     - The game's modules load only after sign-in succeeds, or when a saved session is being restored.
     - This removes the 26-module download from anonymous visits; it doesn't move it into the background.
     - Idle prefetching of the game is not part of L-1. If it is proposed later, it is justified and measured separately.
@@ -351,7 +352,11 @@ The owner also added requirement 7 (section 4): independent failure handling for
 - **RLS can't be tested on the fake backend.** L-3 therefore adds a local database (review correction 3):
   - **Local stack:** the Supabase CLI, pinned as a dev dependency. It is justified by this and only this: it runs a local Postgres, PostgREST and Auth in Docker.
     - `supabase start` applies every migration in `supabase/migrations/` to a fresh local database.
-    - Docker 29.7.2 is installed on the owner's laptop. The CLI is not installed yet, and nothing has been run. Whether the existing migrations apply cleanly on a fresh local database is the first thing L-3 checks.
+    - **What was checked on 2026-11-13:**
+      - The Docker client (29.7.2) is installed on the owner's laptop.
+      - `docker info` could not reach the Docker daemon: Docker Desktop's engine wasn't running. Whether it runs on this machine (on Windows Home it needs WSL 2) has not been checked.
+      - The Supabase CLI is not installed, and nothing has been run.
+    - **L-3 starts by checking** that the local stack runs, and that the existing migrations apply cleanly to a fresh local database. If the local stack can't run on this laptop, L-3 stops and the owner decides how to proceed.
   - **Database tests:** pgTAP files in `supabase/tests/`, run with `supabase test db`, as `anon`, as `authenticated`, and with the service role:
     - published rows are readable;
     - drafts, unpublished rows, and rows with a future publication time are not;
@@ -364,6 +369,10 @@ The owner also added requirement 7 (section 4): independent failure handling for
     - that hidden rows stay hidden;
     - the column restrictions;
     - that writes are denied.
+  - **The write checks use an identifiable payload** (for example the slug `rls-check-<timestamp>`). If a write succeeds:
+    - the gate has failed;
+    - the row is recorded in the report and removed;
+    - L-4 stays blocked until the policy is fixed and checked again.
   - **A published row is needed for the read check.** It is an entry the owner approves for publication, or a clearly marked test entry, which is unpublished and deleted afterwards. The report records which.
   - The results go in the L-3 report. L-4 does not start until they have been reviewed.
 
@@ -378,15 +387,16 @@ These are measured with `tools/entry-metrics.mjs` (extended as needed) at the si
 | LAC-3 | L-1 | Throttled time to a visible form, same method | 2.6 s (underestimate) | at most 0.8 s, same method |
 | LAC-4 | L-1 | No third-party host on the path: from the first request through sign-in to the drawn hero, every request goes to our own site or to Supabase (the harness allows no CDN). The vendored supabase-js is verified self-contained, its licence notice kept, and its version and update steps documented | 7 requests to `cdn.jsdelivr.net`; with them failing, a blank page | met; tested |
 | LAC-5 | L-1 | Returning player: with a saved session, the game starts loading immediately, with no "Loading" screen; the entrance shows its in-place status until the hero is drawn | separate Loading screen, then the game | met; tested |
-| LAC-5a | L-1 | **No gameplay download for anonymous visitors:**<br>- a visitor who stays 10 s on the entrance without using the form has fetched no game module and no supabase-js;<br>- after focusing the form, supabase-js only;<br>- game modules only after a successful sign-in, or with a saved session | 26 game modules and supabase-js before the form | met; measured with `entry-metrics.mjs` (extended) and tested |
+| LAC-5a | L-1 | **No gameplay download for anonymous visitors:**<br>- a visitor who stays 10 s on the entrance without using the form has fetched no game module and no supabase-js;<br>- the entrance doesn't autofocus a form field;<br>- after the visitor focuses or types in the form, supabase-js only;<br>- game modules only after a successful sign-in, or with a saved session | 26 game modules and supabase-js before the form | met; measured with `entry-metrics.mjs` (extended) and tested |
 | LAC-5b | L-1 | **One Supabase client:**<br>- `createClient` runs once per page load, and the entrance, game, chat and admin use that instance;<br>- one `onAuthStateChange` subscriber on the game page;<br>- token refresh, user updates and repeated sign-in events for the same user cause no transition and no second `state` call;<br>- an account switch stops and restarts once;<br>- saved sessions that are valid, expired but refreshable, expired and refused, and malformed each behave as in section 6;<br>- a failed library load retried successfully still gives one client | one client, created on import | met; tested (calls counted in the page; fake backend models refresh) |
 | LAC-6 | L-1 | Continuity: after sign-in, no screen between the entrance and the game or character creation; focus lands at a defined place and the change is announced; no motion with reduced motion | Loading screen in between | met; tested |
 | LAC-7 | L-1 | Sign-in first: the email field is the first form control in the reading and tab order on phones; the whole form, through the Sign in button, is on screen without scrolling at 320×640 and 390×844; the email field is on screen at 844×390 | form in view in portrait; button below the fold at 844×390 | met |
 | LAC-8 | L-1 | Signing out, and an expired session, return to the entrance without a reload; chat's account state is reset | form redrawn in `#app` | met; tested |
 | LAC-9 | L-1 | The entrance's CSS has no `data-layout` selectors, and its geometry is identical under every value of `data-layout` | — | met; tested in L-2 with each forced choice |
 | LAC-10 | L-1 | Sign-in behaviour kept: labels, `autocomplete`, inline errors, alert and status messages, create account | met | met; existing tests unchanged in intent |
+| LAC-10a | L-1 | Character creation restyled with **no change to its mechanics** (Q11): the same fields, name validation and server errors (`aria-invalid`, `role="alert"`), race choice and details, and the same `create` call. The existing creation tests pass with the same intent | met | met; tested |
 | LAC-11 | L-2 | The picker: native radio buttons in a labelled group, on the entrance and in Hero, Settings; keyboard reachable; default Automatic; saved in `clickmonster.prefs`; the active layout, and any fallback, is stated next to it | — | met; tested |
-| LAC-12 | L-2 | Forced Desktop gives the desktop layout where the usable width allows, with a coarse pointer too, and falls back otherwise; forced Mobile gives the phone column at 1024, 1440 and 1920 with no sideways scroll; Automatic matches today's results exactly | — | met; tested at a phone and a desktop size for each choice |
+| LAC-12 | L-2 | Forced Desktop gives the desktop layout where the usable width allows, with a coarse pointer too, and falls back otherwise. **A fallback never changes the stored choice** (Q12): after it, `prefs.layout` is still `desktop`, and widening the window restores the desktop layout without the player choosing again. Forced Mobile gives the phone column at 1024, 1440 and 1920 with no sideways scroll. Automatic matches today's results exactly | — | met; tested at a phone and a desktop size for each choice, and across a narrowing and widening resize |
 | LAC-13 | L-3 | Publication states: draft, published and unpublished, with the Q8 rules; admin only (Q6); every change in `admin_log`; single-flight; confirmation tiers as in section 7 | — | met; tested on the fake backend |
 | LAC-14 | L-3 | **Public-read security, before production:** on the local stack, pgTAP and REST tests prove:<br>- published rows are readable;<br>- drafts, unpublished and future rows are hidden;<br>- ungranted columns are refused;<br>- all writes are denied, for `anon` and `authenticated`.<br>**After the owner explicitly authorizes the migration,** `tools/news-public-check.mjs` repeats the REST checks against production with the publishable key, and the results go in the L-3 report | — | met locally before the L-3 review; production checks recorded before L-4 starts |
 | LAC-15 | L-4 | The entrance's news: the latest 3 published entries after the form, fetched after the first paint with a timeout; with news failing or slow, sign-in and the returning-player path are unaffected and nothing broken shows | — | met; tested with news failing and held |
@@ -410,7 +420,7 @@ One branch and PR per phase, each stopping at an independent review gate. The ow
   - the vendored supabase-js (Q2), with its README, and the harness's CDN allowance removed;
   - the failure handling of requirement 7 for sign-in and game start-up;
   - character creation in the entrance's style (Q11).
-  - The news region is not built yet; there is no placeholder. Criteria: LAC-1 to 10 (with 5a and 5b), 18 to 20, and LAC-21's L-1 cases.
+  - The news region is not built yet; there is no placeholder. Criteria: LAC-1 to 10 (with 5a, 5b and 10a), 18 to 20, and LAC-21's L-1 cases.
 - **L-2. The interface picker:**
   - the preference in `layout.js` with the fallbacks, and the Phase 2 rules re-keyed to `data-layout`;
   - the control on the entrance and in Hero, Settings.
@@ -427,11 +437,12 @@ One branch and PR per phase, each stopping at an independent review gate. The ow
   - `tools/news-public-check.mjs`.
   - Criteria: LAC-13, 14 and 18 to 20.
   - **The order:**
-    1. The local database tests pass, and the L-3 PR is reviewed.
-    2. The owner explicitly authorizes applying the migration to production and deploying the `admin` function. This is separate from approving the PR.
-    3. The anonymous-key REST checks run against production, and their results are added to the L-3 report.
-    4. Those results are reviewed.
-  - **L-4 does not start until step 4.**
+    1. The local database tests pass, and the L-3 PR is reviewed and approved.
+    2. The owner explicitly authorizes applying the migration to production and deploying the `admin` function. This is separate from approving the PR. The migration is applied, and the function deployed.
+    3. **Only then is the PR merged.** Netlify publishes `public/` on merge, so the admin console's News section goes live only once the deployed function supports its actions. It is admin-only.
+    4. The anonymous-key REST checks run against production. The published row the read check needs is created by the owner in the admin console. Their results are added to the L-3 report.
+    5. Those results are reviewed.
+  - **L-4 does not start until step 5.**
   - **There is no staging project,** so the migration is a production change. The REST API is public, so a new table is reachable as soon as it exists. Its security rests on the grants and policies verified in step 1 and checked again in step 3, not on nothing reading it yet.
 - **L-4. Public reading:**
   - the entrance's news list and the maintenance line (Q5);
@@ -463,8 +474,8 @@ The disposition was changes requested, for documentation only. The baseline, the
 |---|---|---|
 | 1 | Anonymous visitors download no gameplay code. supabase-js loads when sign-in begins, and the game only after sign-in or with a saved session. Idle prefetching would need separate justification and measurement | Section 6, "`entry.js`"; LAC-5a |
 | 2 | One Supabase client, owned by `net.js`, and one auth listener, the entrance's session controller. Transitions are defined for sign-in, sign-out, refresh, repeated events and account switches. Tests cover valid, expired (refreshable and refused) and malformed saved sessions | Section 6, "One Supabase client"; section 7, tests; LAC-5b |
-| 3 | The L-3 security gate: local pgTAP and REST tests before any production change, explicit authorization to apply the migration, then anonymous-key REST checks against production before L-4. The claim that the production migration is harmless is removed | Section 7; section 9, L-3; LAC-14 |
+| 3 | The L-3 security gate: local pgTAP and REST tests before any production change; explicit authorization to apply the migration; the PR merged only after the function supports the console; then anonymous-key REST checks against production, with identifiable write probes, before L-4. The claim that the production migration is harmless is removed | Section 7; section 9, L-3; LAC-14 |
 | 4 | The returning-player baseline is 53 requests, as in the committed data. Counts are labelled as startup resources, distinct from render-blocking dependencies | Sections 1 and 2; LAC-2 |
 | 5 | L-4 criteria for escaping in the body and metadata, a trusted canonical origin, slug validation, and failure responses | LAC-16a |
 
-The owner's answers to Q2a and Q5–Q14 are recorded in section 5.
+The owner's answers to Q2a and Q5–Q14 are recorded in section 5. Two of them also have their own criteria: Q11 (LAC-10a) and Q12's stored preference (LAC-12).
