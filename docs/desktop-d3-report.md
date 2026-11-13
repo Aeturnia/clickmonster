@@ -1,5 +1,11 @@
 # Desktop layout — phase D-3 report: keyboard shortcuts
 
+**Status: complete.**
+- **Approved:** in the final independent review at `7f901cc`, with no corrections.
+- **Merged:** into `main` as PR #21 (`d567be2`) on 2026-11-13, after the D-2 record (PR #20).
+- **After the merge,** on `main` at `d567be2`: `npm test` 24 of 24 and `npm run test:ui` 119 of 119 in each of 3 consecutive full runs. This is the final test baseline for the desktop milestone.
+- **Still owed before a release:** see `docs/backlog.md`, "Pre-release verification".
+
 Branch `claude/desktop-d3`, based on `main` at `672a81a` (D-2 merged).
 
 The scope is `docs/desktop-scope.md` (sections 4, 5 and 7). D-3 is the last phase of the desktop milestone.

@@ -14,14 +14,21 @@ Read these first:
 ## Where things stand (2026-11-13)
 
 - **UI modernization Phases 1–4 are complete and merged into `main`.** Phase 4 (the admin console) was approved in its final independent review at `a8d9dc6` and merged as PR #13 (`baa75d9`). All four review findings, P4-01 to P4-04, are closed.
-- **Desktop layout:** scoped in `docs/desktop-scope.md` (PR #17), with the owner's decisions in its section 4.
+- **The desktop layout milestone is complete and merged into `main`** (2026-11-13). It was scoped in `docs/desktop-scope.md` (PR #17), with the owner's decisions in its section 4.
   - **D-1, the desktop frame:** merged as PR #18. See `docs/desktop-d1-report.md`.
   - **D-2, the persistent chat panel:** merged as PR #19 (`672a81a`). Findings D2-01 to D2-03 are closed. See `docs/desktop-d2-report.md`.
-  - **D-3, keyboard shortcuts:** authorized, on its own branch and PR.
-  - **After this milestone, each separate:** the layout picker, wider sheets, and the possible rename to "Monstra Regna", which is a working title only.
+  - **D-3, keyboard shortcuts:** merged as PR #21 (`d567be2`), approved with no corrections. See `docs/desktop-d3-report.md`.
+  - **Separate, and not approved:** the layout picker, wider desktop sheets, and the possible rename to "Monstra Regna", which is a working title only. None of them is to be started without the owner's approval.
 - **Development moved to the owner's Windows laptop.** `npm run deploy:functions` now runs from any shell (PR #15) and needs `SUPABASE_ACCESS_TOKEN` set in the environment.
-- **Don't start another milestone, or make unrelated gameplay changes,** until the owner approves it.
-- **Before a release:** the pre-release verification in `docs/backlog.md` (real devices, screen readers, live-backend staging) is still owed. The test suites run in Chromium against a fake backend only.
+- **Don't start another milestone, or make gameplay or server changes,** until the owner approves it. There is no approved next milestone.
+- **Before a release:** the pre-release verification in `docs/backlog.md` is still owed:
+  - real devices and other browsers (including Firefox and Safari on desktop);
+  - screen readers, including keyboard navigation with the shortcuts;
+  - input methods and non-US keyboards;
+  - the owner's actual browser viewport;
+  - live-backend staging, including chat session changes and Realtime.
+
+  The test suites run in Chromium against a fake backend only.
 
 ## How the owner works
 
@@ -66,6 +73,10 @@ Read these first:
   - The pending state is tracked by key (`ui.pendingKey`, `markPending()`).
   - Toasts and alerts are re-homed into the topmost open dialog (`placeOverlays()`).
 - **Layout state** is `layout.js`. It sets `#app[data-layout]` (`mobile`, `wide` or `desktop`) and `#app[data-chat]` (`panel` or `drawer`), and reorders the regions in the DOM for desktop. Desktop starts at 75em with a fine pointer, and the chat panel at 80em. Both conditions also check the usable width in rem, so larger text falls back.
+- **Keyboard shortcuts** (desktop only) are the `SHORTCUTS` table in `main.js`. The same table drives `shortcut()` and the `?` list (`sheetKeys()`).
+  - A shortcut presses the existing button, and `markShortcuts()` adds `aria-keyshortcuts` after every render.
+  - The off setting is `prefs.keys`.
+  - The keydown handler checks `defaultPrevented` first, so keys that chat already handled are left alone.
 - **Chat** is `chat-ui.js`. It draws one chat state into the drawer or the desktop panel (`setMode()`).
   - Each sign-in is a chat session. `stop()` resets everything that belongs to the account. Anything awaited, including Realtime callbacks and confirmations, checks on return that its session is still current.
 - **Admin** is `admin.js` and `admin-zones.js`: grouped navigation with hash routes, `dataTable()`, `field()`, `checkForm`/`validate`/`submitting`, and form values kept across re-renders.
@@ -90,7 +101,7 @@ Read these first:
 
 ```
 npm test                 # engine (24)
-npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (110)
+npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (119)
 npx playwright install chromium   # once
 ```
 
