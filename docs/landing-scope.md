@@ -1,14 +1,21 @@
 # Landing page: scope
 
-**Status: scoping. Nothing in this document is authorized for implementation yet.**
-- **Decided (2026-11-13):** every question in section 5. The owner answered Q1–Q4 first, then Q2a and Q5–Q14 in the scope review of `350d23e`.
-- **Review of `350d23e`:** changes requested, documentation only. Five corrections, recorded in section 12:
-  - no gameplay download for anonymous visitors;
-  - one Supabase client;
-  - the L-3 security gate;
-  - the returning-player count;
-  - L-4's escaping and failure criteria.
-- **Next:** independent review of the corrected scope. Approving the scope is separate from authorizing L-1.
+**Status: scope approved (2026-11-13). No implementation phase is authorized yet.**
+- **Approved:** in the final independent review at `37f490a`, and merged into `main` as PR #23 (`e385e38`). The merged document is identical to the reviewed head.
+- **What this document is now:** the implementation contract for L-1 to L-4, each with its own review gate.
+- **Decisions:** every question in section 5 is decided. The owner answered Q1–Q4 first, then Q2a and Q5–Q14 in the scope review of `350d23e`.
+- **Corrections:** the review of `350d23e` asked for five, all accepted at `37f490a`. They are in section 12.
+- **Not authorized:**
+  - L-1, or any other phase;
+  - application or server code changes;
+  - migrations or function deploys;
+  - the rename to Monstra Regna.
+
+  L-1 begins only when the owner separately authorizes it.
+- **Implementation gates still open.** The scope's approval does not accept their runtime behaviour:
+  - **L-1** must validate the vendored Supabase UMD build before it replaces the current client.
+  - **L-3** must get the local Supabase stack running and the existing migrations applying to a fresh database before any production change is considered.
+- **To watch in L-1** (from the final review): asynchronous game start-up must be invalidated if the account changes, or the player signs out, before it finishes. Use the same session-generation check that chat uses (`current(s)`).
 
 This scope covers the public entry experience: the game's first screen before sign-in, the interface picker, and public news. It works like the desktop scope (`docs/desktop-scope.md`): evidence, findings, the owner's direction, decisions, constraints, acceptance criteria and phasing.
 
