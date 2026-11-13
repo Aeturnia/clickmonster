@@ -33,6 +33,20 @@ The UI modernization (Phases 1–4) was tested in Chromium only, against a fake 
   - The tests use the fake backend. Late Realtime events were simulated by calling the old subscription's callbacks, because the harness could not deliver one during `removeChannel()`.
   - Also check a failed send while the window crosses 1280px.
 
+**The entrance (landing L-1)** was tested in Chromium against the fake backend only:
+- **The vendored supabase-js 2.45.4** has never talked to the live project. Check sign-in, sign-up with a real confirmation email, session restore, token refresh, a revoked session, edge functions and Realtime chat on the live site.
+- **Netlify:** check that `/vendor/supabase-js@2.45.4/` is served, with its long `immutable` cache header.
+- **Real phones on mobile networks:** time to the sign-in form. The harness timing (0.67 s) is an underestimate.
+- **Password managers and browser autofill** on the new form, and the reload-on-retry after a failed game download in browsers other than Chromium.
+
+## Follow-ups (not blocking)
+
+- **Queued battle effects across an account change** (from the L-1 final review).
+  - `playEffects()` in `main.js` schedules battle animations with `setTimeout`. The timers aren't tied to the game session (`gameGen`).
+  - If a battle ends and the account changes at once, a remaining animation could run on the next account's screen. It can't change hero or server state; it would be a brief visual glitch.
+  - Fix by checking `live(g)` in the callbacks, or clearing the timers in `stop()`.
+  - Add a test that signs out while effects are queued.
+
 ## Desktop layout (done)
 
 Built in phases D-1 to D-3 and merged on 2026-11-13. See `docs/desktop-scope.md` and the three D reports. What remains from that scope is below and is not approved: the layout picker, wider desktop sheets, and the possible rename to "Monstra Regna".

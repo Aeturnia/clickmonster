@@ -18,13 +18,18 @@ Read these first:
   - **D-1, the desktop frame:** merged as PR #18. See `docs/desktop-d1-report.md`.
   - **D-2, the persistent chat panel:** merged as PR #19 (`672a81a`). Findings D2-01 to D2-03 are closed. See `docs/desktop-d2-report.md`.
   - **D-3, keyboard shortcuts:** merged as PR #21 (`d567be2`), approved with no corrections. See `docs/desktop-d3-report.md`.
-  - **Separate, and not approved:** the layout picker, wider desktop sheets, and the possible rename to "Monstra Regna", which is a working title only. None of them is to be started without the owner's approval.
+  - **Separate:** the layout picker is now landing phase L-2 (below). Wider desktop sheets and the possible rename to "Monstra Regna", a working title only, are not approved.
 - **Landing page: the scope is approved and merged** (PR #23, `e385e38`, 2026-11-13). `docs/landing-scope.md` is the implementation contract for L-1 to L-4, covering the entrance, the interface picker and public news.
-  - **No phase is authorized.** L-1 starts only when the owner separately authorizes it.
-  - **Not authorized either:** code or server changes, migrations, deploys, or the rename.
-  - **Implementation gates still open:**
-    - L-1 validates the vendored Supabase UMD build before it replaces the CDN client;
-    - L-3 needs the local Supabase stack running before any production change.
+  - **L-1, the entrance: complete.**
+    - Merged as PR #25 (`b911a79`) after its final review at `c97f9fc`. Findings L1-01 and L1-02 (account isolation) are closed. See `docs/landing-l1-report.md`.
+    - Its gate, the vendored Supabase UMD build, was verified against the fake backend only.
+  - **L-2, the interface picker: authorized** (2026-11-13), on its own branch and PR. It covers:
+    - Automatic, Desktop and Mobile, on the entrance and in Hero, Settings;
+    - the choice saved locally;
+    - Desktop falling back when it doesn't fit, without changing the saved choice;
+    - Automatic exactly as today.
+  - **Not authorized:** L-3 and L-4, database changes, function deploys, and the rename.
+  - **Implementation gate still open:** L-3 needs the local Supabase stack running before any production change.
   - **Every question in section 5 is decided.** The main ones:
     - a Netlify Edge Function for article pages, uncached at first;
     - Supabase's UMD build vendored into `public/vendor/`;
@@ -35,14 +40,14 @@ Read these first:
     - one Supabase client owned by `net.js`;
     - the local RLS tests and production gate in L-3.
 - **Development moved to the owner's Windows laptop.** `npm run deploy:functions` now runs from any shell (PR #15) and needs `SUPABASE_ACCESS_TOKEN` set in the environment.
-- **Landing page L-1 (the entrance) is implemented** on its own branch and PR, awaiting independent review. See `docs/landing-l1-report.md`. The scope was approved and merged as PR #23 (`e385e38`). L-2 and later phases are not authorized.
-- **Don't start another milestone, or make gameplay or server changes,** until the owner approves it. There is no approved next milestone.
+- **Don't start anything beyond L-2, or make gameplay or server changes,** until the owner approves it.
 - **Before a release:** the pre-release verification in `docs/backlog.md` is still owed:
   - real devices and other browsers (including Firefox and Safari on desktop);
   - screen readers, including keyboard navigation with the shortcuts;
   - input methods and non-US keyboards;
   - the owner's actual browser viewport;
-  - live-backend staging, including chat session changes and Realtime.
+  - live-backend staging, including chat session changes and Realtime;
+  - the entrance (L-1) on the live site: the vendored supabase-js against the live auth server, edge functions and Realtime; Netlify serving `/vendor/*` with its cache header; a real confirmation email; password managers and autofill; real-phone timing.
 
   The test suites run in Chromium against a fake backend only.
 
