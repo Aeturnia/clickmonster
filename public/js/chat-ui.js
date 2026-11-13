@@ -1,6 +1,11 @@
-// Slide-up chat drawer: a slim bar above the controls on every screen, and a drawer with
-// Global, Zone and Whisper tabs. Messages arrive live through Supabase Realtime; sending goes
-// through the game server, which enforces mutes, level, speed limits and link blocking.
+// Chat: Global, Zone and Whisper tabs. Messages arrive live through Supabase Realtime; sending
+// goes through the game server, which enforces mutes, level, speed limits and link blocking.
+// Two places to show it, one state (messages, tab, unread counts, draft):
+//   drawer  a slim bar above the controls, opening a modal drawer (phones, tablets, and
+//           desktop windows under 1280px)
+//   panel   a persistent, non-modal panel in the desktop side column (1280px+, D-2); the game
+//           stays usable, and live messages never move focus
+// main.js switches between them with setMode() as the layout changes.
 import { CHAT_LEVEL, CHAT_MAX_LEN, cleanChatText } from './engine/chat.js';
 import { ask } from './confirm.js';
 
@@ -12,10 +17,20 @@ export function setupChat({ sb, api, getChar, toast, esc, zoneName }) {
     started: false, visible: false, open: false, tab: 'global',
     msgs: { global: [], zone: [], whisper: [] }, unread: { global: 0, zone: 0, whisper: 0 },
     myId: null, zone: null, role: null, ignores: new Map(), whisperTo: '', menuFor: null, channel: null, error: null,
+    mode: 'drawer', draft: '', draftTo: null, // what is typed survives a switch between drawer and panel
   };
   const bar = document.getElementById('chatbar');
   const drawer = document.getElementById('chat');
   const body = document.getElementById('chat-body'); // redrawn content; the dialog itself stays
+  const panel = document.getElementById('chatpanel'); // the desktop side column's chat panel
+  const docked = () => st.mode === 'panel';
+  const showing = () => st.visible && (docked() || st.open);
+  const host = () => (docked() ? panel : drawer); // the element holding the chat controls
+  // Each sign-in is a new chat session; stop() starts the next one. Anything awaited (loads,
+  // sends, menu actions) checks on return that its session is still current, so a request
+  // from an earlier account can never touch the next account's chat.
+  let session = 0;
+  const current = (s) => s === session;
 
   const time = (t) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const ignored = (m) => m.sender_id && st.ignores.has(m.sender_id);
@@ -28,49 +43,59 @@ export function setupChat({ sb, api, getChar, toast, esc, zoneName }) {
     list.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
     if (list.length > KEEP) list.splice(0, list.length - KEEP);
     const mine = m.sender_id && m.sender_id === st.myId;
-    if (countUnread && !mine && !ignored(m) && !(st.open && st.tab === channel)) st.unread[channel] += 1;
+    if (countUnread && !mine && !ignored(m) && !(showing() && st.tab === channel)) st.unread[channel] += 1;
   }
 
   // ------------------------------------------------------------ loading
-  async function loadChannel(channel) {
+  async function loadChannel(channel, s = session) {
     let q = sb.from('chat_messages').select('id, channel, zone, sender_id, sender_name, sender_role, recipient_id, recipient_name, text, deleted_at, created_at')
       .eq('channel', channel).order('created_at', { ascending: false }).limit(60);
     if (channel === 'zone') q = q.eq('zone', st.zone);
     const { data } = await q;
+    if (!current(s)) return;
     st.msgs[channel] = (data || []).reverse();
   }
 
-  async function loadNews() {
+  async function loadNews(s = session) {
     const { data } = await sb.from('events').select('id, kind, text, created_at').order('created_at', { ascending: false }).limit(15);
+    if (!current(s)) return;
     for (const e of (data || []).reverse()) add('global', { ...e, system: true }, false);
   }
 
-  async function loadMeta() {
+  async function loadMeta(s = session) {
     const char = getChar();
     const [{ data: me }, { data: ign }, { data: staff }] = await Promise.all([
       sb.rpc('my_character'),
       sb.from('chat_ignores').select('ignored_id, ignored_name'),
       sb.from('staff').select('role').maybeSingle(),
     ]);
+    if (!current(s)) return;
     st.myId = me?.[0]?.id || null;
     st.zone = char?.loc.zone || me?.[0]?.zone || null;
     st.ignores = new Map((ign || []).map((r) => [r.ignored_id, r.ignored_name]));
     st.role = staff?.role || null;
   }
 
+  // Live changes belong to the session that subscribed. After sign-out the channel can still
+  // deliver events until removeChannel() completes; those are dropped, so a late message for
+  // the previous account never reaches the next one's chat (D2-03).
   function subscribe() {
+    const s = session;
     st.channel = sb.channel('chat-live')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages' }, ({ new: m }) => {
+        if (!current(s)) return;
         if (m.channel === 'zone' && m.zone !== st.zone) return;
         add(m.channel, m);
         paint();
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chat_messages' }, ({ new: m }) => {
+        if (!current(s)) return;
         const list = st.msgs[m.channel] || [];
         const i = list.findIndex((x) => x.id === m.id && !x.system);
         if (i >= 0) { list[i] = m; paint(); }
       })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'events' }, ({ new: e }) => {
+        if (!current(s)) return;
         add('global', { ...e, system: true });
         paint();
       })
@@ -80,27 +105,43 @@ export function setupChat({ sb, api, getChar, toast, esc, zoneName }) {
   async function start() {
     if (st.started) return;
     st.started = true;
+    const s = session;
     try {
-      await loadMeta();
-      await Promise.all([loadChannel('global'), loadChannel('zone'), loadChannel('whisper')]);
-      await loadNews();
+      await loadMeta(s);
+      await Promise.all([loadChannel('global', s), loadChannel('zone', s), loadChannel('whisper', s)]);
+      await loadNews(s);
     } catch { /* chat is optional; keep the game running */ }
+    if (!current(s)) return; // signed out meanwhile
     subscribe();
     paint();
   }
 
+  // Sign-out ends the session: nothing typed, addressed or shown for this account is kept for
+  // the next one (D2-01). Layout state (drawer or panel, visibility) is not the account's.
   async function stop() {
-    if (st.channel) await sb.removeChannel(st.channel);
-    Object.assign(st, { started: false, open: false, channel: null, msgs: { global: [], zone: [], whisper: [] }, unread: { global: 0, zone: 0, whisper: 0 } });
+    session += 1;
+    const live = st.channel;
+    Object.assign(st, {
+      started: false, open: false, channel: null, tab: 'global',
+      msgs: { global: [], zone: [], whisper: [] }, unread: { global: 0, zone: 0, whisper: 0 },
+      myId: null, zone: null, role: null, ignores: new Map(), whisperTo: '', menuFor: null, error: null,
+      draft: '', draftTo: null,
+    });
+    if (drawer.open) drawer.close();
+    body.innerHTML = '';
+    panel.innerHTML = '';
+    opener = null;
     paint();
+    if (live) await sb.removeChannel(live);
   }
 
   async function setZone(zone) {
     if (!st.started || zone === st.zone) return;
+    const s = session;
     st.zone = zone;
     st.unread.zone = 0;
-    try { await loadChannel('zone'); } catch { /* ignore */ }
-    paint();
+    try { await loadChannel('zone', s); } catch { /* ignore */ }
+    if (current(s)) paint();
   }
 
   // ------------------------------------------------------------ focus-safe updates
@@ -171,7 +212,7 @@ export function setupChat({ sb, api, getChar, toast, esc, zoneName }) {
   }
 
   function paintBar() {
-    if (!st.visible || !st.started) { setHtml(bar, ''); return; }
+    if (!st.visible || !st.started || docked()) { setHtml(bar, ''); return; }
     const unreadTotal = TABS.reduce((n, [k]) => n + st.unread[k], 0);
     const unread = TABS.filter(([k]) => st.unread[k]).map(([k, l]) => `${l} ${st.unread[k]}`).join(', ');
     setHtml(bar, `<button class="chatbar" data-c="toggle" aria-haspopup="dialog" aria-label="Open chat${unreadTotal ? `, ${unreadTotal} unread` : ''}">
@@ -192,7 +233,7 @@ export function setupChat({ sb, api, getChar, toast, esc, zoneName }) {
 
   // Roving tab stop: exactly one message is reachable with Tab; arrows move between them.
   function syncRoving(preferId) {
-    const lines = [...drawer.querySelectorAll('.chat-line[data-c="menu"]')];
+    const lines = [...host().querySelectorAll('.chat-line[data-c="menu"]')];
     if (!lines.length) return;
     let current = preferId != null && lines.find((l) => l.dataset.v === String(preferId));
     if (!current) current = lines.find((l) => l.tabIndex === 0) || lines[lines.length - 1];
@@ -211,49 +252,55 @@ export function setupChat({ sb, api, getChar, toast, esc, zoneName }) {
     paint();
   }
 
-  function paintDrawer() {
-    if (!st.open || !st.visible) {
-      if (drawer.open) {
-        drawer.close();
-        body.innerHTML = '';
-        const back = opener && opener.isConnected && opener.getClientRects().length ? opener : bar.querySelector('.chatbar');
-        back?.focus({ preventScroll: true });
-        opener = null;
-      }
-      return;
+  function paintChat() {
+    // The drawer closes when chat isn't showing in it (closed, hidden, or moved to the panel).
+    if (!(showing() && !docked()) && drawer.open) {
+      drawer.close();
+      body.innerHTML = '';
+      const back = opener && opener.isConnected && opener.getClientRects().length ? opener : bar.querySelector('.chatbar');
+      back?.focus({ preventScroll: true });
+      opener = null;
     }
+    if (!(showing() && docked()) && panel.firstChild) panel.innerHTML = '';
+    if (!showing()) return;
+    const root = host();
     // Same tab already showing: refresh the list, tabs and error only, keeping focus and typing intact.
-    const panel = drawer.querySelector('.chat-panel');
-    if (panel && panel.dataset.tab === st.tab && drawer.open) {
-      const el = drawer.querySelector('#chat-list');
+    const shown = root.querySelector('.chat-panel');
+    if (shown && shown.dataset.tab === st.tab) {
+      const el = root.querySelector('#chat-list');
       const active = document.activeElement;
       // The message that owns the focus: the focused line itself, or the line whose menu is focused.
       const ownLine = active && el.contains(active)
         ? (active.dataset.c === 'menu' ? active.dataset.v : active.closest('.chat-item')?.querySelector('.chat-line')?.dataset.v)
         : null;
       const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
-      const tabsEl = drawer.querySelector('.chat-tabs');
+      const tabsEl = root.querySelector('.chat-tabs');
       setHtml(el, listHtml(), () => el.querySelector('.chat-line[tabindex="0"]') || el.querySelector('.chat-line'));
       syncRoving(ownLine);
       setHtml(tabsEl, tabsHtml(), () => tabsEl.querySelector('button.on'));
-      setHtml(drawer.querySelector('#chat-error-slot'), errorHtml(), () => drawer.querySelector('#chat-input'));
+      setHtml(root.querySelector('#chat-error-slot'), errorHtml(), () => root.querySelector('#chat-input'));
       if (atBottom) el.scrollTop = el.scrollHeight;
       return;
     }
     const char = getChar();
     const canChat = char && char.level >= CHAT_LEVEL;
     const isWhisper = st.tab === 'whisper';
-    const existing = drawer.querySelector('#chat-input');
-    const keep = existing ? existing.value : '';
+    const existing = root.querySelector('#chat-input');
+    const keep = existing ? existing.value : st.draft;
     // Default the whisper target to whoever whispered you last.
     const lastFrom = [...st.msgs.whisper].reverse().find((m) => m.sender_id && m.sender_id !== st.myId);
-    const keepTo = drawer.querySelector('#chat-to')?.value || st.whisperTo || lastFrom?.sender_name || '';
+    const keepTo = root.querySelector('#chat-to')?.value || st.draftTo || st.whisperTo || lastFrom?.sender_name || '';
     const placeholder = canChat ? (st.tab === 'zone' ? `Say to ${zoneName(st.zone)}` : isWhisper ? 'Whisper' : 'Say to everyone') : `Reach level ${CHAT_LEVEL} to chat`;
-    body.innerHTML = `<div class="chat-panel" data-tab="${st.tab}">
-      <div class="chat-head" id="chat-head">
-        <div class="chat-tabs" role="group" aria-label="Channel">${tabsHtml()}</div>
-        <button type="button" class="textbtn" data-c="toggle">Close</button>
-      </div>
+    // The panel has a visible heading (it names the landmark) and no Close; the drawer has Close.
+    const head = docked()
+      ? `<div class="chat-head docked" id="chat-head"><h2 class="side-h" id="chatpanel-h">Chat</h2>
+          <div class="chat-tabs" role="group" aria-label="Channel">${tabsHtml()}</div></div>`
+      : `<div class="chat-head" id="chat-head">
+          <div class="chat-tabs" role="group" aria-label="Channel">${tabsHtml()}</div>
+          <button type="button" class="textbtn" data-c="toggle">Close</button>
+        </div>`;
+    (docked() ? panel : body).innerHTML = `<div class="chat-panel" data-tab="${st.tab}">
+      ${head}
       <div class="chat-list" id="chat-list" role="log" aria-label="${TABS.find(([k]) => k === st.tab)[1]} messages" aria-live="off">${listHtml()}</div>
       <div id="chat-error-slot">${errorHtml()}</div>
       <form class="chat-form" id="chat-form" novalidate>
@@ -266,9 +313,9 @@ export function setupChat({ sb, api, getChar, toast, esc, zoneName }) {
       </form>
     </div>`;
     syncRoving();
-    const el = drawer.querySelector('#chat-list');
+    const el = root.querySelector('#chat-list');
     el.scrollTop = el.scrollHeight;
-    if (!drawer.open) {
+    if (!docked() && !drawer.open) {
       opener = opener || document.activeElement;
       drawer.showModal();
       const input = drawer.querySelector('#chat-input');
@@ -278,12 +325,38 @@ export function setupChat({ sb, api, getChar, toast, esc, zoneName }) {
 
   function paint() {
     paintBar();
-    if (st.open) {
-      st.unread[st.tab] = 0;
-      paintDrawer();
-      paintBar();
-    } else {
-      paintDrawer();
+    if (showing()) st.unread[st.tab] = 0;
+    paintChat();
+    paintBar();
+  }
+
+  // Drawer or panel, as the layout changes. What is typed, the channel and the unread counts
+  // carry over. If you were using chat when it moved, focus and the caret follow it (the drawer
+  // opens for that); otherwise the drawer stays closed and focus stays where it is.
+  function setMode(mode) {
+    if (st.mode === mode) return;
+    const from = host();
+    const active = document.activeElement;
+    const inside = active && active !== from && from.contains(active) ? active : null;
+    const key = inside ? keyOf(inside) : null;
+    const caret = inside && 'selectionStart' in inside ? [inside.selectionStart, inside.selectionEnd] : null;
+    const input = from.querySelector('#chat-input');
+    if (input) st.draft = input.value;
+    const to = from.querySelector('#chat-to');
+    if (to) st.draftTo = to.value;
+    if (drawer.open) drawer.close();
+    body.innerHTML = '';
+    panel.innerHTML = '';
+    opener = null;
+    st.mode = mode;
+    st.open = mode === 'drawer' && !!inside && st.visible;
+    paint();
+    if (inside && showing()) {
+      const next = (key && host().querySelector(key)) || host().querySelector('#chat-input:not([disabled])');
+      if (next) {
+        next.focus({ preventScroll: true });
+        if (caret && 'setSelectionRange' in next) { try { next.setSelectionRange(...caret); } catch { /* not a text field */ } }
+      }
     }
   }
 
@@ -295,25 +368,25 @@ export function setupChat({ sb, api, getChar, toast, esc, zoneName }) {
   }
 
   function openWhisper(name) {
-    opener = document.activeElement;
-    st.open = true;
+    if (!docked()) { opener = document.activeElement; st.open = true; }
     st.tab = 'whisper';
     st.whisperTo = name;
-    if (drawer.open) drawer.querySelector('.chat-panel')?.removeAttribute('data-tab');
-    const to = drawer.querySelector('#chat-to');
+    st.draftTo = name;
+    host().querySelector('.chat-panel')?.removeAttribute('data-tab');
+    const to = host().querySelector('#chat-to');
     if (to) to.value = name;
     paint();
-    const toEl = drawer.querySelector('#chat-to');
+    const toEl = host().querySelector('#chat-to');
     if (toEl) toEl.value = name;
-    drawer.querySelector('#chat-input:not([disabled])')?.focus();
+    host().querySelector('#chat-input:not([disabled])')?.focus();
   }
 
   // ------------------------------------------------------------ events
   function setError(msg) {
     st.error = msg;
-    const slot = drawer.querySelector('#chat-error-slot');
-    if (slot) setHtml(slot, errorHtml(), () => drawer.querySelector('#chat-input'));
-    const input = drawer.querySelector('#chat-input');
+    const slot = host().querySelector('#chat-error-slot');
+    if (slot) setHtml(slot, errorHtml(), () => host().querySelector('#chat-input'));
+    const input = host().querySelector('#chat-input');
     if (input) {
       if (msg) { input.setAttribute('aria-invalid', 'true'); input.setAttribute('aria-describedby', 'chat-error'); }
       else { input.removeAttribute('aria-invalid'); input.removeAttribute('aria-describedby'); }
@@ -321,24 +394,38 @@ export function setupChat({ sb, api, getChar, toast, esc, zoneName }) {
   }
 
   async function send() {
-    const input = drawer.querySelector('#chat-input');
+    const s = session;
+    const input = host().querySelector('#chat-input');
     const text = input?.value || '';
     const clean = cleanChatText(text);
     if (!clean.ok) { setError(clean.reason); return; }
     const args = { channel: st.tab, text: clean.text };
     if (st.tab === 'whisper') {
-      args.to = (drawer.querySelector('#chat-to')?.value || '').trim();
-      if (!args.to) { setError('Who should get this whisper? Type a name in the To box.'); drawer.querySelector('#chat-to')?.focus(); return; }
+      args.to = (host().querySelector('#chat-to')?.value || '').trim();
+      if (!args.to) { setError('Who should get this whisper? Type a name in the To box.'); host().querySelector('#chat-to')?.focus(); return; }
       st.whisperTo = args.to;
     }
     input.value = '';
+    st.draft = '';
     try {
       await api('chat', args);
-      setError(null); // the condition is resolved once a message goes through
+      if (current(s)) setError(null); // the condition is resolved once a message goes through
     } catch (err) {
-      input.value = text;
+      if (!current(s)) return; // signed out meanwhile: nothing of this send comes back
+      // The drawer or panel may have been redrawn (or swapped) while the request was out:
+      // put the text back in the message box showing now, or keep it for when chat opens.
+      st.draft = text;
       setError(err.message);
-      input.focus();
+      const now = host().querySelector('#chat-input');
+      if (now && showing()) {
+        now.value = text;
+        // Focus goes back only if you are still in chat (or nowhere): never away from the game.
+        const active = document.activeElement;
+        if (!active || active === document.body || host().contains(active)) {
+          now.focus({ preventScroll: true });
+          now.setSelectionRange(text.length, text.length);
+        }
+      }
     }
   }
 
@@ -346,40 +433,51 @@ export function setupChat({ sb, api, getChar, toast, esc, zoneName }) {
   const findMsg = (id) => Object.values(st.msgs).flat().find((m) => String(m.id) === String(id));
   // Where focus goes if the menu button that asked was re-rendered away (a Realtime update):
   // the message's line, else the message box.
-  const backTo = (id) => (id != null && drawer.querySelector(`.chat-line[data-v="${CSS.escape(String(id))}"]`)) || drawer.querySelector('#chat-input:not([disabled])') || drawer.querySelector('.chat-tabs button.on');
+  const backTo = (id) => (id != null && host().querySelector(`.chat-line[data-v="${CSS.escape(String(id))}"]`)) || host().querySelector('#chat-input:not([disabled])') || host().querySelector('.chat-tabs button.on');
   const quote = (m) => (m ? `${m.sender_name}: "${m.text.length > 120 ? `${m.text.slice(0, 117)}...` : m.text}"` : '');
 
   async function onAction(c, v) {
     switch (c) {
       case 'toggle':
+        if (docked()) return; // the panel is always open
         if (st.open) { closeDrawer(); return; }
         opener = document.activeElement;
         st.open = true; st.menuFor = null; paint(); return;
       case 'tab':
         st.tab = v; st.menuFor = null;
-        drawer.querySelector('.chat-panel')?.removeAttribute('data-tab');
+        host().querySelector('.chat-panel')?.removeAttribute('data-tab');
         paint();
-        drawer.querySelector(`.chat-tabs [data-v="${v}"]`)?.focus();
+        host().querySelector(`.chat-tabs [data-v="${v}"]`)?.focus();
         return;
       case 'menu':
         st.menuFor = st.menuFor === Number(v) ? null : Number(v);
-        paintDrawer();
-        drawer.querySelector(`.chat-line[data-v="${v}"]`)?.focus();
+        paintChat();
+        host().querySelector(`.chat-line[data-v="${v}"]`)?.focus();
         return;
-      case 'clearError': setError(null); drawer.querySelector('#chat-input')?.focus(); return;
+      case 'clearError': setError(null); host().querySelector('#chat-input')?.focus(); return;
       case 'whisper': st.menuFor = null; openWhisper(v); return;
-      case 'ignore':
+      case 'ignore': {
+        // The session that asked: if the account changed while the question was open, the
+        // answer belongs to nobody and nothing is sent (D2-03).
+        const s = session;
         if (!await ask({
           title: `Ignore ${v}?`,
           points: ["You won't see their messages or whispers.", 'You can stop ignoring them from the list at the top of the chat.'],
           confirm: 'Ignore', cancel: 'Cancel', tone: 'normal', fallback: () => backTo(),
         })) return;
-        try { await api('ignore', { name: v }); await loadMeta(); toast(`Ignoring ${v}.`); } catch (err) { setError(err.message); }
+        if (!current(s)) return;
+        try { await api('ignore', { name: v }); await loadMeta(s); if (current(s)) toast(`Ignoring ${v}.`); } catch (err) { if (current(s)) setError(err.message); }
+        if (!current(s)) return;
         st.menuFor = null; paint(); return;
-      case 'unignore':
-        try { await api('unignore', { name: v }); await loadMeta(); toast(`No longer ignoring ${v}.`); } catch (err) { setError(err.message); }
-        paint(); return;
+      }
+      case 'unignore': {
+        const s = session;
+        try { await api('unignore', { name: v }); await loadMeta(s); if (current(s)) toast(`No longer ignoring ${v}.`); } catch (err) { if (current(s)) setError(err.message); }
+        if (current(s)) paint();
+        return;
+      }
       case 'report': {
+        const s = session; // the session that asked (see Ignore)
         const res = await ask({
           title: 'Report this message?',
           lead: quote(findMsg(v)),
@@ -387,20 +485,25 @@ export function setupChat({ sb, api, getChar, toast, esc, zoneName }) {
           input: { label: 'Why are you reporting it? (optional)', maxlength: 200 },
           confirm: 'Send report', cancel: 'Cancel', tone: 'normal', fallback: () => backTo(v),
         });
-        if (!res) return;
+        if (!res || !current(s)) return;
         const reason = res.value || '';
-        try { await api('report', { messageId: v, reason }); toast('Thanks. A moderator will take a look.'); } catch (err) { setError(err.message); }
-        st.menuFor = null; paint(); drawer.querySelector(`.chat-line[data-v="${v}"]`)?.focus(); return;
+        try { await api('report', { messageId: v, reason }); if (current(s)) toast('Thanks. A moderator will take a look.'); } catch (err) { if (current(s)) setError(err.message); }
+        if (!current(s)) return;
+        st.menuFor = null; paint(); host().querySelector(`.chat-line[data-v="${v}"]`)?.focus(); return;
       }
-      case 'delete':
+      case 'delete': {
+        const s = session; // the session that asked (see Ignore)
         if (!await ask({
           title: 'Remove this message for everyone?',
           lead: quote(findMsg(v)),
           points: ['It is replaced by "message removed" for all players. The original stays in the moderation log.'],
           confirm: 'Remove message', cancel: 'Keep it', fallback: () => backTo(v),
         })) return;
-        try { await api('modDelete', { messageId: v }); toast('Removed.'); } catch (err) { setError(err.message); }
-        st.menuFor = null; paint(); drawer.querySelector(`.chat-line[data-v="${v}"]`)?.focus(); return;
+        if (!current(s)) return;
+        try { await api('modDelete', { messageId: v }); if (current(s)) toast('Removed.'); } catch (err) { if (current(s)) setError(err.message); }
+        if (!current(s)) return;
+        st.menuFor = null; paint(); host().querySelector(`.chat-line[data-v="${v}"]`)?.focus(); return;
+      }
       default:
     }
   }
@@ -408,7 +511,7 @@ export function setupChat({ sb, api, getChar, toast, esc, zoneName }) {
   document.addEventListener('click', (e) => {
     if (e.target === drawer) { closeDrawer(); return; } // backdrop tap
     const el = e.target.closest('[data-c]');
-    if (!el || !(bar.contains(el) || drawer.contains(el))) return;
+    if (!el || !(bar.contains(el) || drawer.contains(el) || panel.contains(el))) return;
     e.preventDefault();
     onAction(el.dataset.c, el.dataset.v);
   });
@@ -417,23 +520,32 @@ export function setupChat({ sb, api, getChar, toast, esc, zoneName }) {
     e.preventDefault();
     send();
   });
+  // Keep what is typed, so it survives a move between drawer and panel.
+  document.addEventListener('input', (e) => {
+    if (e.target.id === 'chat-input' && host().contains(e.target)) st.draft = e.target.value;
+    if (e.target.id === 'chat-to' && host().contains(e.target)) st.draftTo = e.target.value;
+  });
   // Escape closes an open message menu first, then the drawer.
   drawer.addEventListener('cancel', (e) => {
     e.preventDefault();
-    if (st.menuFor != null) {
-      const id = st.menuFor;
-      st.menuFor = null;
-      paintDrawer();
-      drawer.querySelector(`.chat-line[data-v="${id}"]`)?.focus();
-      return;
-    }
+    if (closeMenu()) return;
     closeDrawer();
   });
+  // An open message menu closes with Escape (in the panel, Escape does nothing else).
+  function closeMenu() {
+    if (st.menuFor == null) return false;
+    const id = st.menuFor;
+    st.menuFor = null;
+    paintChat();
+    host().querySelector(`.chat-line[data-v="${id}"]`)?.focus();
+    return true;
+  }
+  panel.addEventListener('keydown', (e) => { if (e.key === 'Escape' && closeMenu()) e.preventDefault(); });
   // Arrow keys move between messages.
-  drawer.addEventListener('keydown', (e) => {
+  const arrows = (e) => {
     const line = e.target.closest?.('.chat-line[data-c="menu"]');
     if (!line || !['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(e.key)) return;
-    const lines = [...drawer.querySelectorAll('.chat-line[data-c="menu"]')];
+    const lines = [...host().querySelectorAll('.chat-line[data-c="menu"]')];
     const i = lines.indexOf(line);
     const next = e.key === 'Home' ? lines[0] : e.key === 'End' ? lines[lines.length - 1]
       : lines[Math.max(0, Math.min(lines.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1)))];
@@ -441,7 +553,9 @@ export function setupChat({ sb, api, getChar, toast, esc, zoneName }) {
     e.preventDefault();
     for (const l of lines) l.tabIndex = l === next ? 0 : -1;
     next.focus();
-  });
+  };
+  drawer.addEventListener('keydown', arrows);
+  panel.addEventListener('keydown', arrows);
   // Swipe the header down to close.
   let touchY = null;
   drawer.addEventListener('touchstart', (e) => { if (e.target.closest('#chat-head')) touchY = e.touches[0].clientY; }, { passive: true });
@@ -450,5 +564,5 @@ export function setupChat({ sb, api, getChar, toast, esc, zoneName }) {
     touchY = null;
   });
 
-  return { start, stop, setZone, setVisible, openWhisper, isOpen: () => st.open };
+  return { start, stop, setZone, setVisible, setMode, openWhisper, isOpen: showing };
 }

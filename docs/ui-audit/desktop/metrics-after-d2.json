@@ -1,0 +1,185 @@
+[
+ {
+  "size": "1024x768",
+  "appW": 1024,
+  "appShare": 100,
+  "contentW": 622,
+  "gapToSide": 17,
+  "sideW": 369,
+  "sideEmpty": 504,
+  "mainEmptyBelow": 66,
+  "bodyFont": "16px",
+  "battle": {
+   "logBottom": 150,
+   "actionTop": 593,
+   "gap": 443,
+   "inColumn": false,
+   "eyeTravel": 613
+  }
+ },
+ {
+  "size": "1240x800",
+  "appW": 1240,
+  "appShare": 100,
+  "contentW": 760,
+  "gapToSide": 70,
+  "sideW": 340,
+  "sideEmpty": 542,
+  "mainEmptyBelow": 0,
+  "bodyFont": "16px",
+  "battle": {
+   "logBottom": 238,
+   "actionTop": 248,
+   "gap": 10,
+   "inColumn": true,
+   "eyeTravel": 192
+  }
+ },
+ {
+  "size": "1280x720",
+  "appW": 1280,
+  "appShare": 100,
+  "contentW": 760,
+  "gapToSide": 90,
+  "sideW": 340,
+  "sideEmpty": 0,
+  "chatPanel": true,
+  "chatInputInView": true,
+  "chatLines": 16,
+  "mainEmptyBelow": 0,
+  "bodyFont": "16px",
+  "battle": {
+   "logBottom": 238,
+   "actionTop": 248,
+   "gap": 10,
+   "inColumn": true,
+   "eyeTravel": 192
+  }
+ },
+ {
+  "size": "1280x800",
+  "appW": 1280,
+  "appShare": 100,
+  "contentW": 760,
+  "gapToSide": 90,
+  "sideW": 340,
+  "sideEmpty": 0,
+  "chatPanel": true,
+  "chatInputInView": true,
+  "chatLines": 20,
+  "mainEmptyBelow": 0,
+  "bodyFont": "16px",
+  "battle": {
+   "logBottom": 238,
+   "actionTop": 248,
+   "gap": 10,
+   "inColumn": true,
+   "eyeTravel": 192
+  }
+ },
+ {
+  "size": "1366x768",
+  "appW": 1366,
+  "appShare": 100,
+  "contentW": 760,
+  "gapToSide": 133,
+  "sideW": 340,
+  "sideEmpty": 0,
+  "chatPanel": true,
+  "chatInputInView": true,
+  "chatLines": 18,
+  "mainEmptyBelow": 0,
+  "bodyFont": "16px",
+  "battle": {
+   "logBottom": 238,
+   "actionTop": 248,
+   "gap": 10,
+   "inColumn": true,
+   "eyeTravel": 192
+  }
+ },
+ {
+  "size": "1440x900",
+  "appW": 1440,
+  "appShare": 100,
+  "contentW": 760,
+  "gapToSide": 167,
+  "sideW": 346,
+  "sideEmpty": 0,
+  "chatPanel": true,
+  "chatInputInView": true,
+  "chatLines": 13,
+  "mainEmptyBelow": 3,
+  "bodyFont": "16px",
+  "battle": {
+   "logBottom": 238,
+   "actionTop": 248,
+   "gap": 10,
+   "inColumn": true,
+   "eyeTravel": 192
+  }
+ },
+ {
+  "size": "1536x864",
+  "appW": 1536,
+  "appShare": 100,
+  "contentW": 760,
+  "gapToSide": 204,
+  "sideW": 369,
+  "sideEmpty": 0,
+  "chatPanel": true,
+  "chatInputInView": true,
+  "chatLines": 23,
+  "mainEmptyBelow": 0,
+  "bodyFont": "16px",
+  "battle": {
+   "logBottom": 238,
+   "actionTop": 248,
+   "gap": 10,
+   "inColumn": true,
+   "eyeTravel": 192
+  }
+ },
+ {
+  "size": "1920x1080",
+  "appW": 1600,
+  "appShare": 83,
+  "contentW": 808,
+  "gapToSide": 196,
+  "sideW": 400,
+  "sideEmpty": 0,
+  "chatPanel": true,
+  "chatInputInView": true,
+  "chatLines": 19,
+  "mainEmptyBelow": 6,
+  "bodyFont": "17px",
+  "battle": {
+   "logBottom": 245,
+   "actionTop": 255,
+   "gap": 10,
+   "inColumn": true,
+   "eyeTravel": 204
+  }
+ },
+ {
+  "size": "2560x1440",
+  "appW": 1600,
+  "appShare": 63,
+  "contentW": 855,
+  "gapToSide": 173,
+  "sideW": 400,
+  "sideEmpty": 0,
+  "chatPanel": true,
+  "chatInputInView": true,
+  "chatLines": 31,
+  "mainEmptyBelow": 6,
+  "bodyFont": "18px",
+  "battle": {
+   "logBottom": 251,
+   "actionTop": 261,
+   "gap": 10,
+   "inColumn": true,
+   "eyeTravel": 216
+  }
+ }
+]

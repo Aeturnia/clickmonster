@@ -52,7 +52,9 @@ for (const [w, hh] of widths) {
     await page.keyboard.press('Escape'); await settle(page);
     await page.click('[data-a="tab"][data-v="map"]'); await settle(page); await shot('map');
     await page.click('[data-a="tab"][data-v="explore"]'); await settle(page);
-    await page.click('.chatbar'); await page.waitForSelector('.chat-panel'); await shot('chat-drawer');
+    // The drawer, or on desktop from 1280px the persistent panel (focus in its message box).
+    if (await page.evaluate(() => document.getElementById('app').dataset.chat === 'panel')) { await page.click('#chatpanel #chat-input'); await shot('chat-panel'); }
+    else { await page.click('.chatbar'); await page.waitForSelector('.chat-panel'); await shot('chat-drawer'); }
     await page.keyboard.press('Escape'); await settle(page);
   } catch (err) {
     summary.push({ width: tag, screen: 'ERROR', error: err.message.split('\n')[0] });

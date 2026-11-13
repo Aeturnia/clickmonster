@@ -589,6 +589,22 @@ input[aria-invalid="true"] { border-color: var(--bad) !important; }
 .minimap .me { background: var(--gold); }
 .mini-near { margin: 0 0 4px; font-size: var(--fs-sm); color: var(--muted); }
 #side .textbtn { font-size: var(--fs-sm); }
+/* Persistent chat panel (D-2, 1280px+): it takes the side column's remaining height and never
+   less than 18rem; the summary and minimap give way first (and scroll inside themselves), so the
+   message box is always on screen without scrolling the page. */
+#chatpanel { display: none; } /* shown only when mounted (data-chat="panel") and drawn */
+#app[data-layout="desktop"] #summary,
+#app[data-layout="desktop"] #minimap { flex: 0 1 auto; min-height: 0; overflow-y: auto; }
+#app[data-layout="desktop"][data-chat="panel"] #chatpanel:not(:empty) { flex: 1 1 0; min-height: 18rem; display: flex; flex-direction: column; }
+#chatpanel .chat-panel {
+  flex: 1; min-height: 0; height: auto; max-width: none;
+  background: none; border: 0; border-radius: 0; box-shadow: none; animation: none; padding-bottom: 0;
+}
+#chatpanel .chat-head { flex-wrap: wrap; row-gap: 4px; padding: 12px 16px 6px; touch-action: auto; }
+#chatpanel .chat-head::before { display: none; }
+#chatpanel .chat-head .side-h { flex-basis: 100%; margin: 0; }
+#chatpanel .chat-list { padding: 8px 16px; }
+#chatpanel .chat-form { padding: 8px 12px 12px; }
 .mini-near b { color: var(--text); font-weight: 600; }
 /* Short screens: chat comes before the minimap, so only its text stays (56em = 896px tall at
    the default text size; em so that larger text collapses it sooner). */
