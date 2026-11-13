@@ -2,6 +2,30 @@
 
 Planned work that is not yet scheduled into a phase. Each item names what it builds on.
 
+## Pre-release verification (required before a release)
+
+The UI modernization (Phases 1–4) was tested in Chromium only, against a fake backend. These checks were not done in any phase and must be done before release. They are verification, not new features. Each item comes from a phase report's "Not verified" section.
+
+**Real devices** (iOS Safari, Android Chrome; also Firefox, which was never run):
+- Native `<dialog>`: focus behaviour, `::backdrop` taps, and `dvh` sizing inside dialogs (Phase 1).
+- On-screen keyboards with `visualViewport`, `interactive-widget` on Android, safe-area insets on notched phones in landscape, and touch panning of the map frame (Phase 2).
+- Type-to-confirm with autocorrect on phone keyboards, and haptics on refused taps (Phase 3).
+- Admin console: the sticky zone save bar with the keyboard open, table cards and the phone navigation (Phase 4).
+
+**Screen readers** (VoiceOver, TalkBack, NVDA). Names, roles and live regions were only checked in the DOM and with axe:
+- Game: the dialogs and `alertdialog` confirmations, `role="status"` toasts, the roving map and the shortened amounts (Phases 1–3).
+- Admin console:
+  - the group switcher, review panel and table cards;
+  - the zone editor's live save note;
+  - `aria-busy` on pending buttons, the "Still working" toast and the locked zone draft (Phase 4 and its corrections).
+
+**Live-backend staging:**
+- Run the admin and game flows against a staging Supabase project, not the fake backend.
+- In particular, check that a pending admin action sends one request and writes one `admin_log` entry. The fake backend models the server's audit behaviour, which was read from `supabase/functions/admin/index.ts`, not observed.
+- Check zone save, delete and restore with real players in the zone.
+- Check the moderation flow with real reports.
+- Check real staff data volumes, such as many reports or a long audit log.
+
 ## Desktop layout
 
 To be designed at a desktop, after the UI modernization phases.
