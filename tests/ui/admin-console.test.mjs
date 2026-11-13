@@ -424,15 +424,16 @@ test('P4-01 a press while a confirmed form is sending opens no second confirmati
 });
 
 test('P4-01 zone save: pending survives re-renders and repeated presses send one request', async () => {
-  const ctx = await admin({ path: '/admin.html#zone/ashford', wait: '#zone-form' });
+  const ctx = await admin({ width: 390, height: 844, path: '/admin.html#zone/ashford', wait: '#zone-form' });
   const { page, backend } = ctx;
   const release = backend.hold('saveZone');
   await page.click('[data-a="zoneSave"]');
   await page.waitForSelector('[data-a="zoneSave"][aria-busy="true"]');
-  // Anything that re-renders the editor meanwhile (here: adding a path) must keep Save pending.
-  await page.click('[data-a="zoneAddPortal"]');
-  await page.waitForSelector('[data-f="portals.0.label"]');
-  assert.match(await page.textContent('#zone-save-note'), /Ready to save/, 'the draft is still valid');
+  // Anything that re-renders the console meanwhile must keep Save pending. (Until P4-04 this
+  // test added a path; editing is now locked while saving, so the navigation group is redrawn.)
+  await page.evaluate(() => { document.getElementById('zone-form').dataset.before = '1'; });
+  await page.click('[data-a="navgroup"][data-v="content"]');
+  await page.waitForFunction(() => document.getElementById('zone-form') && !document.getElementById('zone-form').dataset.before);
   assert.equal(await busy(page, '[data-a="zoneSave"]'), 'true', 'Save is still pending after a re-render');
   await page.click('[data-a="zoneSave"]');
   await page.click('[data-a="zoneSave"]');
@@ -718,5 +719,133 @@ test('P4-03 independent actions keep their own pending state; one finishing clea
   await settle(page);
   assert.deepEqual([calls(backend, 'chatDelete').length, calls(backend, 'resolveReport').length], [1, 1]);
   assert.deepEqual([auditCount(backend, 'chat:delete'), auditCount(backend, 'chat:resolveReport')], [1, 1]);
+  await done(ctx);
+});
+
+// ---------------------------------------------------------------- P4-04: no edits lost while a zone change is sending
+
+// Every control of the zone draft that is still usable (none while it is locked).
+const usableDraftControls = (page) => page.evaluate(() => [...document.querySelectorAll('#zone-form input, #zone-form select, #zone-form textarea, #zone-form button')]
+  .filter((el) => !el.matches(':disabled')).map((el) => el.id || el.dataset.a || el.dataset.owpick || el.dataset.f || el.dataset.toggle || el.tagName));
+
+test('P4-04 editing is locked while Save is sending; the saved zone is exactly what was submitted', async () => {
+  const ctx = await admin({ path: '/admin.html#zone/ashford', wait: '#zone-form' });
+  const { page, backend } = ctx;
+  await page.fill('#zf-name', 'Ashford Downs');
+  const portalsBefore = await page.locator('[data-a="zoneDelPortal"]').count();
+  const release = backend.hold('saveZone');
+  await page.click('[data-a="zoneSave"]');
+  await sent(backend, 'saveZone');
+  // Every kind of control in the draft is disabled: fields, selects, checkboxes, add/remove, overworld squares.
+  assert.deepEqual(await usableDraftControls(page), [], 'no draft control is usable while saving');
+  const lock = await page.evaluate(() => ({
+    text: document.getElementById('zf-name').matches(':disabled'),
+    select: !!document.querySelector('#zone-form select:disabled'),
+    checkbox: !!document.querySelector('#zone-form input[type="checkbox"]:disabled'),
+    addPath: document.querySelector('[data-a="zoneAddPortal"]').matches(':disabled'),
+    square: !!document.querySelector('#zone-form [data-owpick]:disabled'),
+    busy: document.getElementById('zone-form').getAttribute('aria-busy'),
+    described: document.querySelector('fieldset.zone-lock').getAttribute('aria-describedby'),
+  }));
+  assert.deepEqual(lock, { text: true, select: true, checkbox: true, addPath: true, square: true, busy: 'true', described: 'zone-save-note' });
+  assert.match(await page.textContent('#zone-save-note'), /Saving\. Editing is paused until it finishes\./);
+  await noAxe(page, 'zone editor locked while saving');
+  // Try to change the draft anyway: typing, and events sent straight to the controls.
+  await assert.rejects(page.fill('#zf-name', 'Too late', { timeout: 400 }));
+  await page.evaluate(() => {
+    const name = document.getElementById('zf-name');
+    name.value = 'Too late';
+    name.dispatchEvent(new Event('input', { bubbles: true }));
+    document.querySelector('[data-a="zoneAddPortal"]').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    document.querySelector('#zone-form [data-owpick]:not([aria-current])').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  });
+  await page.waitForTimeout(250);
+  release();
+  await page.waitForSelector('#zone-form', { state: 'detached' });
+  await settle(page);
+  // One request, carrying the name typed before Save and nothing typed after.
+  const submitted = calls(backend, 'saveZone').map((c) => c.args.zone);
+  assert.equal(submitted.length, 1);
+  assert.equal(submitted[0].name, 'Ashford Downs');
+  assert.equal((submitted[0].portals || []).length, portalsBefore);
+  const stored = backend.adminData().zoneRows.find((r) => r.id === 'ashford').data;
+  assert.deepEqual(stored, submitted[0], 'the saved zone is exactly what was submitted');
+  // Opening it again shows that saved version.
+  await page.click('[data-a="zoneEdit"][data-v="ashford"]');
+  await page.waitForSelector('#zone-form');
+  assert.equal(await page.inputValue('#zf-name'), 'Ashford Downs');
+  assert.equal(await page.locator('[data-a="zoneDelPortal"]').count(), portalsBefore);
+  await done(ctx);
+});
+
+test('P4-04 a failed save unlocks the draft with every edit kept; the next save includes later edits', async () => {
+  const ctx = await admin({ path: '/admin.html#zone/ashford', wait: '#zone-form' });
+  const { page, backend } = ctx;
+  await page.fill('#zf-name', 'Ashford Downs');
+  const release = backend.hold('saveZone');
+  backend.failNext('saveZone', 500, 'The zone could not be saved. Try again.');
+  await page.click('[data-a="zoneSave"]');
+  await sent(backend, 'saveZone');
+  assert.deepEqual(await usableDraftControls(page), []);
+  release();
+  await page.waitForFunction(() => /could not be saved/.test(document.getElementById('alerts').textContent));
+  assert.ok((await usableDraftControls(page)).length > 10, 'editing is back');
+  assert.equal(await page.getAttribute('#zone-form', 'aria-busy'), null);
+  assert.match(await page.textContent('#zone-save-note'), /Ready to save/);
+  assert.equal(await page.inputValue('#zf-name'), 'Ashford Downs', 'the draft is kept');
+  await page.click('[data-a="zoneAddPortal"]');
+  await page.fill('[data-f="portals.0.label"]', 'Old mill road');
+  await page.click('[data-a="zoneSave"]');
+  await page.waitForSelector('#zone-form', { state: 'detached' });
+  const second = calls(backend, 'saveZone')[1].args.zone;
+  assert.equal(second.name, 'Ashford Downs');
+  assert.equal(second.portals.at(-1).label, 'Old mill road');
+  await done(ctx);
+});
+
+test('P4-04 Restore and Delete also lock the draft while sending', async () => {
+  const ctx = await admin({ path: '/admin.html#zone/marsh', wait: '#zone-form' });
+  const { page, backend } = ctx;
+  const releaseReset = backend.hold('resetZone');
+  await page.click('[data-a="zoneReset"]');
+  await page.click('#confirm [data-r="ok"]');
+  await sent(backend, 'resetZone');
+  assert.deepEqual(await usableDraftControls(page), [], 'locked while restoring');
+  assert.match(await page.textContent('#zone-save-note'), /Restoring the built-in version/);
+  releaseReset();
+  await page.waitForSelector('[data-a="zoneReset"]:not([aria-busy])');
+  await settle(page);
+  assert.ok((await usableDraftControls(page)).length > 10, 'editing is back after restoring');
+  const releaseDelete = backend.hold('deleteZone');
+  const name = await page.inputValue('#zf-name');
+  await page.click('[data-a="zoneDelete"]');
+  await page.fill('#confirm-input', name);
+  await page.click('#confirm [data-r="ok"]');
+  await sent(backend, 'deleteZone');
+  assert.deepEqual(await usableDraftControls(page), [], 'locked while deleting');
+  assert.match(await page.textContent('#zone-save-note'), /Deleting the zone/);
+  await noAxe(page, 'zone editor locked while deleting');
+  releaseDelete();
+  await page.waitForSelector('#zone-form', { state: 'detached' });
+  await done(ctx);
+});
+
+test('P4-04 another zone opened while a save is sending keeps its edits when the save finishes', async () => {
+  const ctx = await admin({ path: '/admin.html#zone/ashford', wait: '#zone-form' });
+  const { page, backend } = ctx;
+  await page.fill('#zf-name', 'Ashford Downs');
+  const release = backend.hold('saveZone');
+  await page.click('[data-a="zoneSave"]');
+  await sent(backend, 'saveZone');
+  // Leave, and start editing another zone before the save answers.
+  await page.click('.acts [data-a="zoneBack"]');
+  await page.click('[data-a="zoneEdit"][data-v="marsh"]');
+  await page.waitForSelector('#zone-form');
+  await page.fill('#zf-name', 'The Deep Marsh');
+  release();
+  await toastSays(page, /Zone saved/);
+  await settle(page);
+  assert.equal(await page.inputValue('#zf-name'), 'The Deep Marsh', 'the other editor and its edit are still there');
+  assert.equal(calls(backend, 'saveZone')[0].args.zone.name, 'Ashford Downs');
   await done(ctx);
 });

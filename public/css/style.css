@@ -701,7 +701,7 @@ table.data tbody tr:hover td { background: rgba(255, 255, 255, .02); }
   background: #0d0a08; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); padding: 8px 10px; min-height: 44px;
 }
 .f textarea, textarea.a-input { min-height: 96px; resize: vertical; }
-.f input:disabled { color: var(--muted); }
+.f input:disabled, .f textarea:disabled, .f select:disabled { color: var(--muted); }
 .f [aria-invalid="true"] { border-color: var(--bad); }
 .form-error { margin: var(--space-3) 0 0; padding: 8px 10px; border-left: 3px solid var(--bad); background: #2a1714; border-radius: 0 8px 8px 0; font-size: var(--fs-md); }
 .form-foot { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; margin-top: var(--space-3); }
@@ -709,6 +709,8 @@ label.chk { display: inline-flex; align-items: center; gap: 8px; font-size: var(
 label.chk input { width: 20px; height: 20px; min-height: 0; margin: 0; accent-color: var(--gold); }
 .chips-wrap { display: flex; flex-wrap: wrap; gap: 0 4px; }
 fieldset.f-set { border: 0; padding: 0; margin: 0; min-width: 0; }
+/* The zone editor's draft: disabled as a whole while Save, Delete or Restore is sending. */
+fieldset.zone-lock { border: 0; padding: 0; margin: 0; min-width: 0; }
 fieldset.f-set legend { padding: 0; margin-bottom: 4px; font-size: var(--fs-xs); color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
 
 /* ---- moderation: report cards with an inline review panel */

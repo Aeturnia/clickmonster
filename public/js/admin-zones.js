@@ -23,6 +23,10 @@ export function setupZones({ st, call, toast, render, esc, isAdmin, pushRoute })
   const zoneOf = (ed) => `zone:${ed.isNew ? '+new' : ed.originalId}:`;
   const opKey = (ed, op) => `${zoneOf(ed)}${op}`;
   const zoneBusy = (ed) => [...st.pendingForms].some((k) => k.startsWith(zoneOf(ed)));
+  // Which change (save, delete, reset) is in flight for this zone, if any.
+  const pendingOp = (ed) => ['save', 'delete', 'reset'].find((op) => st.pendingForms.has(opKey(ed, op))) || null;
+  // Another editor for the same stored zone (opened again with Back while a change was sending).
+  const sameZone = (a, b) => !!a && !!b && !a.isNew && !b.isNew && a.originalId === b.originalId;
   function zoneWaiting(ed) {
     if (!zoneBusy(ed)) return false;
     toast('Still working on the last change to this zone.');
@@ -131,6 +135,9 @@ export function setupZones({ st, call, toast, render, esc, isAdmin, pushRoute })
   }
 
   function savebarNote(errors) {
+    // While a change is sending, the draft is locked (see editorView) and the note says why.
+    const op = st.zoneEdit && pendingOp(st.zoneEdit);
+    if (op) return `<span>${{ save: 'Saving', delete: 'Deleting the zone', reset: 'Restoring the built-in version' }[op]}. Editing is paused until it finishes.</span>`;
     return errors.length
       ? `<span class="bad">${errors.length} ${errors.length === 1 ? 'problem' : 'problems'} to fix before saving.</span> <button type="button" class="textbtn" data-a="zoneJump" data-v="preview">Show</button>`
       : '<span class="good">Ready to save.</span>';
@@ -183,6 +190,10 @@ export function setupZones({ st, call, toast, render, esc, isAdmin, pushRoute })
   function editorView() {
     const ed = st.zoneEdit;
     const d = ed.def;
+    // While Save, Delete or Restore is sending, every control of the draft (fields, checkboxes,
+    // selects, add/remove buttons, overworld squares) is disabled, so nothing typed meanwhile can
+    // be dropped when the request finishes. Disabled controls stay readable.
+    const locked = zoneBusy(ed);
     // A button whose change is in flight looks pending (kept across re-renders).
     const btn = (cls, a, label, op) => (st.pendingForms.has(opKey(ed, op))
       ? `<button class="${cls} pending" data-a="${a}" aria-busy="true">${label}</button>`
@@ -241,11 +252,13 @@ export function setupZones({ st, call, toast, render, esc, isAdmin, pushRoute })
 
     return `<div class="acts flush"><button class="btn sm" data-a="zoneBack">Back to zones</button></div>
     <nav aria-label="Zone editor sections" class="gap-top"><ul class="zone-index" id="zone-index">${indexHtml(errors)}</ul></nav>
-    <form id="zone-form" novalidate ${ro ? 'inert' : ''}>
+    <form id="zone-form" novalidate ${ro ? 'inert' : ''}${locked ? ' aria-busy="true"' : ''}>
+    <fieldset class="zone-lock"${locked ? ' disabled aria-describedby="zone-save-note"' : ''}>
     <div class="zone-cols">
       <div>${body}</div>
       <aside class="box zone-side" id="zs-preview" aria-labelledby="zs-preview-h"><h2 id="zs-preview-h" tabindex="-1">Preview and problems</h2><div id="zone-preview-body">${previewHtml(errors)}</div></aside>
     </div>
+    </fieldset>
     </form>
     ${isAdmin() ? `${!ed.isNew ? `<section class="box" aria-labelledby="zone-more-h"><h2 id="zone-more-h">Other actions</h2><div class="acts flush">
       ${DEFAULT_ZONES.some((z) => z.id === d.id) ? btn('btn', 'zoneReset', 'Restore built-in version', 'reset') : ''}
@@ -293,10 +306,26 @@ export function setupZones({ st, call, toast, render, esc, isAdmin, pushRoute })
     window.scrollTo(0, 0);
   }
 
+  // After Save, Delete or Restore finishes. Only the editor it was started from is closed or
+  // reopened; another zone opened meanwhile (with its own unsaved edits) is left alone. The same
+  // zone opened again meanwhile was locked, so it is refreshed from what the server now holds.
+  const STRUCTURE = new Set(['zoneAddMon', 'zoneDelMon', 'zoneAddLair', 'zoneDelLair', 'zoneAddPortal', 'zoneDelPortal']);
+  function afterChange(ed, ok, then) {
+    const cur = st.zoneEdit;
+    if (!ok || !(cur === ed || sameZone(cur, ed))) { render(); return; }
+    const stillThere = !ed.isNew && st.zones.some((r) => r.id === ed.originalId);
+    if (then === 'reopen' || (cur !== ed && stillThere)) { startEdit(ed.originalId, { push: false }); return; }
+    st.zoneEdit = null;
+    render();
+    pushRoute();
+  }
+
   // ------------------------------------------------------------ events
   async function onClick(a, v) {
     const ed = st.zoneEdit;
     const d = ed?.def;
+    // Adding or removing monsters, lairs and paths changes the draft: locked while sending.
+    if (STRUCTURE.has(a) && zoneWaiting(ed)) return true;
     switch (a) {
       case 'zoneNew': startNew(); return true;
       case 'zoneEdit': startEdit(v); return true;
@@ -324,15 +353,14 @@ export function setupZones({ st, call, toast, render, esc, isAdmin, pushRoute })
           toast(`Fix the ${errors.length === 1 ? 'problem' : `${errors.length} problems`} listed under Preview and problems first.`, true);
           return true;
         }
+        const sentDef = clone(d); // exactly what is submitted; the draft is locked meanwhile
         const saved = await zoneOp(ed, 'save', async () => {
-          const res = await call('saveZone', { zone: d, isNew: ed.isNew });
+          const res = await call('saveZone', { zone: sentDef, isNew: ed.isNew });
           st.zones = res.zones;
           loadZones(res.zones.map((r) => r.data));
-          st.zoneEdit = null;
           toast(ed.isNew ? 'Zone created.' : 'Zone saved.');
         });
-        render();
-        if (saved) pushRoute();
+        afterChange(ed, saved, 'close');
         return true;
       }
       case 'zoneDelete': {
@@ -349,11 +377,9 @@ export function setupZones({ st, call, toast, render, esc, isAdmin, pushRoute })
           const res = await call('deleteZone', { id: ed.originalId });
           st.zones = res.zones;
           loadZones(res.zones.map((r) => r.data));
-          st.zoneEdit = null;
           toast('Zone deleted.');
         });
-        render();
-        if (deleted) pushRoute();
+        afterChange(ed, deleted, 'close');
         return true;
       }
       case 'zoneReset': {
@@ -369,7 +395,7 @@ export function setupZones({ st, call, toast, render, esc, isAdmin, pushRoute })
           loadZones(res.zones.map((r) => r.data));
           toast('Restored.');
         });
-        if (restored && st.zoneEdit === ed) startEdit(ed.originalId, { push: false }); else render();
+        afterChange(ed, restored, 'reopen');
         return true;
       }
       default: return false;
@@ -378,6 +404,7 @@ export function setupZones({ st, call, toast, render, esc, isAdmin, pushRoute })
 
   function onInput(e) {
     if (!st.zoneEdit) return false;
+    if (zoneBusy(st.zoneEdit) && e.target.closest?.('#zone-form')) return true; // locked while sending
     const el = e.target;
     const d = st.zoneEdit.def;
     if (el.dataset.f) {
@@ -416,6 +443,7 @@ export function setupZones({ st, call, toast, render, esc, isAdmin, pushRoute })
 
   function onPick(el) {
     if (!st.zoneEdit || !isAdmin()) return false;
+    if (zoneWaiting(st.zoneEdit)) return true; // locked while sending
     const [x, y] = el.dataset.owpick.split(',').map(Number);
     st.zoneEdit.def.overworld = [x, y];
     render();

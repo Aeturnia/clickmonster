@@ -243,3 +243,57 @@ All on this laptop, fake backend.
 - **Screen readers:** announcement of `aria-busy` on the pending buttons and of the "Still working" toast. Checked in the DOM and by axe only.
 - **Real devices.**
 - **The live backend:** the duplicate-audit behaviour was read from `supabase/functions/admin/index.ts` and modelled in the fake backend, not observed on the live project.
+
+## Review corrections (PR #13 final re-review)
+
+The final re-review accepted P4-03 at `f8b32c2` and asked for one more correction, limited to the zone editor.
+
+**P4-04: edits silently discarded while a zone is saving.**
+- *Cause:* the Save request carried the draft as it was when Save was pressed, but the draft stayed editable while the request was running. When the save succeeded, the editor closed (`st.zoneEdit = null`) and anything changed meanwhile was lost without a word. The P4-01 zone test itself did this: it added a path while the save was held. Delete and Restore had the same window.
+  - Reading the code turned up a second way to lose edits. The editor that closed on success was whichever one was open, not the one the save came from. Going Back and starting to edit another zone while a save was sending lost those edits when the save finished.
+- *Fix, in `admin-zones.js` only.* No server, API or design change; P4-03 single-flight is kept.
+  - **Locked while sending:** while Save, Delete or Restore is pending for the zone, the whole draft is in a `<fieldset class="zone-lock" disabled>`. That covers every text and number field, select, checkbox, add and remove button for monsters, lairs and paths, and the overworld placement squares.
+    - Disabled controls stay readable.
+    - The form is `aria-busy`, and the fieldset is described by the save note, which says "Saving. Editing is paused until it finishes." ("Restoring the built-in version…" and "Deleting the zone…" for the other two).
+    - The pending button keeps its P4-03 look and focus.
+    - The input, overworld-pick and add/remove handlers also ignore changes while the zone is busy, so an event that reaches them anyway changes nothing.
+  - **What is sent is a copy** of the draft taken when Save is pressed.
+  - **On failure** the flag clears, the draft unlocks with every edit kept, and the error stays.
+  - **On success** the existing workflow runs: Save and Delete return to the zone list, and Restore reopens the zone. Only the editor the change came from is closed or reopened.
+    - Another zone opened in the meantime is left alone, with its edits.
+    - The same zone opened again in the meantime was locked, so it is refreshed from what the server now holds.
+  - `style.css`: `fieldset.zone-lock` has no border, margin or padding, like `fieldset.f-set`.
+- *Tests* (`tests/ui/admin-console.test.mjs`):
+  - "P4-04 editing is locked while Save is sending; the saved zone is exactly what was submitted":
+    - The name is changed, then Save is pressed and held.
+    - Every control in the draft is disabled, including at least one text field, select, checkbox, Add path and an overworld square. The form is `aria-busy` and the note explains why. Axe passes on this state.
+    - Typing is refused. An `input` event, an Add path click and an overworld click sent straight to the controls change nothing.
+    - After release there is one `saveZone`, carrying the name typed before Save and the original paths. The fake backend's stored zone equals the submitted definition exactly, and reopening the zone shows it.
+  - "P4-04 a failed save unlocks the draft with every edit kept…": the save fails while held. Editing comes back, the name is kept, a path is added, and the second save carries both.
+  - "P4-04 Restore and Delete also lock the draft while sending": both lock, each with its own note. Axe passes while deleting.
+  - "P4-04 another zone opened while a save is sending keeps its edits…": a save is sent, Back is pressed and another zone is edited, then the save finishes. The other editor and its edit are still there.
+  - **Changed test:** "P4-01 zone save: pending survives re-renders…" used to add a path while saving to cause a re-render, which is no longer possible. It now runs on a phone and redraws the console through the navigation group. The test confirms the editor's elements were actually replaced, then checks Save is still pending and repeated presses send one request.
+
+### Results (P4-04)
+All on this laptop, fake backend.
+
+- `npm test` 24 of 24 and `npm run test:ui` **85 of 85 in each of 3 consecutive full runs** (81 earlier tests plus 4 new; the P4-01 zone test changed as described above). The runs were repeated after the last change, the muted colour for disabled textareas and selects.
+- **New tests against the reviewed commit** (`UI_PUBLIC_DIR` set to the `f8b32c2` checkout): all 4 fail, each on the defect:
+  - draft controls still usable while saving;
+  - the failure test: controls still usable while saving;
+  - controls still usable while restoring;
+  - another zone's editor closed, with its edit, when the earlier save finished.
+
+  The rewritten P4-01 zone test passes there too, as it should: P4-01 was already fixed.
+- **Locked states** (`docs/ui-audit/phase-4/corrections-p4-04/`): Marsh renamed, then Save, Restore or Delete pressed and held, at 390 and 1440 (6 scenes).
+  - **After:** 0 axe violations of any impact. **0 of 124 draft controls usable** in every scene, with the note explaining why, and the form and the pressed button `aria-busy`.
+  - **On `f8b32c2`:** 123 of 124 usable (all but the permanent Id field), and the note still said "Ready to save."
+  - Raw data: `summary-p4-04-after.json`, `summary-p4-04-before.json`.
+- **Admin accessibility sweep** (`tools/admin-shots.mjs`, 60 captures): **0 violations of any impact**. Raw data: `docs/ui-audit/phase-4/summary-after-p4-04.json`.
+- `style.css` also gives disabled textareas and selects the muted text colour disabled inputs already had, so the whole locked draft looks disabled.
+
+### Not verified (P4-04)
+
+- **Screen readers:** how a disabled fieldset, the busy form and the save note are announced. Checked in the DOM and by axe only. The note is in a polite live region, but the editor is redrawn when the lock starts, and whether the new note is announced was not tested.
+- **Real devices.**
+- **The live backend.**
