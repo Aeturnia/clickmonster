@@ -3,7 +3,7 @@
   "size": "1024x768",
   "appW": 1024,
   "appShare": 100,
-  "contentW": 623,
+  "contentW": 622,
   "gapToSide": 17,
   "sideW": 369,
   "sideEmpty": 504,
@@ -12,14 +12,34 @@
   "battle": {
    "logBottom": 150,
    "actionTop": 593,
+   "gap": 443,
+   "inColumn": false,
    "eyeTravel": 613
+  }
+ },
+ {
+  "size": "1280x720",
+  "appW": 1280,
+  "appShare": 100,
+  "contentW": 760,
+  "gapToSide": 104,
+  "sideW": 400,
+  "sideEmpty": 456,
+  "mainEmptyBelow": 18,
+  "bodyFont": "16px",
+  "battle": {
+   "logBottom": 150,
+   "actionTop": 547,
+   "gap": 397,
+   "inColumn": false,
+   "eyeTravel": 674
   }
  },
  {
   "size": "1280x800",
   "appW": 1280,
   "appShare": 100,
-  "contentW": 761,
+  "contentW": 760,
   "gapToSide": 104,
   "sideW": 400,
   "sideEmpty": 536,
@@ -28,6 +48,8 @@
   "battle": {
    "logBottom": 150,
    "actionTop": 627,
+   "gap": 477,
+   "inColumn": false,
    "eyeTravel": 724
   }
  },
@@ -35,7 +57,7 @@
   "size": "1366x768",
   "appW": 1280,
   "appShare": 94,
-  "contentW": 761,
+  "contentW": 760,
   "gapToSide": 104,
   "sideW": 400,
   "sideEmpty": 504,
@@ -44,6 +66,8 @@
   "battle": {
    "logBottom": 150,
    "actionTop": 595,
+   "gap": 445,
+   "inColumn": false,
    "eyeTravel": 703
   }
  },
@@ -51,7 +75,7 @@
   "size": "1440x900",
   "appW": 1280,
   "appShare": 89,
-  "contentW": 761,
+  "contentW": 760,
   "gapToSide": 104,
   "sideW": 400,
   "sideEmpty": 636,
@@ -60,6 +84,8 @@
   "battle": {
    "logBottom": 150,
    "actionTop": 727,
+   "gap": 577,
+   "inColumn": false,
    "eyeTravel": 793
   }
  },
@@ -67,7 +93,7 @@
   "size": "1536x864",
   "appW": 1280,
   "appShare": 83,
-  "contentW": 761,
+  "contentW": 760,
   "gapToSide": 104,
   "sideW": 400,
   "sideEmpty": 600,
@@ -76,6 +102,8 @@
   "battle": {
    "logBottom": 150,
    "actionTop": 691,
+   "gap": 541,
+   "inColumn": false,
    "eyeTravel": 768
   }
  },
@@ -83,7 +111,7 @@
   "size": "1920x1080",
   "appW": 1280,
   "appShare": 67,
-  "contentW": 761,
+  "contentW": 760,
   "gapToSide": 104,
   "sideW": 400,
   "sideEmpty": 816,
@@ -92,6 +120,8 @@
   "battle": {
    "logBottom": 150,
    "actionTop": 907,
+   "gap": 757,
+   "inColumn": false,
    "eyeTravel": 932
   }
  },
@@ -99,7 +129,7 @@
   "size": "2560x1440",
   "appW": 1280,
   "appShare": 50,
-  "contentW": 761,
+  "contentW": 760,
   "gapToSide": 104,
   "sideW": 400,
   "sideEmpty": 1176,
@@ -108,6 +138,8 @@
   "battle": {
    "logBottom": 150,
    "actionTop": 1267,
+   "gap": 1117,
+   "inColumn": false,
    "eyeTravel": 1243
   }
  }

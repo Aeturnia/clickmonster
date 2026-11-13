@@ -43,15 +43,15 @@ The DOM, reading and tab order is: hero, screen, chat line, actions, tabs. The a
 
 | Size | App width (share of window) | Content width | Gap from content to side column | Empty height in the side column | Empty space below Explore content | Battle: log to actions |
 |---|---|---|---|---|---|---|
-| 1024×768 | 1024 (100%) | 623 | 17 | 504 | 66 | 613 |
-| 1280×800 | 1280 (100%) | 761 | 104 | 536 | 98 | 724 |
-| 1366×768 | 1280 (94%) | 761 | 104 | 504 | 66 | 703 |
-| 1440×900 | 1280 (89%) | 761 | 104 | 636 | 198 | 793 |
-| 1536×864 | 1280 (83%) | 761 | 104 | 600 | 162 | 768 |
-| 1920×1080 | 1280 (67%) | 761 | 104 | 816 | 378 | 932 |
-| 2560×1440 | 1280 (50%) | 761 | 104 | 1,176 | 738 | 1,243 |
+| 1024×768 | 1024 (100%) | 622 | 17 | 504 | 66 | 613 |
+| 1280×800 | 1280 (100%) | 760 | 104 | 536 | 98 | 724 |
+| 1366×768 | 1280 (94%) | 760 | 104 | 504 | 66 | 703 |
+| 1440×900 | 1280 (89%) | 760 | 104 | 636 | 198 | 793 |
+| 1536×864 | 1280 (83%) | 760 | 104 | 600 | 162 | 768 |
+| 1920×1080 | 1280 (67%) | 760 | 104 | 816 | 378 | 932 |
+| 2560×1440 | 1280 (50%) | 760 | 104 | 1,176 | 738 | 1,243 |
 
-All values are in CSS pixels. Body text is 16px at every size.
+All values are in CSS pixels. Body text is 16px at every size. The content widths were corrected by 1px during D-1: the first version of the tool counted the screen-reader-only heading.
 
 ## 3. Findings
 
@@ -139,6 +139,10 @@ This is a structural wireframe, not a visual specification:
   - Touch tablets keep the Phase 2 layout.
   - The desktop rules get their own condition, separate from the shared block in D11. The Phase 1–3 phone and landscape tests must keep passing unchanged.
 - **Phase 2 desktop criteria still hold.** AC-6 at 1024 and 1440 requires at least 8 rows and at least 400px of battle-log room with the actions on screen. Changing those tests needs the owner's approval.
+  - **Decided (2026-11-12, during D-1):**
+    - At 1024×768, AC-6 is unchanged.
+    - Under the desktop layout, the log's room is the height it can grow to before it scrolls, with Melee and Cast on screen. The 400px minimum is unchanged. The old measure (from the top of the log to the bottom of the screen area) can't apply once the screen is only as tall as its content.
+    - A touch (coarse-pointer) run at 1440×900 keeps the Phase 2 two-column layout covered at that size with the original measure.
 - **Breakpoints in `em`, validated by behaviour (rule 7).**
   - Media queries measured in `em` follow the browser's text-size setting, not the page's root font size. MDN recommends them for respecting text-size preferences.
     - Desktop starts at `min-width: 75em` (1200px at the default size), and the chat panel at `80em` (1280px).
@@ -174,7 +178,7 @@ These are measured with `tools/desktop-metrics.mjs` (extended as needed) and `to
 | AC | Phase | Criterion | Before | Draft target |
 |---|---|---|---|---|
 | DAC-1 | D-1 | Desktop frame: from 1200px wide with a fine pointer, the hero bar, navigation, gameplay column and side column are laid out as in section 4; the summary and minimap show real content; nothing in the side column is filler | two-column Phase 2 layout | met; compared with screenshots |
-| DAC-2 | D-1 | Battle actions close to the fight: log-to-actions distance at the start of a fight, with the actions on screen without scrolling | 613–1,243px | ≤ 200px at every desktop size |
+| DAC-2 | D-1 | Battle actions directly under the fight: the gap from the end of the fight (the log, or the result card once the fight is over) to the actions; the actions within the log's column and on screen, at the start and after the log has filled. Decided during D-1, replacing the draft "≤ 200px centre to centre". That distance is still reported for comparison | at the desktop sizes: gap 397–1,117px, outside the log's column (centre to centre 674–1,243px) | gap ≤ 24px, in the column, on screen, at every desktop size |
 | DAC-3 | D-1 | Width and type: app width is min(window, about 1600), centred; body text 17–18px on large displays (from about 1800px); lines at most about 80 characters | 1280 cap, 67% / 50% at 1920 / 2560, 16px | about 83% / 63% at 1920 / 2560, 17–18px |
 | DAC-4 | D-1 | No duplicated hero bar: nothing in the side column's summary repeats the hero bar (name, HP, XP, gold, gems); with nothing to show, the summary takes no more than one line | — | met; checked against the DOM |
 | DAC-5 | D-1 | Space, not width: with 200% browser text size, and with 200% zoom, at 1366×768 and 1920×1080, the resulting `data-layout` and geometry are checked: a layout that fits, no clipped panels, no sideways scroll | — | met |
