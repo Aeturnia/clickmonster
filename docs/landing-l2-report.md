@@ -1,9 +1,12 @@
 # Landing page — phase L-2 report: the interface choice
 
-**Status: implemented. Awaiting independent review.**
-- **Authorized:** on 2026-11-13, after L-1 merged (PR #25, `b911a79`) and passed its integration checks.
-- **Branch:** its own branch and PR.
-- **Not started and not authorized:** L-3 and L-4. No database change or function deploy.
+**Status: complete.**
+- **Approved:** in the independent review at `6daf4cb`, with no corrections, and merged into `main` as PR #27 (`4c9d049`) on 2026-11-13, after the L-1 completion record (PR #26). The merged code, tests and tools are identical to the reviewed head.
+- **After the merge,** on `main` at `4c9d049`: engine 29/29 and browser 156/156, in each of 3 runs. This is the current regression baseline.
+- **Kept for later:**
+  - the entrance's nearly exhausted 30 KB startup budget (29.8 KB; a risk for L-4);
+  - the checks in section 8, which are now in the pre-release list in `docs/backlog.md`.
+- **Not authorized:** L-3 and L-4. No database change or function deploy.
 
 The contract is `docs/landing-scope.md`: Q12 (decided), and section 6, "The picker (L-2)". Criteria: LAC-9 (with each choice), LAC-11, LAC-12 and LAC-18 to LAC-20.
 

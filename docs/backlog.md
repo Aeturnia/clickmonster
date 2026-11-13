@@ -39,7 +39,17 @@ The UI modernization (Phases 1–4) was tested in Chromium only, against a fake 
 - **Real phones on mobile networks:** time to the sign-in form. The harness timing (0.67 s) is an underestimate.
 - **Password managers and browser autofill** on the new form, and the reload-on-retry after a failed game download in browsers other than Chromium.
 
+**The interface choice (landing L-2)** was tested in Chromium only:
+- forced Desktop on a real touch tablet;
+- browser zoom with Desktop forced (200% text size and resizing were tested);
+- how screen readers announce the radio group and the polite note;
+- other browsers.
+
 ## Follow-ups (not blocking)
+
+- **The entrance's startup budget** (landing LAC-2: at most 30 KB decoded before the sign-in form) is at 29.8 KB after L-2.
+  - L-4's news list will need room.
+  - About half of `index.html`, `entry.css` and `entry.js` is comments, which could be trimmed. Otherwise, revisit the budget with the owner.
 
 - **Queued battle effects across an account change** (from the L-1 final review).
   - `playEffects()` in `main.js` schedules battle animations with `setTimeout`. The timers aren't tied to the game session (`gameGen`).
@@ -49,16 +59,11 @@ The UI modernization (Phases 1–4) was tested in Chromium only, against a fake 
 
 ## Desktop layout (done)
 
-Built in phases D-1 to D-3 and merged on 2026-11-13. See `docs/desktop-scope.md` and the three D reports. What remains from that scope is below and is not approved: the layout picker, wider desktop sheets, and the possible rename to "Monstra Regna".
+Built in phases D-1 to D-3 and merged on 2026-11-13. See `docs/desktop-scope.md` and the three D reports. The layout picker from that scope was built as landing phase L-2. Still not approved: wider desktop sheets, and the possible rename to "Monstra Regna".
 
-## Layout choice: desktop or mobile
+## Layout choice: desktop or mobile (done)
 
-**Built in landing phase L-2** (`docs/landing-l2-report.md`). The notes below are the original backlog entry.
-
-
-Now scoped as phase L-2 of the landing page: see `docs/landing-scope.md` (not yet authorized).
-- `layout.js` takes a preference (Automatic, Desktop or Mobile) and sets `#app[data-layout]` from it, falling back when a forced Desktop doesn't fit. The Phase 2 wide rules move from plain media queries to `data-layout`, so a forced layout is honoured completely.
-- Offered on the entrance and in Hero, Settings; saved in `clickmonster.prefs`. Labelled, keyboard reachable, and stating the active layout. Tests for each choice at a phone and a desktop size.
+Built in landing phase L-2 and merged as PR #27 on 2026-11-13. See `docs/landing-l2-report.md`. Its checks still owed are in the pre-release list above.
 
 ## Password recovery
 

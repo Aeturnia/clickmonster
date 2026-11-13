@@ -5,7 +5,7 @@
 - **D-2, the persistent chat panel:** merged as PR #19.
 - **D-3, keyboard shortcuts:** merged as PR #21.
 - **Reports:** `docs/desktop-d1-report.md`, `desktop-d2-report.md` and `desktop-d3-report.md`.
-- **Separate, and not approved:** the layout picker, wider desktop sheets, and the possible rename to "Monstra Regna" (section 9). The `data-layout` support the picker needs is in place.
+- **Separate:** the layout picker was built later as landing phase L-2 (PR #27, `docs/landing-l2-report.md`). Wider desktop sheets and the possible rename to "Monstra Regna" (section 9) are not approved.
 
 The scoping step for the backlog items "Desktop layout" and "Layout choice: desktop or mobile" (`docs/backlog.md`). It works the way the Phase 0 audit did: evidence, findings, the owner's direction, constraints, acceptance criteria and phasing. The owner's decisions are recorded in section 4. Implementation follows in phases D-1 to D-3, each reviewed separately.
 
