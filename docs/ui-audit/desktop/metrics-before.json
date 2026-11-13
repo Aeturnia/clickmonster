@@ -1,0 +1,114 @@
+[
+ {
+  "size": "1024x768",
+  "appW": 1024,
+  "appShare": 100,
+  "contentW": 623,
+  "gapToSide": 17,
+  "sideW": 369,
+  "sideEmpty": 504,
+  "mainEmptyBelow": 66,
+  "bodyFont": "16px",
+  "battle": {
+   "logBottom": 150,
+   "actionTop": 593,
+   "eyeTravel": 613
+  }
+ },
+ {
+  "size": "1280x800",
+  "appW": 1280,
+  "appShare": 100,
+  "contentW": 761,
+  "gapToSide": 104,
+  "sideW": 400,
+  "sideEmpty": 536,
+  "mainEmptyBelow": 98,
+  "bodyFont": "16px",
+  "battle": {
+   "logBottom": 150,
+   "actionTop": 627,
+   "eyeTravel": 724
+  }
+ },
+ {
+  "size": "1366x768",
+  "appW": 1280,
+  "appShare": 94,
+  "contentW": 761,
+  "gapToSide": 104,
+  "sideW": 400,
+  "sideEmpty": 504,
+  "mainEmptyBelow": 66,
+  "bodyFont": "16px",
+  "battle": {
+   "logBottom": 150,
+   "actionTop": 595,
+   "eyeTravel": 703
+  }
+ },
+ {
+  "size": "1440x900",
+  "appW": 1280,
+  "appShare": 89,
+  "contentW": 761,
+  "gapToSide": 104,
+  "sideW": 400,
+  "sideEmpty": 636,
+  "mainEmptyBelow": 198,
+  "bodyFont": "16px",
+  "battle": {
+   "logBottom": 150,
+   "actionTop": 727,
+   "eyeTravel": 793
+  }
+ },
+ {
+  "size": "1536x864",
+  "appW": 1280,
+  "appShare": 83,
+  "contentW": 761,
+  "gapToSide": 104,
+  "sideW": 400,
+  "sideEmpty": 600,
+  "mainEmptyBelow": 162,
+  "bodyFont": "16px",
+  "battle": {
+   "logBottom": 150,
+   "actionTop": 691,
+   "eyeTravel": 768
+  }
+ },
+ {
+  "size": "1920x1080",
+  "appW": 1280,
+  "appShare": 67,
+  "contentW": 761,
+  "gapToSide": 104,
+  "sideW": 400,
+  "sideEmpty": 816,
+  "mainEmptyBelow": 378,
+  "bodyFont": "16px",
+  "battle": {
+   "logBottom": 150,
+   "actionTop": 907,
+   "eyeTravel": 932
+  }
+ },
+ {
+  "size": "2560x1440",
+  "appW": 1280,
+  "appShare": 50,
+  "contentW": 761,
+  "gapToSide": 104,
+  "sideW": 400,
+  "sideEmpty": 1176,
+  "mainEmptyBelow": 738,
+  "bodyFont": "16px",
+  "battle": {
+   "logBottom": 150,
+   "actionTop": 1267,
+   "eyeTravel": 1243
+  }
+ }
+]
