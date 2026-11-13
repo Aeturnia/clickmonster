@@ -265,3 +265,156 @@ test('D-2 moderators remove messages from the panel, with the same confirmation'
   assert.equal(removes(), 1, 'confirming sends one removal');
   await done(ctx);
 });
+
+// ---------------------------------------------------------------- D-2 review corrections
+
+// A second account with a hero, so the same page can sign out and sign in as someone else.
+function twoAccounts() {
+  const backend = new FakeBackend({ hero: makeHero(), chat: structuredClone(CHAT) });
+  backend.heroes[ACCOUNTS.mod.id] = makeHero({ name: 'Moderator Mia' });
+  backend.charIds[ACCOUNTS.mod.id] = 'char-mod';
+  return backend;
+}
+// Sign out from the Hero screen, then sign in again through the form: no page reload.
+// (The game keeps the screen that was open, Hero, for the next account; go back to Explore.)
+async function switchAccount(page, who, name = 'Moderator Mia') {
+  await page.click('[data-a="tab"][data-v="hero"]');
+  await page.click('#main [data-a="signout"]');
+  await page.waitForSelector('#authform');
+  await page.fill('#email', ACCOUNTS[who].email);
+  await page.fill('#password', ACCOUNTS[who].password);
+  await page.click('#authform button[type=submit]');
+  await page.waitForFunction((n) => document.querySelector('#top .hud-name')?.textContent.includes(n), name, { timeout: 15000 });
+  await page.click('[data-a="tab"][data-v="explore"]');
+  await settle(page);
+}
+const panelChat = (page, sel = '#chatpanel') => page.evaluate((root) => {
+  const r = document.querySelector(root);
+  return {
+    tab: r.querySelector('.chat-tabs [aria-pressed="true"]')?.dataset.v, input: r.querySelector('#chat-input')?.value ?? null,
+    to: r.querySelector('#chat-to')?.value ?? null, error: r.querySelector('#chat-error span')?.textContent.trim() || null,
+    menu: !!r.querySelector('.chat-menu'),
+  };
+}, sel);
+
+test('D2-01 signing out and in as another account in the same page keeps nothing from the first', async () => {
+  const backend = twoAccounts();
+  const ctx = await env.page({ backend, viewport: { width: 1440, height: 900 }, mobile: false });
+  const { page } = ctx;
+  await signIn(page, env.url, 'player');
+  await page.waitForSelector('#chatpanel #chat-input', { timeout: 15000 });
+  await settle(page);
+  await page.evaluate(() => { window.sameDocument = true; });
+  // The first account: a whisper to Musa, typed and failed (so an error shows), and a menu open.
+  await page.click('#chatpanel .chat-line[data-v="2"]');
+  await page.click('#chatpanel .chat-menu [data-c="whisper"]');
+  await page.keyboard.type('meet at the mill');
+  backend.failNext('chat', 400, 'You are sending messages too fast.');
+  await page.keyboard.press('Enter');
+  await page.waitForSelector('#chatpanel #chat-error');
+  assert.deepEqual(await panelChat(page), { tab: 'whisper', input: 'meet at the mill', to: 'Musa', error: 'You are sending messages too fast.', menu: false }, 'a whisper draft to Musa, with an error');
+  // Back on Global (the draft and error come along), with a message's menu open.
+  await page.click('#chatpanel .chat-tabs [data-v="global"]');
+  await page.click('#chatpanel .chat-line[data-v="2"]');
+  assert.deepEqual(await panelChat(page), { tab: 'global', input: 'meet at the mill', to: null, error: 'You are sending messages too fast.', menu: true }, 'the first account has a draft, an error and a menu open');
+  // The second account, same page.
+  await switchAccount(page, 'mod');
+  await page.waitForSelector('#chatpanel #chat-input');
+  assert.equal(await page.evaluate(() => window.sameDocument), true, 'no reload');
+  assert.deepEqual(await panelChat(page), { tab: 'global', input: '', to: null, error: null, menu: false }, 'the panel starts clean');
+  await page.click('#chatpanel .chat-tabs [data-v="whisper"]');
+  assert.deepEqual(await panelChat(page), { tab: 'whisper', input: '', to: '', error: null, menu: false }, 'no whisper recipient carried over');
+  // And in the drawer (focus is on the panel's Whispers tab, so the drawer opens with it).
+  await page.setViewportSize({ width: 1240, height: 900 });
+  await page.waitForSelector('#chat[open] #chat-input');
+  const d = await panelChat(page, '#chat');
+  assert.deepEqual([d.input, d.to, d.error], ['', '', null], 'the drawer starts clean too');
+  await done(ctx);
+});
+
+test('D2-01 a send still pending at sign-out cannot touch the next account', async () => {
+  const backend = twoAccounts();
+  const ctx = await env.page({ backend, viewport: { width: 1440, height: 900 }, mobile: false });
+  const { page } = ctx;
+  await signIn(page, env.url, 'player');
+  await page.waitForSelector('#chatpanel #chat-input', { timeout: 15000 });
+  await settle(page);
+  await page.click('#chatpanel #chat-input');
+  await page.keyboard.type('from the first account');
+  const release = backend.hold('chat');
+  backend.failNext('chat', 500, 'The server is busy. Try again.');
+  await page.keyboard.press('Enter');
+  await switchAccount(page, 'mod');
+  await page.waitForSelector('#chatpanel #chat-input');
+  await page.click('#chatpanel #chat-input');
+  await page.keyboard.type('hello');
+  release(); // the first account's send now fails
+  await page.waitForTimeout(500);
+  assert.deepEqual(await panelChat(page), { tab: 'global', input: 'hello', to: null, error: null, menu: false }, 'nothing from the first account comes back');
+  assert.deepEqual(await page.evaluate(() => [document.activeElement.id, document.activeElement.selectionStart]), ['chat-input', 5], 'focus and caret stay with the second account');
+  await done(ctx);
+});
+
+test('D2-02 a failed send is restored in the drawer after the panel gave way to it', async () => {
+  const ctx = await open(1440, 900);
+  const { page, backend } = ctx;
+  await page.click('#chatpanel #chat-input');
+  await page.keyboard.type('Hello world');
+  const release = backend.hold('chat');
+  backend.failNext('chat', 400, 'You are sending messages too fast.');
+  await page.keyboard.press('Enter');
+  assert.equal(await page.inputValue('#chatpanel #chat-input'), '', 'sent: the box empties');
+  await page.setViewportSize({ width: 1240, height: 900 });
+  await page.waitForSelector('#chat[open] #chat-input');
+  release();
+  await page.waitForSelector('#chat #chat-error');
+  const r = await page.evaluate(() => ({ value: document.querySelector('#chat #chat-input').value, focus: document.activeElement.id, inDrawer: !!document.activeElement.closest('#chat'), caret: [document.activeElement.selectionStart, document.activeElement.selectionEnd], error: document.querySelector('#chat #chat-error span').textContent }));
+  assert.deepEqual(r, { value: 'Hello world', focus: 'chat-input', inDrawer: true, caret: [11, 11], error: 'You are sending messages too fast.' });
+  await noAxe(page, 'failed send restored in the drawer');
+  await page.keyboard.press('Enter'); // retry
+  await page.waitForFunction(() => document.querySelector('#chat #chat-list').textContent.includes('Hello world'));
+  assert.equal(await page.inputValue('#chat #chat-input'), '');
+  assert.equal(await page.isVisible('#chat #chat-error'), false, 'the error clears once it goes through');
+  await done(ctx);
+});
+
+test('D2-02 a failed send is restored in the panel after the drawer gave way to it', async () => {
+  const ctx = await open(1240, 900, { panel: false });
+  const { page, backend } = ctx;
+  await page.click('.chatbar');
+  await page.waitForSelector('#chat[open] #chat-input');
+  await page.keyboard.type('From the drawer');
+  const release = backend.hold('chat');
+  backend.failNext('chat', 400, 'You are sending messages too fast.');
+  await page.keyboard.press('Enter');
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.waitForSelector('#chatpanel #chat-input');
+  release();
+  await page.waitForSelector('#chatpanel #chat-error');
+  const r = await page.evaluate(() => ({ value: document.querySelector('#chatpanel #chat-input').value, focus: document.activeElement.id, inPanel: !!document.activeElement.closest('#chatpanel'), caret: [document.activeElement.selectionStart, document.activeElement.selectionEnd], drawerOpen: document.getElementById('chat').open }));
+  assert.deepEqual(r, { value: 'From the drawer', focus: 'chat-input', inPanel: true, caret: [15, 15], drawerOpen: false });
+  await noAxe(page, 'failed send restored in the panel');
+  await page.keyboard.press('Enter'); // retry
+  await inPanel(page, 'From the drawer');
+  assert.equal(await page.inputValue('#chatpanel #chat-input'), '');
+  await done(ctx);
+});
+
+test('D2-02 a failed send comes back without taking focus from the game', async () => {
+  const ctx = await open(1440, 900);
+  const { page, backend } = ctx;
+  await page.click('#chatpanel #chat-input');
+  await page.keyboard.type('Keep this');
+  const release = backend.hold('chat');
+  backend.failNext('chat', 400, 'You are sending messages too fast.');
+  await page.keyboard.press('Enter');
+  await page.focus('#main [data-a="fight"]'); // back to the game while it is sending
+  release();
+  await page.waitForSelector('#chatpanel #chat-error');
+  assert.equal(await page.inputValue('#chatpanel #chat-input'), 'Keep this', 'the text is back in the box');
+  assert.equal((await focusInfo(page)).a, 'fight', 'focus stays on the monster row');
+  await page.click('#chatpanel #chat-input');
+  await page.keyboard.press('Enter'); // retry
+  await inPanel(page, 'Keep this');
+  await done(ctx);
+});

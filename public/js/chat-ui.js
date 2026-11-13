@@ -26,6 +26,11 @@ export function setupChat({ sb, api, getChar, toast, esc, zoneName }) {
   const docked = () => st.mode === 'panel';
   const showing = () => st.visible && (docked() || st.open);
   const host = () => (docked() ? panel : drawer); // the element holding the chat controls
+  // Each sign-in is a new chat session; stop() starts the next one. Anything awaited (loads,
+  // sends, menu actions) checks on return that its session is still current, so a request
+  // from an earlier account can never touch the next account's chat.
+  let session = 0;
+  const current = (s) => s === session;
 
   const time = (t) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const ignored = (m) => m.sender_id && st.ignores.has(m.sender_id);
@@ -42,26 +47,29 @@ export function setupChat({ sb, api, getChar, toast, esc, zoneName }) {
   }
 
   // ------------------------------------------------------------ loading
-  async function loadChannel(channel) {
+  async function loadChannel(channel, s = session) {
     let q = sb.from('chat_messages').select('id, channel, zone, sender_id, sender_name, sender_role, recipient_id, recipient_name, text, deleted_at, created_at')
       .eq('channel', channel).order('created_at', { ascending: false }).limit(60);
     if (channel === 'zone') q = q.eq('zone', st.zone);
     const { data } = await q;
+    if (!current(s)) return;
     st.msgs[channel] = (data || []).reverse();
   }
 
-  async function loadNews() {
+  async function loadNews(s = session) {
     const { data } = await sb.from('events').select('id, kind, text, created_at').order('created_at', { ascending: false }).limit(15);
+    if (!current(s)) return;
     for (const e of (data || []).reverse()) add('global', { ...e, system: true }, false);
   }
 
-  async function loadMeta() {
+  async function loadMeta(s = session) {
     const char = getChar();
     const [{ data: me }, { data: ign }, { data: staff }] = await Promise.all([
       sb.rpc('my_character'),
       sb.from('chat_ignores').select('ignored_id, ignored_name'),
       sb.from('staff').select('role').maybeSingle(),
     ]);
+    if (!current(s)) return;
     st.myId = me?.[0]?.id || null;
     st.zone = char?.loc.zone || me?.[0]?.zone || null;
     st.ignores = new Map((ign || []).map((r) => [r.ignored_id, r.ignored_name]));
@@ -90,27 +98,43 @@ export function setupChat({ sb, api, getChar, toast, esc, zoneName }) {
   async function start() {
     if (st.started) return;
     st.started = true;
+    const s = session;
     try {
-      await loadMeta();
-      await Promise.all([loadChannel('global'), loadChannel('zone'), loadChannel('whisper')]);
-      await loadNews();
+      await loadMeta(s);
+      await Promise.all([loadChannel('global', s), loadChannel('zone', s), loadChannel('whisper', s)]);
+      await loadNews(s);
     } catch { /* chat is optional; keep the game running */ }
+    if (!current(s)) return; // signed out meanwhile
     subscribe();
     paint();
   }
 
+  // Sign-out ends the session: nothing typed, addressed or shown for this account is kept for
+  // the next one (D2-01). Layout state (drawer or panel, visibility) is not the account's.
   async function stop() {
-    if (st.channel) await sb.removeChannel(st.channel);
-    Object.assign(st, { started: false, open: false, channel: null, msgs: { global: [], zone: [], whisper: [] }, unread: { global: 0, zone: 0, whisper: 0 } });
+    session += 1;
+    const live = st.channel;
+    Object.assign(st, {
+      started: false, open: false, channel: null, tab: 'global',
+      msgs: { global: [], zone: [], whisper: [] }, unread: { global: 0, zone: 0, whisper: 0 },
+      myId: null, zone: null, role: null, ignores: new Map(), whisperTo: '', menuFor: null, error: null,
+      draft: '', draftTo: null,
+    });
+    if (drawer.open) drawer.close();
+    body.innerHTML = '';
+    panel.innerHTML = '';
+    opener = null;
     paint();
+    if (live) await sb.removeChannel(live);
   }
 
   async function setZone(zone) {
     if (!st.started || zone === st.zone) return;
+    const s = session;
     st.zone = zone;
     st.unread.zone = 0;
-    try { await loadChannel('zone'); } catch { /* ignore */ }
-    paint();
+    try { await loadChannel('zone', s); } catch { /* ignore */ }
+    if (current(s)) paint();
   }
 
   // ------------------------------------------------------------ focus-safe updates
@@ -363,6 +387,7 @@ export function setupChat({ sb, api, getChar, toast, esc, zoneName }) {
   }
 
   async function send() {
+    const s = session;
     const input = host().querySelector('#chat-input');
     const text = input?.value || '';
     const clean = cleanChatText(text);
@@ -377,12 +402,23 @@ export function setupChat({ sb, api, getChar, toast, esc, zoneName }) {
     st.draft = '';
     try {
       await api('chat', args);
-      setError(null); // the condition is resolved once a message goes through
+      if (current(s)) setError(null); // the condition is resolved once a message goes through
     } catch (err) {
-      input.value = text;
+      if (!current(s)) return; // signed out meanwhile: nothing of this send comes back
+      // The drawer or panel may have been redrawn (or swapped) while the request was out:
+      // put the text back in the message box showing now, or keep it for when chat opens.
       st.draft = text;
       setError(err.message);
-      input.focus();
+      const now = host().querySelector('#chat-input');
+      if (now && showing()) {
+        now.value = text;
+        // Focus goes back only if you are still in chat (or nowhere): never away from the game.
+        const active = document.activeElement;
+        if (!active || active === document.body || host().contains(active)) {
+          now.focus({ preventScroll: true });
+          now.setSelectionRange(text.length, text.length);
+        }
+      }
     }
   }
 
@@ -419,11 +455,18 @@ export function setupChat({ sb, api, getChar, toast, esc, zoneName }) {
           points: ["You won't see their messages or whispers.", 'You can stop ignoring them from the list at the top of the chat.'],
           confirm: 'Ignore', cancel: 'Cancel', tone: 'normal', fallback: () => backTo(),
         })) return;
-        try { await api('ignore', { name: v }); await loadMeta(); toast(`Ignoring ${v}.`); } catch (err) { setError(err.message); }
+        {
+          const s = session;
+          try { await api('ignore', { name: v }); await loadMeta(s); if (current(s)) toast(`Ignoring ${v}.`); } catch (err) { if (current(s)) setError(err.message); }
+          if (!current(s)) return;
+        }
         st.menuFor = null; paint(); return;
-      case 'unignore':
-        try { await api('unignore', { name: v }); await loadMeta(); toast(`No longer ignoring ${v}.`); } catch (err) { setError(err.message); }
-        paint(); return;
+      case 'unignore': {
+        const s = session;
+        try { await api('unignore', { name: v }); await loadMeta(s); if (current(s)) toast(`No longer ignoring ${v}.`); } catch (err) { if (current(s)) setError(err.message); }
+        if (current(s)) paint();
+        return;
+      }
       case 'report': {
         const res = await ask({
           title: 'Report this message?',
@@ -434,7 +477,9 @@ export function setupChat({ sb, api, getChar, toast, esc, zoneName }) {
         });
         if (!res) return;
         const reason = res.value || '';
-        try { await api('report', { messageId: v, reason }); toast('Thanks. A moderator will take a look.'); } catch (err) { setError(err.message); }
+        const s = session;
+        try { await api('report', { messageId: v, reason }); if (current(s)) toast('Thanks. A moderator will take a look.'); } catch (err) { if (current(s)) setError(err.message); }
+        if (!current(s)) return;
         st.menuFor = null; paint(); host().querySelector(`.chat-line[data-v="${v}"]`)?.focus(); return;
       }
       case 'delete':
@@ -444,7 +489,11 @@ export function setupChat({ sb, api, getChar, toast, esc, zoneName }) {
           points: ['It is replaced by "message removed" for all players. The original stays in the moderation log.'],
           confirm: 'Remove message', cancel: 'Keep it', fallback: () => backTo(v),
         })) return;
-        try { await api('modDelete', { messageId: v }); toast('Removed.'); } catch (err) { setError(err.message); }
+        {
+          const s = session;
+          try { await api('modDelete', { messageId: v }); if (current(s)) toast('Removed.'); } catch (err) { if (current(s)) setError(err.message); }
+          if (!current(s)) return;
+        }
         st.menuFor = null; paint(); host().querySelector(`.chat-line[data-v="${v}"]`)?.focus(); return;
       default:
     }

@@ -94,3 +94,53 @@ Evidence: `docs/ui-audit/desktop/after-d2-*.png`, `axe-after-d2.json` and `metri
 - **Real devices and other browsers:** Firefox, Safari, and real Realtime traffic. Messages come from the fake backend's broadcast.
 - **Heavy chat traffic:** many messages a second while typing. Each message is a single tested broadcast.
 - **The owner's own viewport.** Still unmeasured; 1920×1080 stands in.
+
+## Review corrections (PR #19 review)
+
+The review accepted D-2's layout and interaction design at `73be88b` and asked for two corrections to the chat state's lifecycle. Both are in `chat-ui.js` only. No server endpoint, schema, permission, dependency or new chat structure was added.
+
+**D2-01: chat state survived sign-out.**
+- *Cause:* `stop()` emptied the messages and unread counts but kept the D-2 draft fields (`draft`, `draftTo`) and older account-specific state: the whisper recipient, the open menu, the error, the channel tab, the ignore list, the role and the zone. The drawer's and panel's markup also stayed until the next paint. So after signing out and signing in as someone else in the same page, the next account could see the previous one's unsent message, whisper recipient or error.
+  - Separately, a request that was still waiting at sign-out could still write when it finished. That covers a failed send, a channel load, or a menu action (ignore, report, remove).
+- *Fix:*
+  - `stop()` starts a new chat session. It resets the draft, recipient, menu, error, tab, ignore list, role, zone and the identity of whoever is signed in. It closes the drawer and empties both the drawer and the panel.
+  - The drawer-or-panel choice and visibility belong to the layout, not the account, and are kept. Drafts still carry over between panel and drawer within a session.
+  - Every awaited step checks, when it returns, that its session is still the current one: `start()` (it doesn't subscribe if you signed out meanwhile), the channel, news and meta loads, `setZone()`, `send()`, and the ignore, unignore, report and remove actions. A result from an earlier account is dropped.
+- *Tests:*
+  - "D2-01 signing out and in as another account in the same page keeps nothing from the first":
+    - The first account is set up with a whisper draft to Musa, a failed send (so an error shows), then the Global tab with a message menu open.
+    - It signs out from the Hero screen and signs in as the moderator through the form. The test checks that the page didn't reload.
+    - The panel then shows Global, an empty message box, no error and no menu. The Whispers tab has an empty recipient. After narrowing to 1240, the drawer is empty too.
+  - "D2-01 a send still pending at sign-out cannot touch the next account": the first account's send is held and set to fail, and the account changes. The second account types "hello", then the old send fails. Nothing comes back: no error, the text "hello" is untouched, and focus and caret stay in the second account's message box.
+
+**D2-02: a failed send could be lost during a resize.**
+- *Cause:* `send()` kept the message-box element it read before waiting for the server. If the window crossed 1280px meanwhile, `setMode()` replaced the drawer or panel. On failure, the text and focus went to the old, detached element, so the visible box stayed empty.
+- *Fix:*
+  - When the request fails, `send()` restores the text in the message box that is showing **now**, puts the error in the current drawer or panel, and keeps the text as the draft.
+  - It puts focus and the caret (at the end) back in the box only if focus is still in chat, or nowhere. If you have gone back to the game, focus stays where you put it.
+  - If chat isn't showing (the drawer is closed), the text and error wait as the draft and appear when you open it.
+  - A send from an earlier session does nothing (D2-01).
+  - A successful send is unchanged: the box empties and the error clears.
+- *Tests:*
+  - "D2-02 a failed send is restored in the drawer after the panel gave way to it": typed in the panel at 1440, sent and held, narrowed to 1240 (the drawer opens), then the send fails. The drawer's box shows "Hello world" with focus and the caret at the end, and the error is in the drawer. Axe passes, and the retry succeeds and clears the error.
+  - "D2-02 … in the panel after the drawer gave way to it": the same from the drawer at 1240 to the panel at 1440. The drawer closes, and the text, error, focus and caret are in the panel. Axe passes, and the retry succeeds.
+  - "D2-02 a failed send comes back without taking focus from the game": while the send is held, focus moves to a monster row. On failure the text is back in the panel and focus stays on the monster row. The retry succeeds.
+
+### Results (corrections)
+
+All on this laptop, Chromium, fake backend.
+
+- **Suites:** `npm test` 24/24 and `npm run test:ui` **108/108 in each of 3 consecutive full runs**. That is the 103-test baseline plus 5 new tests.
+- **New tests against the reviewed commit** (`UI_PUBLIC_DIR` set to the `73be88b` checkout): **all 5 fail, each on the defect it targets:**
+  - account switch: the second account's panel shows the first account's draft "meet at the mill", its error, and an open menu;
+  - pending send: the first account's failed send puts its error into the second account's chat;
+  - panel to drawer: the visible box stays empty (the text went to the detached element), with the caret at 0;
+  - drawer to panel: the same;
+  - focus: the failed send pulls focus away from the monster row into the message box.
+- **Desktop accessibility sweep** (`tools/ui-shots.mjs` at 1024×768, 1240×800, 1280×720, 1280×800, 1366×768, 1440×900, 1536×864, 1920×1080 and 2560×1440): **0 violations of any impact on 117 captures.** That includes the chat panel at the 7 sizes from 1280 and the drawer at 1024 and 1240. Raw data: `docs/ui-audit/desktop/axe-after-d2-corrections.json`.
+- **The affected chat states:** a failed send restored with its error, in the drawer and in the panel, is axe-checked inside the new tests, with 0 violations. No screenshots were retaken, because the corrections don't change how anything looks.
+
+### Not verified (corrections)
+
+- A real Supabase sign-out and sign-in, and a real failed send. Both were exercised against the fake backend only.
+- Screen readers announcing the restored error.
