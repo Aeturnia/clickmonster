@@ -12,7 +12,7 @@ import { ask } from './confirm.js';
 const TABS = [['global', 'Global'], ['zone', 'Zone'], ['whisper', 'Whispers']];
 const KEEP = 120;
 
-export function setupChat({ sb, api, getChar, toast, esc, zoneName }) {
+export function setupChat({ sb, api, getChar, toast, esc, zoneName, onLeave = () => {} }) {
   const st = {
     started: false, visible: false, open: false, tab: 'global',
     msgs: { global: [], zone: [], whisper: [] }, unread: { global: 0, zone: 0, whisper: 0 },
@@ -540,7 +540,26 @@ export function setupChat({ sb, api, getChar, toast, esc, zoneName }) {
     host().querySelector(`.chat-line[data-v="${id}"]`)?.focus();
     return true;
   }
-  panel.addEventListener('keydown', (e) => { if (e.key === 'Escape' && closeMenu()) e.preventDefault(); });
+  // In the panel, Escape closes an open message menu first; otherwise it leaves chat and hands
+  // focus back to the game (main.js decides where, through onLeave) (D-3).
+  panel.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || e.defaultPrevented) return;
+    e.preventDefault();
+    if (!closeMenu()) onLeave();
+  });
+
+  // The "/" shortcut (D-3): the message box, in the panel or by opening the drawer the usual way
+  // (so Close and Escape return focus to where you were).
+  function focusInput() {
+    if (!st.visible) return false;
+    if (docked()) {
+      (panel.querySelector('#chat-input:not([disabled])') || panel.querySelector('.chat-tabs button.on'))?.focus();
+      return true;
+    }
+    if (!st.open) { opener = document.activeElement; st.open = true; st.menuFor = null; paint(); return true; }
+    (drawer.querySelector('#chat-input:not([disabled])') || drawer.querySelector('.chat-tabs button.on'))?.focus();
+    return true;
+  }
   // Arrow keys move between messages.
   const arrows = (e) => {
     const line = e.target.closest?.('.chat-line[data-c="menu"]');
@@ -564,5 +583,5 @@ export function setupChat({ sb, api, getChar, toast, esc, zoneName }) {
     touchY = null;
   });
 
-  return { start, stop, setZone, setVisible, setMode, openWhisper, isOpen: showing };
+  return { start, stop, setZone, setVisible, setMode, openWhisper, focusInput, isOpen: showing };
 }

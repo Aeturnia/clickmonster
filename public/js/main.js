@@ -28,7 +28,7 @@ import { watchLayout } from './layout.js';
 // ---------------------------------------------------------------- state
 const PREFS_KEY = 'clickmonster.prefs';
 const prefs = (() => {
-  const defaults = { leftHanded: false, vibrate: true };
+  const defaults = { leftHanded: false, vibrate: true, keys: true }; // keys: desktop keyboard shortcuts (D-3)
   try { return { ...defaults, ...JSON.parse(localStorage.getItem(PREFS_KEY) || '{}') }; } catch { return defaults; }
 })();
 function savePrefs() {
@@ -67,6 +67,7 @@ const seenAnnouncement = () => { try { return Number(localStorage.getItem(SEEN_K
 const chat = setupChat({
   sb, api, getChar: () => char, toast: (m, k) => toast(m, k), esc: (s) => esc(s),
   zoneName: (id) => ZONES[id]?.name || 'this zone',
+  onLeave: () => leaveChat(),
 });
 
 // ---------------------------------------------------------------- helpers
@@ -704,7 +705,9 @@ function viewHero() {
     <h3>Settings</h3>
     <div class="rows settings">
       <button class="row" data-a="pref" data-v="leftHanded"><span class="nm">Left-handed controls<small>Moves the arrow pad to the left side</small></span><span class="go">${prefs.leftHanded ? 'On' : 'Off'}</span></button>
-      <button class="row" data-a="pref" data-v="vibrate"><span class="nm">Vibration<small>Buzz when you take a hit (Android)</small></span><span class="go">${prefs.vibrate ? 'On' : 'Off'}</span></button>
+      <button class="row" data-a="pref" data-v="vibrate"><span class="nm">Vibration<small>Buzz when you take a hit (Android)</small></span><span class="go">${prefs.vibrate ? 'On' : 'Off'}</span></button>${layout === 'desktop' ? `
+      <button class="row" data-a="pref" data-v="keys"><span class="nm">Keyboard shortcuts<small>Number and letter keys for screens and battle actions</small></span><span class="go">${prefs.keys ? 'On' : 'Off'}</span></button>
+      <button class="row" data-a="keys"><span class="nm">Show keyboard shortcuts<small>Or press ? while playing</small></span><span class="go">Show</span></button>` : ''}
     </div>
     <h3>Account</h3>
     <p class="small muted">Signed in as ${esc(session?.user?.email || '')}. Your hero is saved online.</p>
@@ -991,6 +994,7 @@ function viewSheet() {
   if (ui.sheet?.type === 'shop') return sheetShop();
   if (ui.sheet?.type === 'bank') return sheetBank();
   if (ui.sheet?.type === 'quests') return sheetQuests();
+  if (ui.sheet?.type === 'keys') return sheetKeys();
   if (char.pendingLevels > ui.levelSheetSnoozed && !fighting() && ui.tab !== 'hero') return sheetLevel();
   return '';
 }
@@ -1122,6 +1126,7 @@ function render() {
   renderAlerts(); // also re-homes the toast if a dialog just closed
   positionToast();
   markPending();
+  markShortcuts();
 
   const viewKey = `${ui.phase}:${!!char}:${ui.tab}:${!!char?.battle}`;
   const viewChanged = viewKey !== lastView;
@@ -1265,6 +1270,7 @@ function handleLocal(a, v) {
     case 'usable': ui.usableOnly = !ui.usableOnly; return true;
     case 'item': ui.sheet = { type: 'item', uid: Number(v) }; return true;
     case 'close': ui.sheet = null; return true;
+    case 'keys': ui.sheet = { type: 'keys' }; return true;
     case 'later': ui.levelSheetSnoozed = char.pendingLevels; return true;
     case 'pref': prefs[v] = !prefs[v]; savePrefs(); if (v === 'vibrate' && prefs.vibrate) buzz(30); return true;
     case 'noop': return true;
@@ -1502,13 +1508,103 @@ function mapKeys(e) {
   document.querySelector(`.map [data-a="walk"][data-v="${x},${y}"]`)?.focus();
   return true;
 }
+// ---------------------------------------------------------------- keyboard shortcuts (D-3)
+// Desktop only, on by default, with an off setting (Hero, Settings). One table drives both the
+// handler and the help sheet, so the list can't drift from what works. A shortcut presses the
+// existing button (keeping its pending state, the double-tap guard and disabled states); when
+// that button isn't there, the key does nothing. Character keys only; the arrow keys (moving on
+// Explore) and Escape are not shortcuts in this sense and work as before, setting or not.
+const SHORTCUTS = [
+  { key: '1', show: '1', label: 'Explore (Battle during a fight)', target: '#nav [data-a="tab"][data-v="explore"]' },
+  { key: '2', show: '2', label: 'Hero', target: '#nav [data-a="tab"][data-v="hero"]' },
+  { key: '3', show: '3', label: 'Gear', target: '#nav [data-a="tab"][data-v="gear"]' },
+  { key: '4', show: '4', label: 'Map', target: '#nav [data-a="tab"][data-v="map"]' },
+  { key: 'm', show: 'M', label: 'Melee', when: 'In a fight', target: '#dock [data-a="melee"]' },
+  { key: 'c', show: 'C', label: 'Cast', when: 'In a fight', target: '#dock [data-a="cast"]' },
+  { key: 'f', show: 'F', label: 'Flee (fall back from a world boss)', when: 'In a fight', target: '#dock [data-a="flee"]' },
+  { key: 'Enter', show: 'Enter', label: 'Fight again (attack a world boss again)', when: 'After a fight, when no other button is selected', target: '#dock [data-a="again"]', notOnControls: true },
+  { key: '/', show: '/', label: 'Go to the chat message box', run: () => goToChat() },
+  { key: '?', show: '?', label: 'Show this list', run: () => { ui.sheet = { type: 'keys' }; render(); } },
+  { show: 'Escape', label: 'Leave the chat message box, or close a window like this one', always: true },
+  { show: 'Arrow keys', label: 'Move, on Explore', always: true },
+];
+
+const shortcutsOn = () => layout === 'desktop' && prefs.keys && ui.phase === 'game' && !!char && !ui.sanctions?.banned;
+const TYPING = 'input, textarea, select, [contenteditable]:not([contenteditable="false"])';
+const CONTROLS = 'button, a[href], input, select, textarea, summary, [role="button"], [role="link"]';
+
+function shortcut(e) {
+  if (!shortcutsOn() || document.querySelector('dialog[open]')) return false;
+  if (e.ctrlKey || e.altKey || e.metaKey || e.getModifierState?.('AltGraph')) return false;
+  if (e.isComposing || e.keyCode === 229 || e.repeat) return false;
+  if (e.target.closest?.(TYPING)) return false;
+  // Letters ignore Caps Lock but not Shift; other keys match what they type, so ? and / work
+  // on keyboards where they need Shift.
+  let key = e.key;
+  if (/^[a-z]$/i.test(key)) {
+    if (e.shiftKey) return false;
+    key = key.toLowerCase();
+  }
+  const s = SHORTCUTS.find((x) => x.key === key);
+  if (!s) return false;
+  if (s.notOnControls && e.target.closest?.(CONTROLS)) return false; // Enter on a button presses that button
+  if (s.run) { e.preventDefault(); s.run(); return true; }
+  const el = $(s.target);
+  if (!el || el.disabled || !el.getClientRects().length) return false;
+  e.preventDefault();
+  el.click();
+  return true;
+}
+
+// "/" goes to chat; Escape there comes back to where you were (else the screen's heading).
+let chatReturn = null;
+function goToChat() {
+  const active = document.activeElement;
+  if (active && active !== document.body && !active.closest('#chatpanel, #chat')) chatReturn = active;
+  chat.focusInput();
+}
+function leaveChat() {
+  const back = chatReturn && chatReturn.isConnected && isUsable(chatReturn) ? chatReturn : $('#screen-title');
+  chatReturn = null;
+  back?.focus({ preventScroll: true });
+}
+
+// Shortcut keys are announced on their buttons (aria-keyshortcuts) while shortcuts are on.
+function markShortcuts() {
+  const on = shortcutsOn();
+  for (const s of SHORTCUTS) {
+    if (!s.target) continue;
+    for (const el of document.querySelectorAll(s.target)) {
+      if (on) el.setAttribute('aria-keyshortcuts', s.show);
+      else el.removeAttribute('aria-keyshortcuts');
+    }
+  }
+}
+
+function sheetKeys() {
+  return `<div class="panel">
+    <div class="panel-head"><h2 id="sheet-title" tabindex="-1">Keyboard shortcuts</h2>${btn('close', null, 'Close', 'sm ghost')}</div>
+    <p class="muted small">${prefs.keys ? 'Shortcuts are on. You can turn them off in Hero, Settings.' : 'Shortcuts are off. You can turn them on in Hero, Settings.'}
+      They don't work while you type, or while a window like this one is open.</p>
+    <table class="keys">
+      <caption class="sr-only">Keyboard shortcuts</caption>
+      <thead><tr><th scope="col">Key</th><th scope="col">What it does</th></tr></thead>
+      <tbody>${SHORTCUTS.map((s) => `<tr><td><kbd>${esc(s.show)}</kbd></td><td>${esc(s.label)}${s.when ? `<small>${esc(s.when)}</small>` : ''}${s.always ? '<small>Always on</small>' : ''}</td></tr>`).join('')}</tbody>
+    </table>
+  </div>`;
+}
+
 document.addEventListener('keydown', (e) => {
+  // Already handled where it happened (chat's own arrow keys, Escape in chat). Before D-3 the
+  // arrow keys in the chat panel also moved the hero.
+  if (e.defaultPrevented) return;
   if (mapKeys(e)) return;
   if (e.target.tagName === 'INPUT') {
     if (e.key === 'Enter' && e.target.id === 'name') $('[data-a="create"]')?.click();
     return;
   }
-  if (KEY_DIRS[e.key] && char && !char.battle && ui.tab === 'explore' && !document.querySelector('dialog[open]')) {
+  if (shortcut(e)) return;
+  if (KEY_DIRS[e.key] && char && !char.battle && ui.tab === 'explore' && !document.querySelector('dialog[open]') && !e.target.closest?.('#chatpanel')) {
     e.preventDefault();
     $(`[data-a="move"][data-v="${KEY_DIRS[e.key]}"]`)?.click();
   }
