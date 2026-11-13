@@ -516,6 +516,92 @@ input[aria-invalid="true"] { border-color: var(--bad) !important; }
   #main.fill > * { max-width: none; }
 }
 
+/* ---------------------------------------------------------------- desktop layout (D-1) */
+/* 1200px+ with a mouse or trackpad (layout.js sets data-layout; docs/desktop-scope.md).
+   Hero bar across the top, navigation under it, the screen with its actions directly after its
+   content, and a side column for quests, events, location and chat. Keyed off the layout state,
+   not a media query, so phones, phones on their side and tablets keep the rules above. */
+#side { display: none; }
+#app[data-layout="desktop"] {
+  --side: clamp(340px, 24vw, 400px);
+  --play: 47.5rem; /* the screen's reading width; grows with the type step */
+  max-width: 1600px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--side);
+  /* The screen is as tall as its content (so its actions follow it) and scrolls once it fills
+     the window; the empty last row takes what is left. */
+  grid-template-rows: auto auto minmax(0, max-content) auto minmax(0, 1fr);
+  grid-template-areas: "top top" "nav side" "main side" "dock side" ". side";
+}
+#app[data-layout="desktop"] #top {
+  grid-area: top; display: flex; align-items: center; gap: var(--space-5);
+  padding: 10px 24px; border-bottom: 1px solid var(--line);
+}
+#app[data-layout="desktop"] #top .hud-row { flex: 1 1 auto; min-width: 0; }
+#app[data-layout="desktop"] #top .hud-bars { flex: 0 1 34rem; margin-top: 0; }
+#app[data-layout="desktop"] #nav {
+  grid-area: nav; background: none; border-top: 0; padding: 0 24px;
+}
+#app[data-layout="desktop"] #nav .tabs {
+  display: flex; gap: var(--space-1); max-width: var(--play); margin: 0 auto; border-bottom: 1px solid var(--line);
+}
+#app[data-layout="desktop"] #nav button {
+  min-height: 44px; padding: 0 var(--space-4); border-top: 0; border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+#app[data-layout="desktop"] #nav button.on { border-bottom-color: var(--gold); }
+#app[data-layout="desktop"] #main {
+  grid-area: main; border-right: 0; padding: 12px 24px 6px;
+}
+#app[data-layout="desktop"] #main > *,
+#app[data-layout="desktop"] #main.fill > * { max-width: var(--play); margin-left: auto; margin-right: auto; }
+#app[data-layout="desktop"] #main.fill > :not(.sr-only) { width: 100%; }
+#app[data-layout="desktop"] #dock {
+  grid-area: dock; padding: 4px 24px 8px; border-top: 0; background: none;
+}
+#app[data-layout="desktop"] #dock > * { max-width: var(--play); margin-left: auto; margin-right: auto; }
+#app[data-layout="desktop"] #side {
+  grid-area: side; display: flex; flex-direction: column; min-height: 0; overflow-y: auto;
+  border-left: 1px solid var(--line);
+}
+#app[data-layout="desktop"] #side #chatbar { margin-top: auto; }
+#app[data-layout="desktop"] #summary,
+#app[data-layout="desktop"] #minimap { padding: 12px 16px 14px; border-bottom: 1px solid var(--line); }
+.side-h { display: flex; align-items: baseline; gap: 8px; margin: 0 0 8px; font-family: inherit; font-size: var(--fs-xs); font-weight: 700; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); }
+.side-h .coords { font-size: var(--fs-sm); letter-spacing: 0; text-transform: none; }
+.side-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: var(--fs-sm); color: var(--muted); }
+.side-list b { color: var(--text); font-weight: 600; }
+.side-list .event b { color: var(--gold-soft); }
+.side-none { margin: 0; font-size: var(--fs-sm); color: var(--muted); }
+/* The minimap: a picture of the Map screen, in the same colours. */
+.minimap {
+  display: grid; grid-template-columns: repeat(var(--n), 1fr); gap: 1px; width: min(100%, 15rem); aspect-ratio: 1;
+  margin: 0 0 8px; background: var(--line); border: 1px solid var(--line); border-radius: var(--radius-sm); overflow: hidden;
+}
+.minimap i {
+  display: grid; place-items: center; min-width: 0; background: #2a231c; color: var(--muted);
+  font-style: normal; font-size: 0.5625rem; font-weight: 700; line-height: 1;
+}
+.minimap.pvp i:not(.town):not(.portal):not(.lair):not(.me) { background: #33201b; }
+.minimap .town { background: #4a3a20; color: var(--gold-soft); }
+.minimap .portal { background: #1f3346; color: #a9c8ee; }
+.minimap .locked { background: #33211f; color: #b77d74; }
+.minimap .lair { background: #3a2342; color: #d8b4f5; }
+.minimap .me { background: var(--gold); }
+.mini-near { margin: 0 0 4px; font-size: var(--fs-sm); color: var(--muted); }
+#side .textbtn { font-size: var(--fs-sm); }
+.mini-near b { color: var(--text); font-weight: 600; }
+/* Short screens: chat comes before the minimap, so only its text stays (56em = 896px tall at
+   the default text size; em so that larger text collapses it sooner). */
+@media (max-height: 56em) { #app[data-layout="desktop"] .minimap { display: none; } }
+#app[data-layout="desktop"] #summary:empty,
+#app[data-layout="desktop"] #minimap:empty { display: none; }
+/* Without a game (sign in, hero creation, banned): the screen uses the full width. */
+#app[data-layout="desktop"]:has(#top:empty) #main { grid-column: 1 / -1; grid-row: 1 / -1; }
+#app[data-layout="desktop"]:has(#top:empty) #side { display: none; }
+/* Larger type on large displays, relative to the browser's own text size. */
+@media (min-width: 112.5em) { :root:has(#app[data-layout="desktop"]) { font-size: 106.25%; } }
+@media (min-width: 150em) { :root:has(#app[data-layout="desktop"]) { font-size: 112.5%; } }
+
 /* ---------------------------------------------------------------- confirmations (Phase 3) */
 /* A centred card in the visible area (above an on-screen keyboard), on every screen size. */
 dialog.confirm {

@@ -23,6 +23,7 @@ import { setupChat } from './chat-ui.js';
 import { questTitle, canAccept } from './engine/quests.js';
 import { setWorld, activeEvents, MULT_LABEL, MULT_KEYS } from './engine/world-config.js';
 import { huntCombatant } from './engine/hunt.js';
+import { watchLayout } from './layout.js';
 
 // ---------------------------------------------------------------- state
 const PREFS_KEY = 'clickmonster.prefs';
@@ -36,6 +37,7 @@ function savePrefs() {
 
 let session = null;
 let char = null; // the server's copy of our hero
+let layout = 'mobile'; // set by watchLayout(): mobile, wide or desktop (layout.js)
 const ui = {
   phase: 'loading', // loading | auth | game
   authMode: 'signin',
@@ -294,6 +296,56 @@ function viewNav() {
     `<button data-a="tab" data-v="${id}" class="${ui.tab === id ? 'on' : ''}"${ui.tab === id ? ' aria-current="page"' : ''}>${label}${id === 'hero' && char.pendingLevels ? `<span class="count"><span class="sr-only">, </span>${char.pendingLevels}<span class="sr-only"> level${char.pendingLevels > 1 ? 's' : ''} to spend</span></span>` : ''}</button>`).join('')}</div>`;
 }
 
+// ---------------------------------------------------------------- desktop side column
+// What the hero bar doesn't show, kept in view on every screen: levels to spend, the active
+// quest, world events and world-boss hunts. One line when there is nothing to show.
+function eventLine(e) {
+  const bits = MULT_KEYS.filter((k) => e[k] && e[k] !== 1).map((k) => `${MULT_LABEL[k]} x${e[k]}`).join(', ');
+  return `<b>${esc(e.name)}</b>: ${bits}. ${timeLeft(new Date(e.until).getTime() - Date.now())} left.`;
+}
+function viewSummary() {
+  const items = [];
+  const n = char.pendingLevels;
+  if (n) items.push(`<li><button class="textbtn" id="sum-levels" data-a="tab" data-v="hero">${n} level${n > 1 ? 's' : ''} to spend</button></li>`);
+  const q = char.quest;
+  if (q) items.push(`<li><b>Quest:</b> ${esc(questTitle(q))}. ${timeLeft(q.expiresAt - Date.now())} left.</li>`);
+  for (const e of activeEvents()) items.push(`<li class="event">${eventLine(e)}</li>`);
+  for (const h of (ui.hunts || []).slice(0, 3)) {
+    const pct = Math.max(1, Math.round((h.hp / h.max_hp) * 100));
+    items.push(`<li><b>World boss:</b> ${esc(h.name)} in ${esc(ZONES[h.zone]?.name || h.zone)}, ${pct}% health. ${timeLeft(new Date(h.ends_at).getTime() - Date.now())} left.</li>`);
+  }
+  return `<h2 class="side-h">Quests and events</h2>
+    ${items.length ? `<ul class="side-list">${items.join('')}</ul>` : '<p class="side-none">No quest or events right now.</p>'}`;
+}
+
+// The current zone at a glance, with a text version: where you are and what is near. The
+// squares are a picture of the Map screen (hidden from screen readers; the text says it all).
+// On short screens only the text shows, to leave room for chat.
+function viewMinimap() {
+  const zone = currentZone(char);
+  const { x, y } = char.loc;
+  const near = nearbyPlaces(zone);
+  const letters = zone.size <= 16;
+  const cells = [];
+  for (let cy = 1; cy <= zone.size; cy++) {
+    for (let cx = 1; cx <= zone.size; cx++) {
+      let cls = '';
+      let mark = '';
+      for (const f of featuresAt(zone, cx, cy)) {
+        if (f.type === 'town') { cls = 'town'; mark = 'T'; }
+        if (f.type === 'portal') { const locked = char.level < f.minLevel; cls = locked ? 'locked' : 'portal'; mark = locked ? 'X' : 'P'; }
+        if (f.type === 'lair') { cls = 'lair'; mark = 'B'; }
+      }
+      if (cx === x && cy === y) { cls = 'me'; mark = ''; }
+      cells.push(`<i${cls ? ` class="${cls}"` : ''}>${letters ? mark : ''}</i>`);
+    }
+  }
+  return `<h2 class="side-h">${esc(zone.name)} <span class="coords">${x}, ${y}</span></h2>
+    <div class="minimap${zone.pvp ? ' pvp' : ''}" style="--n:${zone.size}" aria-hidden="true">${cells.join('')}</div>
+    <p class="mini-near">${near.length ? near.map(([nm, nx, ny]) => `<b>${esc(nm)}</b> ${directionTo(char, nx, ny)}`).join(', ') : 'Nothing else marked in this zone.'}</p>
+    <button class="textbtn" id="mini-open" data-a="tab" data-v="map">Open the map</button>`;
+}
+
 // ---------------------------------------------------------------- start screens
 function viewBanned() {
   const s = ui.sanctions;
@@ -346,6 +398,19 @@ function viewCreate() {
 }
 
 // ---------------------------------------------------------------- explore
+// The town, paths and boss lair of a zone, except where you stand: [name, x, y].
+function nearbyPlaces(zone) {
+  const { x, y } = char.loc;
+  const near = [];
+  if (zone.town && !(zone.town.x === x && zone.town.y === y)) near.push([zone.town.name, zone.town.x, zone.town.y]);
+  for (const f of zone.features) {
+    if (f.x === x && f.y === y) continue;
+    if (f.type === 'portal' && zone.id !== 'overworld') near.push([f.label, f.x, f.y]);
+    if (f.type === 'lair' && zone.boss) near.push(['Boss lair', f.x, f.y]);
+  }
+  return near;
+}
+
 function viewExplore() {
   const zone = currentZone(char);
   const { x, y } = char.loc;
@@ -360,13 +425,7 @@ function viewExplore() {
   }
   if (!lines.length) lines.push(zone.pvp ? '<span class="warn">Lawless ground. Other players may attack you here.</span>' : 'Open ground.');
 
-  const near = [];
-  if (zone.town && !(zone.town.x === x && zone.town.y === y)) near.push([zone.town.name, zone.town.x, zone.town.y]);
-  for (const f of zone.features) {
-    if (f.x === x && f.y === y) continue;
-    if (f.type === 'portal' && zone.id !== 'overworld') near.push([f.label, f.x, f.y]);
-    if (f.type === 'lair' && zone.boss) near.push(['Boss lair', f.x, f.y]);
-  }
+  const near = nearbyPlaces(zone);
 
   const notices = (char.notices || []).length ? `<div class="notice">
       ${char.notices.map((n) => `<p class="small">${esc(n.text)}</p>`).join('')}
@@ -382,14 +441,12 @@ function viewExplore() {
   const ann = ui.announcement && ui.announcement.id > seenAnnouncement() ? `<div class="notice announce">
       <p class="small" style="margin:0 0 4px"><b>Announcement</b></p><p class="small" style="margin:0">${esc(ui.announcement.text)}</p>
       <button class="textbtn" data-a="seenann">Dismiss</button></div>` : '';
-  const events = activeEvents().map((e) => {
-    const bits = MULT_KEYS.filter((k) => e[k] && e[k] !== 1).map((k) => `${MULT_LABEL[k]} x${e[k]}`).join(', ');
-    return `<div class="notice event"><p class="small" style="margin:0"><b>${esc(e.name)}</b>: ${bits}. ${timeLeft(new Date(e.until).getTime() - Date.now())} left.</p></div>`;
-  }).join('');
+  const events = activeEvents().map((e) => `<div class="notice event"><p class="small" style="margin:0">${eventLine(e)}</p></div>`).join('');
+  const inSide = layout === 'desktop'; // the side column shows the quest and events instead
   return `
-    ${jail}${mute}${ann}${events}
+    ${jail}${mute}${ann}${inSide ? '' : events}
     ${notices}
-    ${questLine}
+    ${inSide ? '' : questLine}
     <div class="place">
       <div class="place-row"><h2>${esc(zone.name)}</h2><span class="coords">${x}, ${y}</span></div>
       <div class="tags"><span class="tag">Level ${zone.levelRange[0]} to ${zone.levelRange[1]}</span>${zone.pvp ? '<span class="tag pvp">PvP</span>' : ''}</div>
@@ -1056,6 +1113,9 @@ function render() {
   paint('top', inGame ? viewTop() : '');
   paint('dock', inGame ? dock : '');
   paint('nav', inGame ? viewNav() : '');
+  const side = inGame && layout === 'desktop';
+  paint('summary', side ? viewSummary() : '');
+  paint('minimap', side ? viewMinimap() : '');
   chat.setVisible(inGame);
   if (focusLost && !sheetDlg.open) focusFallback();
   syncSheet(viewSheet());
@@ -1569,6 +1629,9 @@ sb.auth.onAuthStateChange((event, newSession) => {
 });
 
 zonesReady().then(render);
+// The layout (mobile, wide or desktop) sets the region order; the desktop side column is drawn
+// only in the desktop layout.
+watchLayout((next) => { layout = next; render(); });
 render();
 
 // Expose for debugging from the browser console.
