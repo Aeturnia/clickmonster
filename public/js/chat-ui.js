@@ -76,19 +76,26 @@ export function setupChat({ sb, api, getChar, toast, esc, zoneName }) {
     st.role = staff?.role || null;
   }
 
+  // Live changes belong to the session that subscribed. After sign-out the channel can still
+  // deliver events until removeChannel() completes; those are dropped, so a late message for
+  // the previous account never reaches the next one's chat (D2-03).
   function subscribe() {
+    const s = session;
     st.channel = sb.channel('chat-live')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages' }, ({ new: m }) => {
+        if (!current(s)) return;
         if (m.channel === 'zone' && m.zone !== st.zone) return;
         add(m.channel, m);
         paint();
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chat_messages' }, ({ new: m }) => {
+        if (!current(s)) return;
         const list = st.msgs[m.channel] || [];
         const i = list.findIndex((x) => x.id === m.id && !x.system);
         if (i >= 0) { list[i] = m; paint(); }
       })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'events' }, ({ new: e }) => {
+        if (!current(s)) return;
         add('global', { ...e, system: true });
         paint();
       })
@@ -449,18 +456,20 @@ export function setupChat({ sb, api, getChar, toast, esc, zoneName }) {
         return;
       case 'clearError': setError(null); host().querySelector('#chat-input')?.focus(); return;
       case 'whisper': st.menuFor = null; openWhisper(v); return;
-      case 'ignore':
+      case 'ignore': {
+        // The session that asked: if the account changed while the question was open, the
+        // answer belongs to nobody and nothing is sent (D2-03).
+        const s = session;
         if (!await ask({
           title: `Ignore ${v}?`,
           points: ["You won't see their messages or whispers.", 'You can stop ignoring them from the list at the top of the chat.'],
           confirm: 'Ignore', cancel: 'Cancel', tone: 'normal', fallback: () => backTo(),
         })) return;
-        {
-          const s = session;
-          try { await api('ignore', { name: v }); await loadMeta(s); if (current(s)) toast(`Ignoring ${v}.`); } catch (err) { if (current(s)) setError(err.message); }
-          if (!current(s)) return;
-        }
+        if (!current(s)) return;
+        try { await api('ignore', { name: v }); await loadMeta(s); if (current(s)) toast(`Ignoring ${v}.`); } catch (err) { if (current(s)) setError(err.message); }
+        if (!current(s)) return;
         st.menuFor = null; paint(); return;
+      }
       case 'unignore': {
         const s = session;
         try { await api('unignore', { name: v }); await loadMeta(s); if (current(s)) toast(`No longer ignoring ${v}.`); } catch (err) { if (current(s)) setError(err.message); }
@@ -468,6 +477,7 @@ export function setupChat({ sb, api, getChar, toast, esc, zoneName }) {
         return;
       }
       case 'report': {
+        const s = session; // the session that asked (see Ignore)
         const res = await ask({
           title: 'Report this message?',
           lead: quote(findMsg(v)),
@@ -475,26 +485,25 @@ export function setupChat({ sb, api, getChar, toast, esc, zoneName }) {
           input: { label: 'Why are you reporting it? (optional)', maxlength: 200 },
           confirm: 'Send report', cancel: 'Cancel', tone: 'normal', fallback: () => backTo(v),
         });
-        if (!res) return;
+        if (!res || !current(s)) return;
         const reason = res.value || '';
-        const s = session;
         try { await api('report', { messageId: v, reason }); if (current(s)) toast('Thanks. A moderator will take a look.'); } catch (err) { if (current(s)) setError(err.message); }
         if (!current(s)) return;
         st.menuFor = null; paint(); host().querySelector(`.chat-line[data-v="${v}"]`)?.focus(); return;
       }
-      case 'delete':
+      case 'delete': {
+        const s = session; // the session that asked (see Ignore)
         if (!await ask({
           title: 'Remove this message for everyone?',
           lead: quote(findMsg(v)),
           points: ['It is replaced by "message removed" for all players. The original stays in the moderation log.'],
           confirm: 'Remove message', cancel: 'Keep it', fallback: () => backTo(v),
         })) return;
-        {
-          const s = session;
-          try { await api('modDelete', { messageId: v }); if (current(s)) toast('Removed.'); } catch (err) { if (current(s)) setError(err.message); }
-          if (!current(s)) return;
-        }
+        if (!current(s)) return;
+        try { await api('modDelete', { messageId: v }); if (current(s)) toast('Removed.'); } catch (err) { if (current(s)) setError(err.message); }
+        if (!current(s)) return;
         st.menuFor = null; paint(); host().querySelector(`.chat-line[data-v="${v}"]`)?.focus(); return;
+      }
       default:
     }
   }

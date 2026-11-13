@@ -144,3 +144,47 @@ All on this laptop, Chromium, fake backend.
 
 - A real Supabase sign-out and sign-in, and a real failed send. Both were exercised against the fake backend only.
 - Screen readers announcing the restored error.
+
+## Review corrections (PR #19 re-review)
+
+The re-review accepted D2-01 and D2-02 at `c2a1511`, and asked for one more correction, limited to chat session handling. The D2-01 and D2-02 changes are kept as they were.
+
+**D2-03: complete the session isolation.**
+- *Cause:*
+  - **Realtime callbacks:** the callbacks installed by `subscribe()` didn't check which session they belonged to. An event delivered to the previous account's subscription after sign-out was applied to the current state. That covers a message insert, an update, or a news event. An event like that can arrive while `removeChannel()` is still completing.
+  - **Confirmations:** Ignore, Report and Remove read the session *after* `await ask()`. If the account changed while the question was open, confirming it sent the request under the new account.
+- *Fix (`chat-ui.js`):*
+  - `subscribe()` captures the session. Each of its three callbacks (message insert, message update, news insert) returns at once unless that session is still current.
+  - Ignore, Report and Remove capture the session before opening the confirmation, and check it again when the answer comes back, before any request. These are the chat actions that ask first; Unignore and sending don't ask, and were already guarded by D2-01.
+- *Tests (`tests/ui/desktop-chat.test.mjs`):*
+  - "D2-03 a late Realtime event for the previous account never reaches the next one":
+    - The first account's live subscription is kept, then the account signs out and the second signs in through the form.
+    - The old subscription's own callbacks are then called with a whisper and a message for the first account, an update to an existing message, and a news event.
+    - The second account's panel shows no unread counts, and none of those texts on Global or Whispers.
+    - The second account's own live message still arrives. Axe passes.
+  - "D2-03 a confirmation opened by one account sends nothing after another signs in":
+    - For each of Ignore, Report and Remove, the moderator opens the confirmation. The account changes to the player through the page's own Supabase client, since the Sign out button is behind the dialog. Then the confirmation is accepted.
+    - Nothing is sent for any of the three.
+    - In each case, the new account's own confirmed Ignore is then sent exactly once.
+- **How the late event is delivered.** The test calls the old subscription's callbacks directly, rather than delivering a frame through the fake socket.
+  - First I tried to keep the old channel open by delaying the server's reply to the unsubscribe (`phx_leave`). In this harness, though, the client had already dropped the channel and disconnected by then: it reported no channels and `isConnected()` false while the reply was held. So no late frame could reach it.
+  - The exact cause wasn't established, so the delay was removed from the harness.
+  - Calling the callbacks reproduces what a late delivery does, whenever it happens, and the test fails on the old code (below).
+  - What the test does not show is the real Supabase client delivering an event during `removeChannel()`.
+
+### Results (re-review)
+
+All on this laptop, Chromium, fake backend.
+
+- **Suites:** `npm test` 24/24 and `npm run test:ui` **110/110 in each of 3 consecutive full runs**. That is the 108 tests after the first correction pass, plus 2 new.
+- **New tests against the reviewed commit** (`UI_PUBLIC_DIR` set to the `c2a1511` checkout): **both fail on the defect.**
+  - Late event: the second account's Whispers tab shows "Whispers 1", from the first account's whisper.
+  - Confirmation: Ignore, Report and Remove are each sent once for the earlier account. With Ignore, that request also made the second account ignore Musa, so its own Ignore then had nothing left to do.
+- **Desktop accessibility sweep** (`tools/ui-shots.mjs`, 9 sizes from 1024×768 to 2560×1440): **0 violations of any impact on 117 captures**, including the chat panel and drawer scenes. Raw data: `docs/ui-audit/desktop/axe-after-d2-rereview.json`.
+- **The affected chat state:** the panel after an account switch and late events is axe-checked inside the new test, with 0 violations. No screenshots were retaken, because nothing visible changed.
+
+### Not verified (re-review)
+
+- **A late event delivered by the real Supabase client** during `removeChannel()`, through the socket. See above for why the test calls the old callbacks directly.
+- **A real sign-out and sign-in** while a confirmation is open.
+- **Screen readers.**

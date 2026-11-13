@@ -418,3 +418,109 @@ test('D2-02 a failed send comes back without taking focus from the game', async 
   await inPanel(page, 'Keep this');
   await done(ctx);
 });
+
+// ---------------------------------------------------------------- D-2 re-review: D2-03
+
+// Sign in through the form already on screen (no reload), and go to Explore.
+async function signInHere(page, who, name) {
+  await page.waitForSelector('#authform');
+  await page.fill('#email', ACCOUNTS[who].email);
+  await page.fill('#password', ACCOUNTS[who].password);
+  await page.click('#authform button[type=submit]');
+  await page.waitForFunction((n) => document.querySelector('#top .hud-name')?.textContent.includes(n), name, { timeout: 15000 });
+  await page.click('[data-a="tab"][data-v="explore"]');
+  await settle(page);
+}
+// Change accounts with the page's own Supabase client while a dialog is open (the Sign out
+// button is behind it): the same sign-out and sign-in path the buttons take.
+async function switchUnderDialog(page, who, name) {
+  await page.evaluate(async (acct) => {
+    const { sb } = await import(new URL('js/net.js', location.href));
+    await sb.auth.signOut();
+    await sb.auth.signInWithPassword({ email: acct.email, password: acct.password });
+  }, ACCOUNTS[who]);
+  await page.waitForFunction((n) => document.querySelector('#top .hud-name')?.textContent.includes(n), name, { timeout: 15000 });
+  await page.waitForSelector('#chatpanel #chat-input');
+}
+
+test('D2-03 a late Realtime event for the previous account never reaches the next one', async () => {
+  const backend = twoAccounts();
+  const ctx = await env.page({ backend, viewport: { width: 1440, height: 900 }, mobile: false });
+  const { page } = ctx;
+  await signIn(page, env.url, 'player');
+  await page.waitForSelector('#chatpanel #chat-input', { timeout: 15000 });
+  await settle(page);
+  // Keep the first account's live subscription. (In this harness the unsubscribe completes at
+  // sign-out, so a late delivery can't be staged through the socket; the old subscription's own
+  // callbacks are called instead, which is what a late delivery does.)
+  await page.evaluate(async () => {
+    const { sb } = await import(new URL('js/net.js', location.href));
+    window.oldChat = sb.realtime.channels.find((c) => c.topic === 'realtime:chat-live');
+  });
+  await page.click('[data-a="tab"][data-v="hero"]');
+  await page.click('#main [data-a="signout"]');
+  await signInHere(page, 'mod', 'Moderator Mia');
+  await page.waitForSelector('#chatpanel #chat-input');
+  // Late events for the first account, after the second has signed in.
+  await page.evaluate((msgs) => {
+    const fire = (table, event, record) => window.oldChat.bindings.postgres_changes
+      .filter((b) => b.filter.table === table && b.filter.event === event)
+      .forEach((b) => b.callback({ eventType: event, new: record, old: {} }));
+    fire('chat_messages', 'INSERT', msgs.whisper);
+    fire('chat_messages', 'INSERT', msgs.global);
+    fire('chat_messages', 'UPDATE', { ...msgs.existing, text: 'Edited for the first account' });
+    fire('events', 'INSERT', msgs.news);
+  }, {
+    whisper: { ...incoming(701, 'For the first account only', 'whisper'), recipient_id: 'char-player', recipient_name: 'Bartholomew Thorne' },
+    global: incoming(702, 'Late news for the first account', 'global'),
+    existing: CHAT[1],
+    news: { id: 99, kind: 'announce', text: 'An old announcement for the first account', created_at: new Date().toISOString() },
+  });
+  await page.waitForTimeout(300);
+  const tabs = await page.evaluate(() => [...document.querySelectorAll('#chatpanel .chat-tabs button')].map((b) => b.textContent.replace(/\s+/g, ' ').trim()));
+  assert.deepEqual(tabs, ['Global', 'Zone', 'Whispers'], 'no unread counts from the first account');
+  const shown = () => page.evaluate(() => document.querySelector('#chatpanel #chat-list').textContent);
+  for (const text of ['Late news for the first account', 'Edited for the first account', 'An old announcement for the first account']) {
+    assert.equal((await shown()).includes(text), false, `not shown: "${text}"`);
+  }
+  await page.click('#chatpanel .chat-tabs [data-v="whisper"]');
+  assert.equal((await shown()).includes('For the first account only'), false, 'the late whisper is not shown');
+  await page.click('#chatpanel .chat-tabs [data-v="global"]');
+  // The new session's own live messages arrive as usual.
+  backend.broadcast('chat_messages', 'INSERT', incoming(703, 'Welcome, Mia'));
+  await inPanel(page, 'Welcome, Mia');
+  await noAxe(page, 'chat after an account switch');
+  await done(ctx);
+});
+
+test('D2-03 a confirmation opened by one account sends nothing after another signs in', async () => {
+  const results = {};
+  for (const [action, call] of [['ignore', 'ignore'], ['report', 'report'], ['delete', 'modDelete']]) {
+    const backend = twoAccounts();
+    const ctx = await env.page({ backend, viewport: { width: 1440, height: 900 }, mobile: false });
+    const { page } = ctx;
+    const sent = (a) => backend.calls.filter((c) => c.action === a).length;
+    // The moderator (who also has Remove) opens the question...
+    await signIn(page, env.url, 'mod');
+    await page.waitForSelector('#chatpanel #chat-input', { timeout: 15000 });
+    await settle(page);
+    await page.click('#chatpanel .chat-line[data-v="2"]');
+    await page.click(`#chatpanel .chat-menu [data-c="${action}"]`);
+    await page.waitForSelector('#confirm[open]');
+    // ...the account changes while it is open, and then it is confirmed.
+    await switchUnderDialog(page, 'player', 'Bartholomew Thorne');
+    await page.click('#confirm [data-r="ok"]');
+    await page.waitForTimeout(400);
+    const stale = sent(call);
+    // Within one session a confirmed action still goes through: the new account's own Ignore.
+    const before = sent('ignore');
+    await page.click('#chatpanel .chat-line[data-v="2"]');
+    await page.click('#chatpanel .chat-menu [data-c="ignore"]');
+    await page.click('#confirm [data-r="ok"]');
+    await page.waitForFunction(() => /Ignoring Musa/.test(document.getElementById('toast').textContent));
+    results[action] = { sentForEarlierAccount: stale, ownIgnoreSent: sent('ignore') - before };
+    await done(ctx);
+  }
+  const ok = { sentForEarlierAccount: 0, ownIgnoreSent: 1 };
+  assert.deepEqual(results, { ignore: ok, report: ok, delete: ok }, "nothing is sent for the earlier account; the new account's own confirmed action is");
+});
