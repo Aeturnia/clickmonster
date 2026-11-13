@@ -1,5 +1,11 @@
 # Desktop layout — phase D-2 report: persistent chat panel
 
+**Status: complete.**
+- **Approved:** in the final independent review at `43eba36`. All three review findings (D2-01 to D2-03) are closed.
+- **Merged:** into `main` as PR #19 (`672a81a`) on 2026-11-13.
+- **After the merge,** on `main` at `672a81a`: `npm test` 24 of 24 and `npm run test:ui` 110 of 110 in each of 3 consecutive full runs.
+- **Still owed before a release:** real Supabase session changes (sign-out and sign-in with live Realtime), screen readers and other browsers. They are listed in `docs/backlog.md` under "Pre-release verification".
+
 Branch `claude/desktop-d2`, based on `main` at `f62d729`, with D-1 merged.
 
 The scope and acceptance criteria are in `docs/desktop-scope.md`. D-2 adds the persistent chat panel. Keyboard shortcuts (D-3) are not started.

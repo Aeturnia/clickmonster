@@ -11,12 +11,16 @@ Read these first:
 - `docs/ui-phase-1-report.md` … `docs/ui-phase-4-report.md`: what each phase changed, its acceptance criteria, deviations and the review corrections.
 - `docs/backlog.md`: agreed but unscheduled work (desktop layout, layout picker, sign-in news), and the pre-release verification still owed (real devices, screen readers, live-backend staging).
 
-## Where things stand (2026-11-12)
+## Where things stand (2026-11-13)
 
 - **UI modernization Phases 1–4 are complete and merged into `main`.** Phase 4 (the admin console) was approved in its final independent review at `a8d9dc6` and merged as PR #13 (`baa75d9`). All four review findings, P4-01 to P4-04, are closed.
+- **Desktop layout:** scoped in `docs/desktop-scope.md` (PR #17), with the owner's decisions in its section 4.
+  - **D-1, the desktop frame:** merged as PR #18. See `docs/desktop-d1-report.md`.
+  - **D-2, the persistent chat panel:** merged as PR #19 (`672a81a`). Findings D2-01 to D2-03 are closed. See `docs/desktop-d2-report.md`.
+  - **D-3, keyboard shortcuts:** authorized, on its own branch and PR.
+  - **After this milestone, each separate:** the layout picker, wider sheets, and the possible rename to "Monstra Regna", which is a working title only.
 - **Development moved to the owner's Windows laptop.** `npm run deploy:functions` now runs from any shell (PR #15) and needs `SUPABASE_ACCESS_TOKEN` set in the environment.
-- **Don't start the next milestone, or make unrelated gameplay changes,** until the owner approves it. There is no approved Phase 5.
-- **Likely next:** the desktop layout and the desktop/mobile choice in `docs/backlog.md`. The owner wants to design these at the desktop.
+- **Don't start another milestone, or make unrelated gameplay changes,** until the owner approves it.
 - **Before a release:** the pre-release verification in `docs/backlog.md` (real devices, screen readers, live-backend staging) is still owed. The test suites run in Chromium against a fake backend only.
 
 ## How the owner works
@@ -61,7 +65,10 @@ Read these first:
   - Actions go through one delegated click handler. `handleLocal` covers view-only actions; `remoteCall`/`runRemote` call the server.
   - The pending state is tracked by key (`ui.pendingKey`, `markPending()`).
   - Toasts and alerts are re-homed into the topmost open dialog (`placeOverlays()`).
-- **Chat** is `chat-ui.js`. **Admin** is `admin.js` and `admin-zones.js`: grouped navigation with hash routes, `dataTable()`, `field()`, `checkForm`/`validate`/`submitting`, and form values kept across re-renders.
+- **Layout state** is `layout.js`. It sets `#app[data-layout]` (`mobile`, `wide` or `desktop`) and `#app[data-chat]` (`panel` or `drawer`), and reorders the regions in the DOM for desktop. Desktop starts at 75em with a fine pointer, and the chat panel at 80em. Both conditions also check the usable width in rem, so larger text falls back.
+- **Chat** is `chat-ui.js`. It draws one chat state into the drawer or the desktop panel (`setMode()`).
+  - Each sign-in is a chat session. `stop()` resets everything that belongs to the account. Anything awaited, including Realtime callbacks and confirmations, checks on return that its session is still current.
+- **Admin** is `admin.js` and `admin-zones.js`: grouped navigation with hash routes, `dataTable()`, `field()`, `checkForm`/`validate`/`submitting`, and form values kept across re-renders.
 - **Admin requests are single-flight** (Phase 4 review, P4-01 to P4-04). `st.pendingForms` holds one key per request in flight:
   - a form id;
   - `action:target` for button actions (`actionKey()`, drawn by `markPending()` after every render, run through `pendingWhile()`);
@@ -83,12 +90,12 @@ Read these first:
 
 ```
 npm test                 # engine (24)
-npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (85)
+npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (110)
 npx playwright install chromium   # once
 ```
 
 **`tests/ui/harness.mjs`** answers every Supabase request with a fake backend built on the real engine. Any other host fails the test, and the supabase-js CDN module is cached in `tests/ui/.cache`. It provides:
-- **`FakeBackend({ hero, players, chat, events, zones, quests, reports })`**. Its admin actions write the audit log and refuse repeats the way `supabase/functions/admin/index.ts` does, so a duplicate request shows up as a duplicate audit entry (`backend.adminData().log`). Keep it in step when server behaviour changes. It also provides `failNext(action, status, msg)`, `hold(action)` (returns a release function) and `broadcast()` for Realtime. Recorded `calls` and `unexpected` requests are available for assertions.
+- **`FakeBackend({ hero, players, chat, events, zones, quests, reports, worldEvents, activeHunts })`**. Its admin actions write the audit log and refuse repeats the way `supabase/functions/admin/index.ts` does, so a duplicate request shows up as a duplicate audit entry (`backend.adminData().log`). Keep it in step when server behaviour changes. It also provides `failNext(action, status, msg)`, `hold(action)` (returns a release function) and `broadcast()` for Realtime. Recorded `calls` and `unexpected` requests are available for assertions.
 - **Test accounts:** `ACCOUNTS.player`, `admin`, `mod` (a moderator) and `fresh`.
 - **Fixtures:** `makeHero()`, `bigZone(n)`, `fixedQuest()`, `ADMIN_CHAT`/`ADMIN_REPORTS`.
 - **Keyboard:** `fakeKeyboard()` / `setKeyboard(px, pan)` simulate an iOS-style overlay keyboard.
@@ -98,7 +105,8 @@ npx playwright install chromium   # once
 - `tools/ui-metrics.mjs` (game layout numbers);
 - `tools/ui-shots.mjs` (screens plus axe);
 - `tools/ui-states.mjs` (interaction states);
-- `tools/admin-shots.mjs` (admin at 320, 390, 768, 1024 and 1440).
+- `tools/admin-shots.mjs` (admin at 320, 390, 768, 1024 and 1440);
+- `tools/desktop-metrics.mjs` (desktop layout geometry: side column, battle actions, chat panel).
 
 **Measuring the old version:** set `UI_PUBLIC_DIR` to another checkout's `public/` folder, for example `git worktree add ../cm-main origin/main`.
 

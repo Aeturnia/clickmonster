@@ -6,7 +6,7 @@ Planned work that is not yet scheduled into a phase. Each item names what it bui
 
 The UI modernization (Phases 1–4) was tested in Chromium only, against a fake backend. These checks were not done in any phase and must be done before release. They are verification, not new features. Each item comes from a phase report's "Not verified" section.
 
-**Real devices** (iOS Safari, Android Chrome; also Firefox, which was never run):
+**Real devices and other browsers** (iOS Safari, Android Chrome, desktop Firefox and Safari; Firefox was never run):
 - Native `<dialog>`: focus behaviour, `::backdrop` taps, and `dvh` sizing inside dialogs (Phase 1).
 - On-screen keyboards with `visualViewport`, `interactive-widget` on Android, safe-area insets on notched phones in landscape, and touch panning of the map frame (Phase 2).
 - Type-to-confirm with autocorrect on phone keyboards, and haptics on refused taps (Phase 3).
@@ -25,6 +25,9 @@ The UI modernization (Phases 1–4) was tested in Chromium only, against a fake 
 - Check zone save, delete and restore with real players in the zone.
 - Check the moderation flow with real reports.
 - Check real staff data volumes, such as many reports or a long audit log.
+- **Desktop chat (D-2):** sign out and sign in as another account in the same page with live Realtime, and check that nothing carries over: drafts, whisper recipient, unread counts, late messages, open confirmations.
+  - The tests use the fake backend. Late Realtime events were simulated by calling the old subscription's callbacks, because the harness could not deliver one during `removeChannel()`.
+  - Also check a failed send while the window crosses 1280px.
 
 ## Desktop layout
 
