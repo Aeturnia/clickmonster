@@ -46,3 +46,15 @@ test("the entrance's CSS never reads the gameplay layout, and shares the game's 
   const game = tokens(text('public/css/style.css'));
   for (const [name, value] of Object.entries(tokens(entry))) assert.equal(value, game[name], `${name} matches style.css`);
 });
+
+test("the entrance's Desktop note uses the same rule as layout.js (landing L-2)", () => {
+  const layout = text('public/js/layout.js');
+  const entry = text('public/js/entry.js');
+  const num = (src, re) => Number(src.match(re)?.[1]);
+  assert.equal(num(layout, /const DESKTOP_WIDTH = '\(min-width: (\d+)em\)'/), 75);
+  assert.equal(num(entry, /const DESKTOP_MIN_EM = (\d+);/), num(layout, /const DESKTOP_WIDTH = '\(min-width: (\d+)em\)'/), 'em width');
+  assert.equal(num(entry, /const DESKTOP_MIN_REM = (\d+);/), num(layout, /const DESKTOP_MIN_REM = (\d+);/), 'usable width in rem');
+  assert.match(layout, /export const LAYOUT_CHOICES = \['auto', 'desktop', 'mobile'\];/);
+  assert.match(entry, /const CHOICES = \['auto', 'desktop', 'mobile'\];/);
+});
+

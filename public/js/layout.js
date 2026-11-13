@@ -13,18 +13,30 @@
 // back too. The desktop layout's own type step (17-18px from 112.5em) can't trip that check:
 // 1800px / 18px is still 100rem.
 //
+// The player can choose (landing L-2, docs/landing-scope.md Q12), saved in clickmonster.prefs:
+//   auto     the rules above, exactly as before
+//   desktop  the desktop layout whenever the usable width allows it (75em and 75rem), whatever
+//            the pointer; otherwise Automatic, with `fallback` set. The choice itself is kept.
+//   mobile   the phone column at any size
+// The entrance (entry.js) explains the same Desktop rule; its numbers must match these
+// (tests/entrance-files.test.mjs checks).
+//
 // The desktop layout needs a different reading order (hero bar, navigation, screen, actions,
 // then the side column), so the regions are moved in the DOM, only when the layout changes.
 // Focus and the caret are kept across the move.
 const DESKTOP = '(min-width: 75em) and (hover: hover) and (pointer: fine)';
 const WIDE = '(min-width: 900px), (orientation: landscape) and (max-height: 540px) and (min-width: 600px)';
 const DESKTOP_MIN_REM = 75;
+const DESKTOP_WIDTH = '(min-width: 75em)';
 const CHAT_PANEL = '(min-width: 80em)';
 const CHAT_PANEL_MIN_REM = 80;
 
 const mqDesktop = matchMedia(DESKTOP);
 const mqWide = matchMedia(WIDE);
 const mqChat = matchMedia(CHAT_PANEL);
+const mqDesktopWidth = matchMedia(DESKTOP_WIDTH);
+export const LAYOUT_CHOICES = ['auto', 'desktop', 'mobile'];
+let preference = 'auto';
 const $ = (id) => document.getElementById(id);
 
 function remWidth() {
@@ -32,10 +44,30 @@ function remWidth() {
   return innerWidth / root;
 }
 
-export function currentLayout() {
+// Automatic: by space and pointer, as before the picker existed.
+function automatic() {
   if (mqDesktop.matches && remWidth() >= DESKTOP_MIN_REM) return 'desktop';
   if (mqWide.matches) return 'wide';
   return 'mobile';
+}
+// The layout for a choice, and whether a Desktop choice had to fall back for lack of room.
+export function resolveLayout(choice = preference) {
+  if (choice === 'mobile') return { layout: 'mobile', fallback: false };
+  if (choice === 'desktop') {
+    if (mqDesktopWidth.matches && remWidth() >= DESKTOP_MIN_REM) return { layout: 'desktop', fallback: false };
+    return { layout: automatic(), fallback: true };
+  }
+  return { layout: automatic(), fallback: false };
+}
+export function currentLayout() { return resolveLayout().layout; }
+// What the picker shows: the saved choice, the layout in use, and whether it fell back.
+export function layoutStatus() { return { choice: preference, ...resolveLayout() }; }
+
+let reapply = null;
+// The player's choice. Unknown values count as Automatic. Applies at once if already watching.
+export function setLayoutPreference(choice) {
+  preference = LAYOUT_CHOICES.includes(choice) ? choice : 'auto';
+  reapply?.();
 }
 // The persistent chat panel: desktop with room for it, by the same em and rem rules.
 const chatPanel = (layout) => layout === 'desktop' && mqChat.matches && remWidth() >= CHAT_PANEL_MIN_REM;
@@ -67,13 +99,14 @@ function arrange(layout) {
 }
 
 let current = null;
-// Sets the layout state and the region order; calls onChange(layout, panel) when either the
-// layout or the chat placement changes (panel: true when the chat panel is mounted).
+// Sets the layout state and the region order; calls onChange(layout, panel) when the layout, the
+// chat placement, the player's choice or its fallback changes (panel: true when the chat panel
+// is mounted).
 export function watchLayout(onChange) {
   const apply = () => {
-    const layout = currentLayout();
+    const { layout, fallback } = resolveLayout();
     const panel = chatPanel(layout);
-    const key = `${layout}:${panel}`;
+    const key = `${layout}:${panel}:${preference}:${fallback}`;
     if (key === current) return;
     const layoutChanged = !current || !current.startsWith(`${layout}:`);
     current = key;
@@ -85,6 +118,8 @@ export function watchLayout(onChange) {
   mqDesktop.addEventListener('change', apply);
   mqWide.addEventListener('change', apply);
   mqChat.addEventListener('change', apply);
+  mqDesktopWidth.addEventListener('change', apply);
+  reapply = apply;
   addEventListener('resize', apply);
   // The root text size can change without a resize (a user or page style, zoom of text only):
   // a 1rem-wide probe reports it. The desktop type step changes it too, harmlessly (see above).

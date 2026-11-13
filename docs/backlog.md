@@ -53,6 +53,9 @@ Built in phases D-1 to D-3 and merged on 2026-11-13. See `docs/desktop-scope.md`
 
 ## Layout choice: desktop or mobile
 
+**Built in landing phase L-2** (`docs/landing-l2-report.md`). The notes below are the original backlog entry.
+
+
 Now scoped as phase L-2 of the landing page: see `docs/landing-scope.md` (not yet authorized).
 - `layout.js` takes a preference (Automatic, Desktop or Mobile) and sets `#app[data-layout]` from it, falling back when a forced Desktop doesn't fit. The Phase 2 wide rules move from plain media queries to `data-layout`, so a forced layout is honoured completely.
 - Offered on the entrance and in Hero, Settings; saved in `clickmonster.prefs`. Labelled, keyboard reachable, and stating the active layout. Tests for each choice at a phone and a desktop size.

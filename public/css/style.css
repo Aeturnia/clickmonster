@@ -485,35 +485,37 @@ input[aria-invalid="true"] { border-color: var(--bad) !important; }
 /* ---------------------------------------------------------------- wide and landscape layout */
 /* Phones on their side and larger screens: the game screen fills the left and the hero, chat,
    actions and tabs stack in a side column, so the content keeps the full height. DOM order (and
-   so reading and tab order) is unchanged: hero, screen, chat, actions, tabs. */
-@media (min-width: 900px), (orientation: landscape) and (max-height: 540px) and (min-width: 600px) {
-  #app {
-    --side: clamp(280px, 36vw, 400px);
-    max-width: 1280px;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) var(--side);
-    grid-template-rows: auto minmax(0, 1fr) auto auto auto;
-    grid-template-areas: "main top" "main ." "main chat" "main dock" "main nav";
-  }
-  #top { grid-area: top; border-bottom: 0; }
-  #main { grid-area: main; border-right: 1px solid var(--line); padding-top: calc(14px + env(safe-area-inset-top)); padding-left: calc(16px + env(safe-area-inset-left)); }
-  #chatbar { grid-area: chat; }
-  #dock { grid-area: dock; padding-right: calc(12px + env(safe-area-inset-right)); }
-  #nav { grid-area: nav; }
-  #top, #chatbar, #dock, #nav { min-width: 0; }
-  #top { padding-right: calc(16px + env(safe-area-inset-right)); }
-  /* Without a game (sign in, hero creation) the screen uses the full width. */
-  #app:has(#top:empty) #main { grid-column: 1 / -1; grid-row: 1 / -1; border-right: 0; }
+   so reading and tab order) is unchanged: hero, screen, chat, actions, tabs.
+   Keyed off data-layout since landing L-2, so a forced Mobile or Desktop is honoured completely.
+   Under Automatic, layout.js sets "wide" or "desktop" exactly when the old media condition held:
+   (min-width: 900px), (orientation: landscape) and (max-height: 540px) and (min-width: 600px).
+   The desktop rules below build on these. */
+#app:is([data-layout="wide"], [data-layout="desktop"]) {
+  --side: clamp(280px, 36vw, 400px);
+  max-width: 1280px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--side);
+  grid-template-rows: auto minmax(0, 1fr) auto auto auto;
+  grid-template-areas: "main top" "main ." "main chat" "main dock" "main nav";
 }
+#app:is([data-layout="wide"], [data-layout="desktop"]) #top { grid-area: top; border-bottom: 0; }
+#app:is([data-layout="wide"], [data-layout="desktop"]) #main { grid-area: main; border-right: 1px solid var(--line); padding-top: calc(14px + env(safe-area-inset-top)); padding-left: calc(16px + env(safe-area-inset-left)); }
+#app:is([data-layout="wide"], [data-layout="desktop"]) #chatbar { grid-area: chat; }
+#app:is([data-layout="wide"], [data-layout="desktop"]) #dock { grid-area: dock; padding-right: calc(12px + env(safe-area-inset-right)); }
+#app:is([data-layout="wide"], [data-layout="desktop"]) #nav { grid-area: nav; }
+#app:is([data-layout="wide"], [data-layout="desktop"]) :is(#top, #chatbar, #dock, #nav) { min-width: 0; }
+#app:is([data-layout="wide"], [data-layout="desktop"]) #top { padding-right: calc(16px + env(safe-area-inset-right)); }
+/* Without a game (hero creation) the screen uses the full width. */
+#app:is([data-layout="wide"], [data-layout="desktop"]):has(#top:empty) #main { grid-column: 1 / -1; grid-row: 1 / -1; border-right: 0; }
 /* Short landscape screens: a slimmer battle dock so the fight stays in view. */
 @media (orientation: landscape) and (max-height: 540px) {
   .dock-battle .big { min-height: 56px; }
   .hud-res .gems { display: none; } /* the side column is narrow; the name comes first */
 }
-/* Large screens: keep long lines readable. */
+/* Large screens: keep long lines readable (not in a forced Mobile column). */
 @media (min-width: 900px) {
-  #main > * { max-width: 760px; }
-  #main.fill > * { max-width: none; }
+  #app:is([data-layout="wide"], [data-layout="desktop"]) #main > * { max-width: 760px; }
+  #app:is([data-layout="wide"], [data-layout="desktop"]) #main.fill > * { max-width: none; }
 }
 
 /* ---------------------------------------------------------------- desktop layout (D-1) */
@@ -890,3 +892,17 @@ fieldset.f-set legend { padding: 0; margin-bottom: 4px; font-size: var(--fs-xs);
 .realm-head h1 { font-size: clamp(2.25rem, 1.6rem + 3vw, 3rem); line-height: 1.05; text-shadow: 0 2px 18px rgba(220, 174, 76, .18); }
 .realm-head::after { content: ""; display: block; width: 7rem; height: 1px; margin: 1rem auto 0; background: linear-gradient(90deg, transparent, var(--gold), transparent); }
 .intro .realm-kicker { margin: 0 0 .35rem; font-size: var(--fs-xs); font-weight: 700; letter-spacing: .16em; text-transform: uppercase; }
+
+/* ---------------------------------------------------------------- interface choice (landing L-2) */
+.iface { border: 0; margin: 14px 0 0; padding: 0; min-width: 0; }
+.iface legend { padding: 0; font-weight: 600; }
+.iface-choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr)); gap: 8px; margin-top: 8px; }
+.iface-choice {
+  display: flex; align-items: center; gap: 10px; min-height: var(--tap); padding: 8px 12px;
+  border: 1px solid var(--line-strong); border-radius: 10px; background: var(--surface-2); cursor: pointer;
+}
+.iface-choice:has(input:checked) { border-color: var(--gold); background: #33281a; }
+.iface-choice input { accent-color: var(--gold); width: 18px; height: 18px; margin: 0; flex: none; }
+.iface-choice input:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+#layout-note { margin: 8px 0 0; }
+

@@ -145,6 +145,20 @@ body.realm, body.creating {
 .entry .e-msg.e-bad { border-left-color: var(--bad); color: #f19a8c; }
 .entry .e-msg.e-good { border-left-color: var(--good); }
 
+/* The interface choice (landing L-2). It sets the game's layout, never the entrance's. */
+.entry .e-iface { margin: 1rem 0 0; padding: .9rem 0 0; border: 0; border-top: 1px solid var(--line); min-width: 0; }
+.entry .e-legend { padding: 0; font-size: .8125rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.entry .e-choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr)); gap: .5rem; margin-top: .5rem; }
+.entry .e-choice {
+  display: flex; align-items: center; gap: .55rem; min-height: 44px; padding: .4rem .7rem;
+  border: 1px solid var(--line-strong); border-radius: 10px; background: #0f0c0a; cursor: pointer; font-size: .9375rem;
+}
+.entry .e-choice:has(input:checked) { border-color: var(--gold); background: #33281a; }
+.entry .e-choice input { accent-color: var(--gold); width: 18px; height: 18px; margin: 0; flex: none; }
+.entry .e-choice input:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+.entry .e-note { margin: .6rem 0 0; color: var(--muted); font-size: .875rem; }
+.resuming .entry .e-iface, .entering .entry .e-iface { display: none; }
+
 /* In-place status while a saved session is restored or the game starts: it replaces the form, so
    there is never a separate loading screen. */
 .entry .e-status { margin: .9rem 0 0; color: var(--muted); }

@@ -25,6 +25,9 @@ const gateH = $('gate-h');
 const status = $('gate-status');
 const problem = $('gate-problem');
 const problemText = $('gate-problem-text');
+const iface = $('iface');
+const ifaceNote = $('iface-note');
+const choices = [...iface.querySelectorAll('input[name="iface"]')];
 
 const AUTH_KEY = 'clickmonster.auth'; // net.js AUTH_STORAGE_KEY (not imported: the entrance loads nothing else first)
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
@@ -134,6 +137,49 @@ function savedSession() {
   } catch { return false; }
 }
 
+// ---------------------------------------------------------------- the interface choice (L-2)
+// Saved with the game's other device settings; the game applies it (layout.js). The entrance's own
+// layout never changes with it. The Desktop rule mirrors layout.js (75em wide and 75rem usable);
+// tests/entrance-files.test.mjs checks the numbers match.
+const PREFS_KEY = 'clickmonster.prefs';
+const DESKTOP_MIN_EM = 75;
+const DESKTOP_MIN_REM = 75;
+const desktopWide = matchMedia(`(min-width: ${DESKTOP_MIN_EM}em)`);
+const CHOICES = ['auto', 'desktop', 'mobile'];
+function readPrefs() {
+  try { const p = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}'); return p && typeof p === 'object' ? p : {}; } catch { return {}; }
+}
+const savedChoice = () => (CHOICES.includes(readPrefs().layout) ? readPrefs().layout : 'auto');
+function desktopFits() {
+  const rootPx = parseFloat(getComputedStyle(root).fontSize) || 16;
+  return desktopWide.matches && innerWidth / rootPx >= DESKTOP_MIN_REM;
+}
+function noteFor(choice) {
+  if (choice === 'desktop') {
+    return desktopFits()
+      ? 'The desktop layout: hero bar, navigation, and a side column with your quests, the map and chat.'
+      : 'Desktop needs a wider window (about 1200 pixels at the standard text size). Until there is room the game uses Automatic; your choice is kept.';
+  }
+  if (choice === 'mobile') return 'The phone layout, in one column, at any screen size.';
+  return 'Automatic chooses the layout for your screen: the desktop layout on a wide screen with a mouse or trackpad, the phone layout on phones.';
+}
+function syncChoice() {
+  const c = savedChoice();
+  for (const r of choices) r.checked = r.value === c;
+  const text = noteFor(c);
+  if (ifaceNote.textContent !== text) ifaceNote.textContent = text;
+}
+iface.addEventListener('change', (e) => {
+  const c = e.target.value;
+  if (!CHOICES.includes(c)) return;
+  try { localStorage.setItem(PREFS_KEY, JSON.stringify({ ...readPrefs(), layout: c })); } catch { /* storage unavailable: the choice lasts for this page */ }
+  ifaceNote.textContent = noteFor(c);
+});
+// The Desktop note depends on the window; keep it true as the window changes.
+const refreshNote = () => { const c = choices.find((r) => r.checked)?.value || 'auto'; const t = noteFor(c); if (ifaceNote.textContent !== t) ifaceNote.textContent = t; };
+desktopWide.addEventListener('change', refreshNote);
+addEventListener('resize', refreshNote);
+
 // ---------------------------------------------------------------- the game
 function transition(event, session) {
   const uid = session?.user?.id || null;
@@ -184,6 +230,7 @@ async function enterGame(my) {
     status.textContent = '';
     form.hidden = true;
     modeBtn.parentElement.hidden = true;
+    iface.hidden = true;
     problem.hidden = false; // shown first, then filled, so the alert is announced
     problemText.textContent = `${err?.message || 'The game could not start.'}`;
   }
@@ -220,7 +267,9 @@ function showEntrance(fromGame) {
   problem.hidden = true;
   form.hidden = false;
   modeBtn.parentElement.hidden = false;
+  iface.hidden = false;
   if (!entry.hidden && app.hidden) return; // already showing; leave what the visitor typed alone
+  syncChoice(); // the game's Settings may have changed it
   hideApp();
   document.body.classList.add('realm');
   document.body.classList.remove('creating');
@@ -285,6 +334,7 @@ $('gate-signout').addEventListener('click', async () => {
 });
 
 // ---------------------------------------------------------------- start
+syncChoice();
 submit.disabled = false;
 modeBtn.disabled = false;
 if (root.classList.contains('resuming')) {
