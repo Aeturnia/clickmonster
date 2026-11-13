@@ -1,0 +1,92 @@
+[
+ {
+  "width": 390,
+  "scene": "zone-locked-saving",
+  "violations": [],
+  "usableDraftControls": 0,
+  "totalDraftControls": 124,
+  "note": "Saving. Editing is paused until it finishes.",
+  "busy": [
+   "zone-form",
+   "zoneSave"
+  ],
+  "requests": 1,
+  "nativeDialogs": 0,
+  "errors": 0
+ },
+ {
+  "width": 390,
+  "scene": "zone-locked-restoring",
+  "violations": [],
+  "usableDraftControls": 0,
+  "totalDraftControls": 124,
+  "note": "Restoring the built-in version. Editing is paused until it finishes.",
+  "busy": [
+   "zone-form",
+   "zoneReset"
+  ],
+  "requests": 1,
+  "nativeDialogs": 0,
+  "errors": 0
+ },
+ {
+  "width": 390,
+  "scene": "zone-locked-deleting",
+  "violations": [],
+  "usableDraftControls": 0,
+  "totalDraftControls": 124,
+  "note": "Deleting the zone. Editing is paused until it finishes.",
+  "busy": [
+   "zone-form",
+   "zoneDelete"
+  ],
+  "requests": 1,
+  "nativeDialogs": 0,
+  "errors": 0
+ },
+ {
+  "width": 1440,
+  "scene": "zone-locked-saving",
+  "violations": [],
+  "usableDraftControls": 0,
+  "totalDraftControls": 124,
+  "note": "Saving. Editing is paused until it finishes.",
+  "busy": [
+   "zone-form",
+   "zoneSave"
+  ],
+  "requests": 1,
+  "nativeDialogs": 0,
+  "errors": 0
+ },
+ {
+  "width": 1440,
+  "scene": "zone-locked-restoring",
+  "violations": [],
+  "usableDraftControls": 0,
+  "totalDraftControls": 124,
+  "note": "Restoring the built-in version. Editing is paused until it finishes.",
+  "busy": [
+   "zone-form",
+   "zoneReset"
+  ],
+  "requests": 1,
+  "nativeDialogs": 0,
+  "errors": 0
+ },
+ {
+  "width": 1440,
+  "scene": "zone-locked-deleting",
+  "violations": [],
+  "usableDraftControls": 0,
+  "totalDraftControls": 124,
+  "note": "Deleting the zone. Editing is paused until it finishes.",
+  "busy": [
+   "zone-form",
+   "zoneDelete"
+  ],
+  "requests": 1,
+  "nativeDialogs": 0,
+  "errors": 0
+ }
+]

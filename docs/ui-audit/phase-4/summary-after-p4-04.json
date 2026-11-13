@@ -1,0 +1,1142 @@
+[
+ {
+  "width": 320,
+  "screen": "dashboard",
+  "violations": [],
+  "metrics": {
+   "hOverflow": false,
+   "offRight": 0,
+   "sidewaysBoxes": 0,
+   "inlineStyles": 0,
+   "inlineStyleSamples": [],
+   "tables": 1,
+   "thScoped": 3,
+   "thTotal": 3,
+   "clickRows": 0,
+   "smallTargets": 0,
+   "navH": 130,
+   "contentTop": 239
+  }
+ },
+ {
+  "width": 320,
+  "screen": "players",
+  "violations": [],
+  "metrics": {
+   "hOverflow": false,
+   "offRight": 0,
+   "sidewaysBoxes": 0,
+   "inlineStyles": 0,
+   "inlineStyleSamples": [],
+   "tables": 1,
+   "thScoped": 6,
+   "thTotal": 6,
+   "clickRows": 0,
+   "smallTargets": 0,
+   "navH": 130,
+   "contentTop": 239
+  }
+ },
+ {
+  "width": 320,
+  "screen": "player",
+  "violations": [],
+  "metrics": {
+   "hOverflow": false,
+   "offRight": 0,
+   "sidewaysBoxes": 0,
+   "inlineStyles": 0,
+   "inlineStyleSamples": [],
+   "tables": 3,
+   "thScoped": 12,
+   "thTotal": 12,
+   "clickRows": 0,
+   "smallTargets": 0,
+   "navH": 130,
+   "contentTop": 239
+  }
+ },
+ {
+  "width": 320,
+  "screen": "chat",
+  "violations": [],
+  "metrics": {
+   "hOverflow": false,
+   "offRight": 0,
+   "sidewaysBoxes": 0,
+   "inlineStyles": 0,
+   "inlineStyleSamples": [],
+   "tables": 1,
+   "thScoped": 4,
+   "thTotal": 4,
+   "clickRows": 0,
+   "smallTargets": 0,
+   "navH": 130,
+   "contentTop": 239
+  }
+ },
+ {
+  "width": 320,
+  "screen": "world",
+  "violations": [],
+  "metrics": {
+   "hOverflow": false,
+   "offRight": 0,
+   "sidewaysBoxes": 0,
+   "inlineStyles": 0,
+   "inlineStyleSamples": [],
+   "tables": 1,
+   "thScoped": 4,
+   "thTotal": 4,
+   "clickRows": 0,
+   "smallTargets": 0,
+   "navH": 130,
+   "contentTop": 239
+  }
+ },
+ {
+  "width": 320,
+  "screen": "hunts",
+  "violations": [],
+  "metrics": {
+   "hOverflow": false,
+   "offRight": 0,
+   "sidewaysBoxes": 0,
+   "inlineStyles": 0,
+   "inlineStyleSamples": [],
+   "tables": 1,
+   "thScoped": 7,
+   "thTotal": 7,
+   "clickRows": 0,
+   "smallTargets": 0,
+   "navH": 130,
+   "contentTop": 239
+  }
+ },
+ {
+  "width": 320,
+  "screen": "economy",
+  "violations": [],
+  "metrics": {
+   "hOverflow": false,
+   "offRight": 0,
+   "sidewaysBoxes": 0,
+   "inlineStyles": 0,
+   "inlineStyleSamples": [],
+   "tables": 3,
+   "thScoped": 8,
+   "thTotal": 8,
+   "clickRows": 0,
+   "smallTargets": 0,
+   "navH": 130,
+   "contentTop": 239
+  }
+ },
+ {
+  "width": 320,
+  "screen": "zones",
+  "violations": [],
+  "metrics": {
+   "hOverflow": false,
+   "offRight": 0,
+   "sidewaysBoxes": 0,
+   "inlineStyles": 0,
+   "inlineStyleSamples": [],
+   "tables": 1,
+   "thScoped": 5,
+   "thTotal": 5,
+   "clickRows": 0,
+   "smallTargets": 0,
+   "navH": 88,
+   "contentTop": 197
+  }
+ },
+ {
+  "width": 320,
+  "screen": "zone-editor",
+  "violations": [],
+  "metrics": {
+   "hOverflow": false,
+   "offRight": 8,
+   "sidewaysBoxes": 0,
+   "inlineStyles": 0,
+   "inlineStyleSamples": [],
+   "tables": 0,
+   "thScoped": 0,
+   "thTotal": 0,
+   "clickRows": 0,
+   "smallTargets": 0,
+   "navH": 88,
+   "contentTop": 197
+  }
+ },
+ {
+  "width": 320,
+  "screen": "announce",
+  "violations": [],
+  "metrics": {
+   "hOverflow": false,
+   "offRight": 0,
+   "sidewaysBoxes": 0,
+   "inlineStyles": 0,
+   "inlineStyleSamples": [],
+   "tables": 1,
+   "thScoped": 4,
+   "thTotal": 4,
+   "clickRows": 0,
+   "smallTargets": 0,
+   "navH": 88,
+   "contentTop": 197
+  }
+ },
+ {
+  "width": 320,
+  "screen": "log",
+  "violations": [],
+  "metrics": {
+   "hOverflow": false,
+   "offRight": 0,
+   "sidewaysBoxes": 0,
+   "inlineStyles": 0,
+   "inlineStyleSamples": [],
+   "tables": 1,
+   "thScoped": 5,
+   "thTotal": 5,
+   "clickRows": 0,
+   "smallTargets": 0,
+   "navH": 130,
+   "contentTop": 239
+  }
+ },
+ {
+  "width": 320,
+  "screen": "staff",
+  "violations": [],
+  "metrics": {
+   "hOverflow": false,
+   "offRight": 0,
+   "sidewaysBoxes": 0,
+   "inlineStyles": 0,
+   "inlineStyleSamples": [],
+   "tables": 1,
+   "thScoped": 4,
+   "thTotal": 4,
+   "clickRows": 0,
+   "smallTargets": 0,
+   "navH": 88,
+   "contentTop": 197
+  }
+ },
+ {
+  "width": 390,
+  "screen": "dashboard",
+  "violations": [],
+  "metrics": {
+   "hOverflow": false,
+   "offRight": 0,
+   "sidewaysBoxes": 0,
+   "inlineStyles": 0,
+   "inlineStyleSamples": [],
+   "tables": 1,
+   "thScoped": 3,
+   "thTotal": 3,
+   "clickRows": 0,
+   "smallTargets": 0,
+   "navH": 130,
+   "contentTop": 239
+  }
+ },
+ {
+  "width": 390,
+  "screen": "players",
+  "violations": [],
+  "metrics": {
+   "hOverflow": false,
+   "offRight": 0,
+   "sidewaysBoxes": 0,
+   "inlineStyles": 0,
+   "inlineStyleSamples": [],
+   "tables": 1,
+   "thScoped": 6,
+   "thTotal": 6,
+   "clickRows": 0,
+   "smallTargets": 0,
+   "navH": 88,
+   "contentTop": 197
+  }
+ },
+ {
+  "width": 390,
+  "screen": "player",
+  "violations": [],
+  "metrics": {
+   "hOverflow": false,
+   "offRight": 0,
+   "sidewaysBoxes": 0,
+   "inlineStyles": 0,
+   "inlineStyleSamples": [],
+   "tables": 3,
+   "thScoped": 12,
+   "thTotal": 12,
+   "clickRows": 0,
+   "smallTargets": 0,
+   "navH": 88,
+   "contentTop": 197
+  }
+ },
+ {
+  "width": 390,
+  "screen": "chat",
+  "violations": [],
+  "metrics": {
+   "hOverflow": false,
+   "offRight": 0,
+   "sidewaysBoxes": 0,
+   "inlineStyles": 0,
+   "inlineStyleSamples": [],
+   "tables": 1,
+   "thScoped": 4,
+   "thTotal": 4,
+   "clickRows": 0,
+   "smallTargets": 0,
+   "navH": 88,
+   "contentTop": 197
+  }
+ },
+ {
+  "width": 390,
+  "screen": "world",
+  "violations": [],
+  "metrics": {
+   "hOverflow": false,
+   "offRight": 0,
+   "sidewaysBoxes": 0,
+   "inlineStyles": 0,
+   "inlineStyleSamples": [],
+   "tables": 1,
+   "thScoped": 4,
+   "thTotal": 4,
+   "clickRows": 0,
+   "smallTargets": 0,
+   "navH": 130,
+   "contentTop": 239
+  }
+ },
+ {
+  "width": 390,
+  "screen": "hunts",
+  "violations": [],
+  "metrics": {
+   "hOverflow": false,
+   "offRight": 0,
+   "sidewaysBoxes": 0,
+   "inlineStyles": 0,
+   "inlineStyleSamples": [],
+   "tables": 1,
+   "thScoped": 7,
+   "thTotal": 7,
+   "clickRows": 0,
+   "smallTargets": 0,
+   "navH": 130,
+   "contentTop": 239
+  }
+ },
+ {
+  "width": 390,
+  "screen": "economy",
+  "violations": [],
+  "metrics": {
+   "hOverflow": false,
+   "offRight": 0,
+   "sidewaysBoxes": 0,
+   "inlineStyles": 0,
+   "inlineStyleSamples": [],
+   "tables": 3,
+   "thScoped": 8,
+   "thTotal": 8,
+   "clickRows": 0,
+   "smallTargets": 0,
+   "navH": 130,
+   "contentTop": 239
+  }
+ },
+ {
+  "width": 390,
+  "screen": "zones",
+  "violations": [],
+  "metrics": {
+   "hOverflow": false,
+   "offRight": 0,
+   "sidewaysBoxes": 0,
+   "inlineStyles": 0,
+   "inlineStyleSamples": [],
+   "tables": 1,
+   "thScoped": 5,
+   "thTotal": 5,
+   "clickRows": 0,
+   "smallTargets": 0,
+   "navH": 88,
+   "contentTop": 197
+  }
+ },
+ {
+  "width": 390,
+  "screen": "zone-editor",
+  "violations": [],
+  "metrics": {
+   "hOverflow": false,
+   "offRight": 0,
+   "sidewaysBoxes": 0,
+   "inlineStyles": 0,
+   "inlineStyleSamples": [],
+   "tables": 0,
+   "thScoped": 0,
+   "thTotal": 0,
+   "clickRows": 0,
+   "smallTargets": 0,
+   "navH": 88,
+   "contentTop": 197
+  }
+ },
+ {
+  "width": 390,
+  "screen": "announce",
+  "violations": [],
+  "metrics": {
+   "hOverflow": false,
+   "offRight": 0,
+   "sidewaysBoxes": 0,
+   "inlineStyles": 0,
+   "inlineStyleSamples": [],
+   "tables": 1,
+   "thScoped": 4,
+   "thTotal": 4,
+   "clickRows": 0,
+   "smallTargets": 0,
+   "navH": 88,
+   "contentTop": 197
+  }
+ },
+ {
+  "width": 390,
+  "screen": "log",
+  "violations": [],
+  "metrics": {
+   "hOverflow": false,
+   "offRight": 0,
+   "sidewaysBoxes": 0,
+   "inlineStyles": 0,
+   "inlineStyleSamples": [],
+   "tables": 1,
+   "thScoped": 5,
+   "thTotal": 5,
+   "clickRows": 0,
+   "smallTargets": 0,
+   "navH": 88,
+   "contentTop": 197
+  }
+ },
+ {
+  "width": 390,
+  "screen": "staff",
+  "violations": [],
+  "metrics": {
+   "hOverflow": false,
+   "offRight": 0,
+   "sidewaysBoxes": 0,
+   "inlineStyles": 0,
+   "inlineStyleSamples": [],
+   "tables": 1,
+   "thScoped": 4,
+   "thTotal": 4,
+   "clickRows": 0,
+   "smallTargets": 0,
+   "navH": 88,
+   "contentTop": 197
+  }
+ },
+ {
+  "width": 768,
+  "screen": "dashboard",
+  "violations": [],
+  "metrics": {
+   "hOverflow": false,
+   "offRight": 0,
+   "sidewaysBoxes": 0,
+   "inlineStyles": 0,
+   "inlineStyleSamples": [],
+   "tables": 1,
+   "thScoped": 3,
+   "thTotal": 3,
+   "clickRows": 0,
+   "smallTargets": 0,
+   "navH": 500,
+   "contentTop": 59
+  }
+ },
+ {
+  "width": 768,
+  "screen": "players",
+  "violations": [],
+  "metrics": {
+   "hOverflow": false,
+   "offRight": 0,
+   "sidewaysBoxes": 0,
+   "inlineStyles": 0,
+   "inlineStyleSamples": [],
+   "tables": 1,
+   "thScoped": 6,
+   "thTotal": 6,
+   "clickRows": 0,
+   "smallTargets": 0,
+   "navH": 500,
+   "contentTop": 59
+  }
+ },
+ {
+  "width": 768,
+  "screen": "player",
+  "violations": [],
+  "metrics": {
+   "hOverflow": false,
+   "offRight": 0,
+   "sidewaysBoxes": 0,
+   "inlineStyles": 0,
+   "inlineStyleSamples": [],
+   "tables": 3,
+   "thScoped": 12,
+   "thTotal": 12,
+   "clickRows": 0,
+   "smallTargets": 0,
+   "navH": 500,
+   "contentTop": 59
+  }
+ },
+ {
+  "width": 768,
+  "screen": "chat",
+  "violations": [],
+  "metrics": {
+   "hOverflow": false,
+   "offRight": 0,
+   "sidewaysBoxes": 0,
+   "inlineStyles": 0,
+   "inlineStyleSamples": [],
+   "tables": 1,
+   "thScoped": 4,
+   "thTotal": 4,
+   "clickRows": 0,
+   "smallTargets": 0,
+   "navH": 500,
+   "contentTop": 59
+  }
+ },
+ {
+  "width": 768,
+  "screen": "world",
+  "violations": [],
+  "metrics": {
+   "hOverflow": false,
+   "offRight": 0,
+   "sidewaysBoxes": 0,
+   "inlineStyles": 0,
+   "inlineStyleSamples": [],
+   "tables": 1,
+   "thScoped": 4,
+   "thTotal": 4,
+   "clickRows": 0,
+   "smallTargets": 0,
+   "navH": 500,
+   "contentTop": 59
+  }
+ },
+ {
+  "width": 768,
+  "screen": "hunts",
+  "violations": [],
+  "metrics": {
+   "hOverflow": false,
+   "offRight": 0,
+   "sidewaysBoxes": 0,
+   "inlineStyles": 0,
+   "inlineStyleSamples": [],
+   "tables": 1,
+   "thScoped": 7,
+   "thTotal": 7,
+   "clickRows": 0,
+   "smallTargets": 0,
+   "navH": 500,
+   "contentTop": 59
+  }
+ },
+ {
+  "width": 768,
+  "screen": "economy",
+  "violations": [],
+  "metrics": {
+   "hOverflow": false,
+   "offRight": 0,
+   "sidewaysBoxes": 0,
+   "inlineStyles": 0,
+   "inlineStyleSamples": [],
+   "tables": 3,
+   "thScoped": 8,
+   "thTotal": 8,
+   "clickRows": 0,
+   "smallTargets": 0,
+   "navH": 500,
+   "contentTop": 59
+  }
+ },
+ {
+  "width": 768,
+  "screen": "zones",
+  "violations": [],
+  "metrics": {
+   "hOverflow": false,
+   "offRight": 0,
+   "sidewaysBoxes": 0,
+   "inlineStyles": 0,
+   "inlineStyleSamples": [],
+   "tables": 1,
+   "thScoped": 5,
+   "thTotal": 5,
+   "clickRows": 0,
+   "smallTargets": 0,
+   "navH": 500,
+   "contentTop": 59
+  }
+ },
+ {
+  "width": 768,
+  "screen": "zone-editor",
+  "violations": [],
+  "metrics": {
+   "hOverflow": false,
+   "offRight": 0,
+   "sidewaysBoxes": 0,
+   "inlineStyles": 0,
+   "inlineStyleSamples": [],
+   "tables": 0,
+   "thScoped": 0,
+   "thTotal": 0,
+   "clickRows": 0,
+   "smallTargets": 0,
+   "navH": 500,
+   "contentTop": 59
+  }
+ },
+ {
+  "width": 768,
+  "screen": "announce",
+  "violations": [],
+  "metrics": {
+   "hOverflow": false,
+   "offRight": 0,
+   "sidewaysBoxes": 0,
+   "inlineStyles": 0,
+   "inlineStyleSamples": [],
+   "tables": 1,
+   "thScoped": 4,
+   "thTotal": 4,
+   "clickRows": 0,
+   "smallTargets": 0,
+   "navH": 500,
+   "contentTop": 59
+  }
+ },
+ {
+  "width": 768,
+  "screen": "log",
+  "violations": [],
+  "metrics": {
+   "hOverflow": false,
+   "offRight": 0,
+   "sidewaysBoxes": 0,
+   "inlineStyles": 0,
+   "inlineStyleSamples": [],
+   "tables": 1,
+   "thScoped": 5,
+   "thTotal": 5,
+   "clickRows": 0,
+   "smallTargets": 0,
+   "navH": 500,
+   "contentTop": 59
+  }
+ },
+ {
+  "width": 768,
+  "screen": "staff",
+  "violations": [],
+  "metrics": {
+   "hOverflow": false,
+   "offRight": 0,
+   "sidewaysBoxes": 0,
+   "inlineStyles": 0,
+   "inlineStyleSamples": [],
+   "tables": 1,
+   "thScoped": 4,
+   "thTotal": 4,
+   "clickRows": 0,
+   "smallTargets": 0,
+   "navH": 500,
+   "contentTop": 59
+  }
+ },
+ {
+  "width": 1024,
+  "screen": "dashboard",
+  "violations": [],
+  "metrics": {
+   "hOverflow": false,
+   "offRight": 0,
+   "sidewaysBoxes": 0,
+   "inlineStyles": 0,
+   "inlineStyleSamples": [],
+   "tables": 1,
+   "thScoped": 3,
+   "thTotal": 3,
+   "clickRows": 0,
+   "smallTargets": 0,
+   "navH": 500,
+   "contentTop": 67
+  }
+ },
+ {
+  "width": 1024,
+  "screen": "players",
+  "violations": [],
+  "metrics": {
+   "hOverflow": false,
+   "offRight": 0,
+   "sidewaysBoxes": 0,
+   "inlineStyles": 0,
+   "inlineStyleSamples": [],
+   "tables": 1,
+   "thScoped": 6,
+   "thTotal": 6,
+   "clickRows": 0,
+   "smallTargets": 0,
+   "navH": 500,
+   "contentTop": 67
+  }
+ },
+ {
+  "width": 1024,
+  "screen": "player",
+  "violations": [],
+  "metrics": {
+   "hOverflow": false,
+   "offRight": 0,
+   "sidewaysBoxes": 0,
+   "inlineStyles": 0,
+   "inlineStyleSamples": [],
+   "tables": 3,
+   "thScoped": 12,
+   "thTotal": 12,
+   "clickRows": 0,
+   "smallTargets": 0,
+   "navH": 500,
+   "contentTop": 67
+  }
+ },
+ {
+  "width": 1024,
+  "screen": "chat",
+  "violations": [],
+  "metrics": {
+   "hOverflow": false,
+   "offRight": 0,
+   "sidewaysBoxes": 0,
+   "inlineStyles": 0,
+   "inlineStyleSamples": [],
+   "tables": 1,
+   "thScoped": 4,
+   "thTotal": 4,
+   "clickRows": 0,
+   "smallTargets": 0,
+   "navH": 500,
+   "contentTop": 67
+  }
+ },
+ {
+  "width": 1024,
+  "screen": "world",
+  "violations": [],
+  "metrics": {
+   "hOverflow": false,
+   "offRight": 0,
+   "sidewaysBoxes": 0,
+   "inlineStyles": 0,
+   "inlineStyleSamples": [],
+   "tables": 1,
+   "thScoped": 4,
+   "thTotal": 4,
+   "clickRows": 0,
+   "smallTargets": 0,
+   "navH": 500,
+   "contentTop": 67
+  }
+ },
+ {
+  "width": 1024,
+  "screen": "hunts",
+  "violations": [],
+  "metrics": {
+   "hOverflow": false,
+   "offRight": 0,
+   "sidewaysBoxes": 0,
+   "inlineStyles": 0,
+   "inlineStyleSamples": [],
+   "tables": 1,
+   "thScoped": 7,
+   "thTotal": 7,
+   "clickRows": 0,
+   "smallTargets": 0,
+   "navH": 500,
+   "contentTop": 67
+  }
+ },
+ {
+  "width": 1024,
+  "screen": "economy",
+  "violations": [],
+  "metrics": {
+   "hOverflow": false,
+   "offRight": 0,
+   "sidewaysBoxes": 0,
+   "inlineStyles": 0,
+   "inlineStyleSamples": [],
+   "tables": 3,
+   "thScoped": 8,
+   "thTotal": 8,
+   "clickRows": 0,
+   "smallTargets": 0,
+   "navH": 500,
+   "contentTop": 67
+  }
+ },
+ {
+  "width": 1024,
+  "screen": "zones",
+  "violations": [],
+  "metrics": {
+   "hOverflow": false,
+   "offRight": 0,
+   "sidewaysBoxes": 0,
+   "inlineStyles": 0,
+   "inlineStyleSamples": [],
+   "tables": 1,
+   "thScoped": 5,
+   "thTotal": 5,
+   "clickRows": 0,
+   "smallTargets": 0,
+   "navH": 500,
+   "contentTop": 67
+  }
+ },
+ {
+  "width": 1024,
+  "screen": "zone-editor",
+  "violations": [],
+  "metrics": {
+   "hOverflow": false,
+   "offRight": 0,
+   "sidewaysBoxes": 0,
+   "inlineStyles": 0,
+   "inlineStyleSamples": [],
+   "tables": 0,
+   "thScoped": 0,
+   "thTotal": 0,
+   "clickRows": 0,
+   "smallTargets": 0,
+   "navH": 500,
+   "contentTop": 67
+  }
+ },
+ {
+  "width": 1024,
+  "screen": "announce",
+  "violations": [],
+  "metrics": {
+   "hOverflow": false,
+   "offRight": 0,
+   "sidewaysBoxes": 0,
+   "inlineStyles": 0,
+   "inlineStyleSamples": [],
+   "tables": 1,
+   "thScoped": 4,
+   "thTotal": 4,
+   "clickRows": 0,
+   "smallTargets": 0,
+   "navH": 500,
+   "contentTop": 67
+  }
+ },
+ {
+  "width": 1024,
+  "screen": "log",
+  "violations": [],
+  "metrics": {
+   "hOverflow": false,
+   "offRight": 0,
+   "sidewaysBoxes": 0,
+   "inlineStyles": 0,
+   "inlineStyleSamples": [],
+   "tables": 1,
+   "thScoped": 5,
+   "thTotal": 5,
+   "clickRows": 0,
+   "smallTargets": 0,
+   "navH": 500,
+   "contentTop": 67
+  }
+ },
+ {
+  "width": 1024,
+  "screen": "staff",
+  "violations": [],
+  "metrics": {
+   "hOverflow": false,
+   "offRight": 0,
+   "sidewaysBoxes": 0,
+   "inlineStyles": 0,
+   "inlineStyleSamples": [],
+   "tables": 1,
+   "thScoped": 4,
+   "thTotal": 4,
+   "clickRows": 0,
+   "smallTargets": 0,
+   "navH": 500,
+   "contentTop": 67
+  }
+ },
+ {
+  "width": 1440,
+  "screen": "dashboard",
+  "violations": [],
+  "metrics": {
+   "hOverflow": false,
+   "offRight": 0,
+   "sidewaysBoxes": 0,
+   "inlineStyles": 0,
+   "inlineStyleSamples": [],
+   "tables": 1,
+   "thScoped": 3,
+   "thTotal": 3,
+   "clickRows": 0,
+   "smallTargets": 0,
+   "navH": 500,
+   "contentTop": 67
+  }
+ },
+ {
+  "width": 1440,
+  "screen": "players",
+  "violations": [],
+  "metrics": {
+   "hOverflow": false,
+   "offRight": 0,
+   "sidewaysBoxes": 0,
+   "inlineStyles": 0,
+   "inlineStyleSamples": [],
+   "tables": 1,
+   "thScoped": 6,
+   "thTotal": 6,
+   "clickRows": 0,
+   "smallTargets": 0,
+   "navH": 500,
+   "contentTop": 67
+  }
+ },
+ {
+  "width": 1440,
+  "screen": "player",
+  "violations": [],
+  "metrics": {
+   "hOverflow": false,
+   "offRight": 0,
+   "sidewaysBoxes": 0,
+   "inlineStyles": 0,
+   "inlineStyleSamples": [],
+   "tables": 3,
+   "thScoped": 12,
+   "thTotal": 12,
+   "clickRows": 0,
+   "smallTargets": 0,
+   "navH": 500,
+   "contentTop": 67
+  }
+ },
+ {
+  "width": 1440,
+  "screen": "chat",
+  "violations": [],
+  "metrics": {
+   "hOverflow": false,
+   "offRight": 0,
+   "sidewaysBoxes": 0,
+   "inlineStyles": 0,
+   "inlineStyleSamples": [],
+   "tables": 1,
+   "thScoped": 4,
+   "thTotal": 4,
+   "clickRows": 0,
+   "smallTargets": 0,
+   "navH": 500,
+   "contentTop": 67
+  }
+ },
+ {
+  "width": 1440,
+  "screen": "world",
+  "violations": [],
+  "metrics": {
+   "hOverflow": false,
+   "offRight": 0,
+   "sidewaysBoxes": 0,
+   "inlineStyles": 0,
+   "inlineStyleSamples": [],
+   "tables": 1,
+   "thScoped": 4,
+   "thTotal": 4,
+   "clickRows": 0,
+   "smallTargets": 0,
+   "navH": 500,
+   "contentTop": 67
+  }
+ },
+ {
+  "width": 1440,
+  "screen": "hunts",
+  "violations": [],
+  "metrics": {
+   "hOverflow": false,
+   "offRight": 0,
+   "sidewaysBoxes": 0,
+   "inlineStyles": 0,
+   "inlineStyleSamples": [],
+   "tables": 1,
+   "thScoped": 7,
+   "thTotal": 7,
+   "clickRows": 0,
+   "smallTargets": 0,
+   "navH": 500,
+   "contentTop": 67
+  }
+ },
+ {
+  "width": 1440,
+  "screen": "economy",
+  "violations": [],
+  "metrics": {
+   "hOverflow": false,
+   "offRight": 0,
+   "sidewaysBoxes": 0,
+   "inlineStyles": 0,
+   "inlineStyleSamples": [],
+   "tables": 3,
+   "thScoped": 8,
+   "thTotal": 8,
+   "clickRows": 0,
+   "smallTargets": 0,
+   "navH": 500,
+   "contentTop": 67
+  }
+ },
+ {
+  "width": 1440,
+  "screen": "zones",
+  "violations": [],
+  "metrics": {
+   "hOverflow": false,
+   "offRight": 0,
+   "sidewaysBoxes": 0,
+   "inlineStyles": 0,
+   "inlineStyleSamples": [],
+   "tables": 1,
+   "thScoped": 5,
+   "thTotal": 5,
+   "clickRows": 0,
+   "smallTargets": 0,
+   "navH": 500,
+   "contentTop": 67
+  }
+ },
+ {
+  "width": 1440,
+  "screen": "zone-editor",
+  "violations": [],
+  "metrics": {
+   "hOverflow": false,
+   "offRight": 0,
+   "sidewaysBoxes": 0,
+   "inlineStyles": 0,
+   "inlineStyleSamples": [],
+   "tables": 0,
+   "thScoped": 0,
+   "thTotal": 0,
+   "clickRows": 0,
+   "smallTargets": 0,
+   "navH": 500,
+   "contentTop": 67
+  }
+ },
+ {
+  "width": 1440,
+  "screen": "announce",
+  "violations": [],
+  "metrics": {
+   "hOverflow": false,
+   "offRight": 0,
+   "sidewaysBoxes": 0,
+   "inlineStyles": 0,
+   "inlineStyleSamples": [],
+   "tables": 1,
+   "thScoped": 4,
+   "thTotal": 4,
+   "clickRows": 0,
+   "smallTargets": 0,
+   "navH": 500,
+   "contentTop": 67
+  }
+ },
+ {
+  "width": 1440,
+  "screen": "log",
+  "violations": [],
+  "metrics": {
+   "hOverflow": false,
+   "offRight": 0,
+   "sidewaysBoxes": 0,
+   "inlineStyles": 0,
+   "inlineStyleSamples": [],
+   "tables": 1,
+   "thScoped": 5,
+   "thTotal": 5,
+   "clickRows": 0,
+   "smallTargets": 0,
+   "navH": 500,
+   "contentTop": 67
+  }
+ },
+ {
+  "width": 1440,
+  "screen": "staff",
+  "violations": [],
+  "metrics": {
+   "hOverflow": false,
+   "offRight": 0,
+   "sidewaysBoxes": 0,
+   "inlineStyles": 0,
+   "inlineStyleSamples": [],
+   "tables": 1,
+   "thScoped": 4,
+   "thTotal": 4,
+   "clickRows": 0,
+   "smallTargets": 0,
+   "navH": 500,
+   "contentTop": 67
+  }
+ }
+]

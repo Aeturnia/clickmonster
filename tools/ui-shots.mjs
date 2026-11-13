@@ -3,7 +3,7 @@
 //   node tools/ui-shots.mjs <out-dir> [widths]
 // Set UI_PUBLIC_DIR to capture another checkout's public/ folder.
 import fs from 'node:fs';
-import { setup, signIn, settle, FakeBackend, makeHero, axe, bigZone } from '../tests/ui/harness.mjs';
+import { setup, signIn, settle, FakeBackend, makeHero, axe, bigZone, adminTab } from '../tests/ui/harness.mjs';
 
 const out = process.argv[2] || 'tests/ui/artifacts/shots';
 // Sizes: "390" (height chosen automatically) or "844x390".
@@ -83,9 +83,9 @@ for (const [w, hh] of widths) {
     await a.page.waitForTimeout(300);
     const ashot = async (name) => { await a.page.screenshot({ path: `${out}/${tag}-admin-${name}.png` }); const v = await axe(a.page, { minImpact: 'minor' }); summary.push({ width: tag, screen: `admin-${name}`, violations: v.map((x) => `${x.id}:${x.impact}`) }); };
     await ashot('dashboard');
-    await a.page.click('[data-a="tab"][data-v="players"]'); await a.page.waitForTimeout(500); await ashot('players');
+    await adminTab(a.page, 'players'); await a.page.waitForTimeout(500); await ashot('players');
     await a.page.click('[data-a="open"]'); await a.page.waitForSelector('#sanction'); await a.page.waitForTimeout(300); await ashot('player');
-    await a.page.click('[data-a="tab"][data-v="zones"]'); await a.page.waitForTimeout(500); await ashot('zones');
+    await adminTab(a.page, 'zones'); await a.page.waitForTimeout(500); await ashot('zones');
   } catch (err) {
     summary.push({ width: tag, screen: 'admin-ERROR', error: err.message.split('\n')[0] });
   }

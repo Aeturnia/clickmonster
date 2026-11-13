@@ -1,0 +1,202 @@
+[
+ {
+  "width": 390,
+  "scene": "quick-heal",
+  "violations": [],
+  "busy": [],
+  "requests": 2,
+  "secondDialog": false,
+  "nativeDialogs": 0,
+  "errors": 0
+ },
+ {
+  "width": 390,
+  "scene": "remove-item",
+  "violations": [],
+  "busy": [],
+  "requests": 1,
+  "secondDialog": true,
+  "nativeDialogs": 0,
+  "errors": 0
+ },
+ {
+  "width": 390,
+  "scene": "delete-news",
+  "violations": [],
+  "busy": [],
+  "requests": 1,
+  "secondDialog": true,
+  "nativeDialogs": 0,
+  "errors": 0
+ },
+ {
+  "width": 390,
+  "scene": "remove-message",
+  "violations": [],
+  "busy": [],
+  "requests": 1,
+  "secondDialog": true,
+  "nativeDialogs": 0,
+  "errors": 0
+ },
+ {
+  "width": 390,
+  "scene": "dismiss-report",
+  "violations": [],
+  "busy": [],
+  "requests": 2,
+  "secondDialog": false,
+  "nativeDialogs": 0,
+  "errors": 0
+ },
+ {
+  "width": 390,
+  "scene": "end-event",
+  "violations": [],
+  "busy": [],
+  "requests": 1,
+  "secondDialog": true,
+  "nativeDialogs": 0,
+  "errors": 0
+ },
+ {
+  "width": 390,
+  "scene": "cancel-hunt",
+  "violations": [],
+  "busy": [],
+  "requests": 1,
+  "secondDialog": true,
+  "nativeDialogs": 0,
+  "errors": 0
+ },
+ {
+  "width": 390,
+  "scene": "remove-staff",
+  "violations": [],
+  "busy": [],
+  "requests": 1,
+  "secondDialog": true,
+  "nativeDialogs": 0,
+  "errors": 0
+ },
+ {
+  "width": 390,
+  "scene": "zone-delete",
+  "violations": [],
+  "busy": [],
+  "requests": 1,
+  "secondDialog": true,
+  "nativeDialogs": 0,
+  "errors": 0
+ },
+ {
+  "width": 390,
+  "scene": "zone-restore",
+  "violations": [],
+  "busy": [],
+  "requests": 1,
+  "secondDialog": true,
+  "nativeDialogs": 0,
+  "errors": 0
+ },
+ {
+  "width": 1440,
+  "scene": "quick-heal",
+  "violations": [],
+  "busy": [],
+  "requests": 2,
+  "secondDialog": false,
+  "nativeDialogs": 0,
+  "errors": 0
+ },
+ {
+  "width": 1440,
+  "scene": "remove-item",
+  "violations": [],
+  "busy": [],
+  "requests": 1,
+  "secondDialog": true,
+  "nativeDialogs": 0,
+  "errors": 0
+ },
+ {
+  "width": 1440,
+  "scene": "delete-news",
+  "violations": [],
+  "busy": [],
+  "requests": 1,
+  "secondDialog": true,
+  "nativeDialogs": 0,
+  "errors": 0
+ },
+ {
+  "width": 1440,
+  "scene": "remove-message",
+  "violations": [],
+  "busy": [],
+  "requests": 1,
+  "secondDialog": true,
+  "nativeDialogs": 0,
+  "errors": 0
+ },
+ {
+  "width": 1440,
+  "scene": "dismiss-report",
+  "violations": [],
+  "busy": [],
+  "requests": 2,
+  "secondDialog": false,
+  "nativeDialogs": 0,
+  "errors": 0
+ },
+ {
+  "width": 1440,
+  "scene": "end-event",
+  "violations": [],
+  "busy": [],
+  "requests": 1,
+  "secondDialog": true,
+  "nativeDialogs": 0,
+  "errors": 0
+ },
+ {
+  "width": 1440,
+  "scene": "cancel-hunt",
+  "violations": [],
+  "busy": [],
+  "requests": 1,
+  "secondDialog": true,
+  "nativeDialogs": 0,
+  "errors": 0
+ },
+ {
+  "width": 1440,
+  "scene": "remove-staff",
+  "violations": [],
+  "busy": [],
+  "requests": 1,
+  "secondDialog": true,
+  "nativeDialogs": 0,
+  "errors": 0
+ },
+ {
+  "width": 1440,
+  "scene": "zone-delete",
+  "violations": [],
+  "busy": [],
+  "requests": 1,
+  "secondDialog": true,
+  "nativeDialogs": 0,
+  "errors": 0
+ },
+ {
+  "width": 1440,
+  "scene": "zone-restore",
+  "violations": [],
+  "busy": [],
+  "requests": 1,
+  "secondDialog": true,
+  "nativeDialogs": 0,
+  "errors": 0
+ }
+]

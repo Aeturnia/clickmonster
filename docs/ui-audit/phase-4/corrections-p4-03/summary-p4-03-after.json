@@ -1,0 +1,244 @@
+[
+ {
+  "width": 390,
+  "scene": "quick-heal",
+  "violations": [],
+  "busy": [
+   "quick:heal"
+  ],
+  "requests": 1,
+  "secondDialog": false,
+  "nativeDialogs": 0,
+  "errors": 0
+ },
+ {
+  "width": 390,
+  "scene": "remove-item",
+  "violations": [],
+  "busy": [
+   "removeItem:1"
+  ],
+  "requests": 1,
+  "secondDialog": false,
+  "nativeDialogs": 0,
+  "errors": 0
+ },
+ {
+  "width": 390,
+  "scene": "delete-news",
+  "violations": [],
+  "busy": [
+   "deleteEvent:1"
+  ],
+  "requests": 1,
+  "secondDialog": false,
+  "nativeDialogs": 0,
+  "errors": 0
+ },
+ {
+  "width": 390,
+  "scene": "remove-message",
+  "violations": [],
+  "busy": [
+   "chatDelete:12",
+   "chatDelete:12"
+  ],
+  "requests": 1,
+  "secondDialog": false,
+  "nativeDialogs": 0,
+  "errors": 0
+ },
+ {
+  "width": 390,
+  "scene": "dismiss-report",
+  "violations": [],
+  "busy": [
+   "resolveReport:900"
+  ],
+  "requests": 1,
+  "secondDialog": false,
+  "nativeDialogs": 0,
+  "errors": 0
+ },
+ {
+  "width": 390,
+  "scene": "end-event",
+  "violations": [],
+  "busy": [
+   "endEvent:ev-1"
+  ],
+  "requests": 1,
+  "secondDialog": false,
+  "nativeDialogs": 0,
+  "errors": 0
+ },
+ {
+  "width": 390,
+  "scene": "cancel-hunt",
+  "violations": [],
+  "busy": [
+   "cancelHunt:hunt-1"
+  ],
+  "requests": 1,
+  "secondDialog": false,
+  "nativeDialogs": 0,
+  "errors": 0
+ },
+ {
+  "width": 390,
+  "scene": "remove-staff",
+  "violations": [],
+  "busy": [
+   "removeStaff:mod@example.test"
+  ],
+  "requests": 1,
+  "secondDialog": false,
+  "nativeDialogs": 0,
+  "errors": 0
+ },
+ {
+  "width": 390,
+  "scene": "zone-delete",
+  "violations": [],
+  "busy": [
+   "zoneDelete:"
+  ],
+  "requests": 1,
+  "secondDialog": false,
+  "nativeDialogs": 0,
+  "errors": 0
+ },
+ {
+  "width": 390,
+  "scene": "zone-restore",
+  "violations": [],
+  "busy": [
+   "zoneReset:"
+  ],
+  "requests": 1,
+  "secondDialog": false,
+  "nativeDialogs": 0,
+  "errors": 0
+ },
+ {
+  "width": 1440,
+  "scene": "quick-heal",
+  "violations": [],
+  "busy": [
+   "quick:heal"
+  ],
+  "requests": 1,
+  "secondDialog": false,
+  "nativeDialogs": 0,
+  "errors": 0
+ },
+ {
+  "width": 1440,
+  "scene": "remove-item",
+  "violations": [],
+  "busy": [
+   "removeItem:1"
+  ],
+  "requests": 1,
+  "secondDialog": false,
+  "nativeDialogs": 0,
+  "errors": 0
+ },
+ {
+  "width": 1440,
+  "scene": "delete-news",
+  "violations": [],
+  "busy": [
+   "deleteEvent:1"
+  ],
+  "requests": 1,
+  "secondDialog": false,
+  "nativeDialogs": 0,
+  "errors": 0
+ },
+ {
+  "width": 1440,
+  "scene": "remove-message",
+  "violations": [],
+  "busy": [
+   "chatDelete:12",
+   "chatDelete:12"
+  ],
+  "requests": 1,
+  "secondDialog": false,
+  "nativeDialogs": 0,
+  "errors": 0
+ },
+ {
+  "width": 1440,
+  "scene": "dismiss-report",
+  "violations": [],
+  "busy": [
+   "resolveReport:900"
+  ],
+  "requests": 1,
+  "secondDialog": false,
+  "nativeDialogs": 0,
+  "errors": 0
+ },
+ {
+  "width": 1440,
+  "scene": "end-event",
+  "violations": [],
+  "busy": [
+   "endEvent:ev-1"
+  ],
+  "requests": 1,
+  "secondDialog": false,
+  "nativeDialogs": 0,
+  "errors": 0
+ },
+ {
+  "width": 1440,
+  "scene": "cancel-hunt",
+  "violations": [],
+  "busy": [
+   "cancelHunt:hunt-1"
+  ],
+  "requests": 1,
+  "secondDialog": false,
+  "nativeDialogs": 0,
+  "errors": 0
+ },
+ {
+  "width": 1440,
+  "scene": "remove-staff",
+  "violations": [],
+  "busy": [
+   "removeStaff:mod@example.test"
+  ],
+  "requests": 1,
+  "secondDialog": false,
+  "nativeDialogs": 0,
+  "errors": 0
+ },
+ {
+  "width": 1440,
+  "scene": "zone-delete",
+  "violations": [],
+  "busy": [
+   "zoneDelete:"
+  ],
+  "requests": 1,
+  "secondDialog": false,
+  "nativeDialogs": 0,
+  "errors": 0
+ },
+ {
+  "width": 1440,
+  "scene": "zone-restore",
+  "violations": [],
+  "busy": [
+   "zoneReset:"
+  ],
+  "requests": 1,
+  "secondDialog": false,
+  "nativeDialogs": 0,
+  "errors": 0
+ }
+]

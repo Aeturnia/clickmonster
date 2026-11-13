@@ -1,0 +1,114 @@
+[
+ {
+  "width": 390,
+  "scene": "staff-grant-admin",
+  "violations": [],
+  "busy": [],
+  "calls": {
+   "setStaff": 0,
+   "saveZone": 0,
+   "startEvent": 0,
+   "setBase": 0
+  },
+  "nativeDialogs": 0
+ },
+ {
+  "width": 390,
+  "scene": "staff-grant-moderator",
+  "violations": [],
+  "busy": [],
+  "calls": {
+   "setStaff": 0,
+   "saveZone": 0,
+   "startEvent": 0,
+   "setBase": 0
+  },
+  "nativeDialogs": 0
+ },
+ {
+  "width": 390,
+  "scene": "zone-save-pending",
+  "violations": [],
+  "busy": [
+   "zoneSave"
+  ],
+  "calls": {
+   "setStaff": 0,
+   "saveZone": 1,
+   "startEvent": 0,
+   "setBase": 0
+  },
+  "nativeDialogs": 0
+ },
+ {
+  "width": 390,
+  "scene": "world-two-forms-pending",
+  "violations": [],
+  "busy": [
+   "base"
+  ],
+  "calls": {
+   "setStaff": 0,
+   "saveZone": 0,
+   "startEvent": 1,
+   "setBase": 1
+  },
+  "nativeDialogs": 0
+ },
+ {
+  "width": 1440,
+  "scene": "staff-grant-admin",
+  "violations": [],
+  "busy": [],
+  "calls": {
+   "setStaff": 0,
+   "saveZone": 0,
+   "startEvent": 0,
+   "setBase": 0
+  },
+  "nativeDialogs": 0
+ },
+ {
+  "width": 1440,
+  "scene": "staff-grant-moderator",
+  "violations": [],
+  "busy": [],
+  "calls": {
+   "setStaff": 0,
+   "saveZone": 0,
+   "startEvent": 0,
+   "setBase": 0
+  },
+  "nativeDialogs": 0
+ },
+ {
+  "width": 1440,
+  "scene": "zone-save-pending",
+  "violations": [],
+  "busy": [
+   "zoneSave"
+  ],
+  "calls": {
+   "setStaff": 0,
+   "saveZone": 1,
+   "startEvent": 0,
+   "setBase": 0
+  },
+  "nativeDialogs": 0
+ },
+ {
+  "width": 1440,
+  "scene": "world-two-forms-pending",
+  "violations": [],
+  "busy": [
+   "base"
+  ],
+  "calls": {
+   "setStaff": 0,
+   "saveZone": 0,
+   "startEvent": 1,
+   "setBase": 1
+  },
+  "nativeDialogs": 0
+ }
+]
