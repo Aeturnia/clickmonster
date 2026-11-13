@@ -19,14 +19,21 @@ Read these first:
   - **D-2, the persistent chat panel:** merged as PR #19 (`672a81a`). Findings D2-01 to D2-03 are closed. See `docs/desktop-d2-report.md`.
   - **D-3, keyboard shortcuts:** merged as PR #21 (`d567be2`), approved with no corrections. See `docs/desktop-d3-report.md`.
   - **Separate, and not approved:** the layout picker, wider desktop sheets, and the possible rename to "Monstra Regna", which is a working title only. None of them is to be started without the owner's approval.
-- **Landing page:** being scoped in `docs/landing-scope.md` (the entrance, the interface picker, public news). Not authorized for implementation.
+- **Landing page: the scope is approved and merged** (PR #23, `e385e38`, 2026-11-13). `docs/landing-scope.md` is the implementation contract for L-1 to L-4, covering the entrance, the interface picker and public news.
+  - **No phase is authorized.** L-1 starts only when the owner separately authorizes it.
+  - **Not authorized either:** code or server changes, migrations, deploys, or the rename.
+  - **Implementation gates still open:**
+    - L-1 validates the vendored Supabase UMD build before it replaces the CDN client;
+    - L-3 needs the local Supabase stack running before any production change.
   - **Every question in section 5 is decided.** The main ones:
     - a Netlify Edge Function for article pages, uncached at first;
     - Supabase's UMD build vendored into `public/vendor/`;
     - four PRs, L-1 to L-4;
     - article bodies of paragraphs and bullet lists.
-  - **The scope review of `350d23e` requested documentation corrections.** They are recorded in section 12: no gameplay download for anonymous visitors, one Supabase client owned by `net.js`, and the local RLS tests and production gate in L-3.
-  - **Approving the scope is separate from authorizing L-1.**
+  - **Review corrections** are recorded in section 12:
+    - no gameplay download for anonymous visitors;
+    - one Supabase client owned by `net.js`;
+    - the local RLS tests and production gate in L-3.
 - **Development moved to the owner's Windows laptop.** `npm run deploy:functions` now runs from any shell (PR #15) and needs `SUPABASE_ACCESS_TOKEN` set in the environment.
 - **Landing page L-1 (the entrance) is implemented** on its own branch and PR, awaiting independent review. See `docs/landing-l1-report.md`. The scope was approved and merged as PR #23 (`e385e38`). L-2 and later phases are not authorized.
 - **Don't start another milestone, or make gameplay or server changes,** until the owner approves it. There is no approved next milestone.
