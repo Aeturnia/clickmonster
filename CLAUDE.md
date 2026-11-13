@@ -9,14 +9,15 @@ Read these first:
 - `README.md`: features, architecture, layout, commands and deploying.
 - `docs/ui-modernization-audit.md`: the Phase 0 audit and the phase plan.
 - `docs/ui-phase-1-report.md` … `docs/ui-phase-4-report.md`: what each phase changed, its acceptance criteria, deviations and the review corrections.
-- `docs/backlog.md`: agreed but unscheduled work (desktop layout, layout picker, sign-in news).
+- `docs/backlog.md`: agreed but unscheduled work (desktop layout, layout picker, sign-in news), and the pre-release verification still owed (real devices, screen readers, live-backend staging).
 
-## Where things stand (handoff, 2026-11-12)
+## Where things stand (2026-11-12)
 
-- **`main`:** the game, the admin console, chat, and UI modernization Phases 1–3. Phase 1 is the foundation and accessibility work, Phase 2 the responsive layout, Phase 3 interaction feedback and confirmations.
-- **Phase 4 (admin console) is open as PR #13** on `claude/ui-phase-4-admin`, waiting for independent review. If the review asks for changes, fix them on that branch and PR.
-- **Don't start the next milestone** until the owner approves it.
+- **UI modernization Phases 1–4 are complete and merged into `main`.** Phase 4 (the admin console) was approved in its final independent review at `a8d9dc6` and merged as PR #13 (`baa75d9`). All four review findings, P4-01 to P4-04, are closed.
+- **Development moved to the owner's Windows laptop.** `npm run deploy:functions` now runs from any shell (PR #15) and needs `SUPABASE_ACCESS_TOKEN` set in the environment.
+- **Don't start the next milestone, or make unrelated gameplay changes,** until the owner approves it. There is no approved Phase 5.
 - **Likely next:** the desktop layout and the desktop/mobile choice in `docs/backlog.md`. The owner wants to design these at the desktop.
+- **Before a release:** the pre-release verification in `docs/backlog.md` (real devices, screen readers, live-backend staging) is still owed. The test suites run in Chromium against a fake backend only.
 
 ## How the owner works
 
@@ -53,7 +54,7 @@ Read these first:
 
 ## Architecture notes
 
-- **The engine runs on both sides.** `public/js/engine` and `public/js/data` are shared with the edge functions through symlinks (`supabase/functions/{game,admin}/js -> ../../../public/js`). After changing either, redeploy the functions (`npm run deploy:functions`, which needs `SUPABASE_ACCESS_TOKEN`, a Supabase personal access token, in your environment) so server and client agree.
+- **The engine runs on both sides.** `public/js/engine` and `public/js/data` are shared with the edge functions through symlinks (`supabase/functions/{game,admin}/js -> ../../../public/js`). On Windows these check out as small text files unless Developer Mode is on and `git config core.symlinks true` is set before checkout (the deploy script reads `public/js` directly, so only `supabase functions serve` needs them). After changing either, redeploy the functions (`npm run deploy:functions`, which needs `SUPABASE_ACCESS_TOKEN`, a Supabase personal access token, in your environment) so server and client agree.
 - **Zones** live in the `zones` table, edited in the admin console. `loadZones()` replaces the live `ZONES`/`MONSTERS` registries in place. The built-ins in `data/zones.js` seed it and are the fallback.
 - **Game UI** is `public/js/main.js`:
   - `render()` paints regions with `paint(id, html)`, which keeps focus by key (`focusKey`: `id` or `data-a` + `data-v`).
@@ -61,6 +62,12 @@ Read these first:
   - The pending state is tracked by key (`ui.pendingKey`, `markPending()`).
   - Toasts and alerts are re-homed into the topmost open dialog (`placeOverlays()`).
 - **Chat** is `chat-ui.js`. **Admin** is `admin.js` and `admin-zones.js`: grouped navigation with hash routes, `dataTable()`, `field()`, `checkForm`/`validate`/`submitting`, and form values kept across re-renders.
+- **Admin requests are single-flight** (Phase 4 review, P4-01 to P4-04). `st.pendingForms` holds one key per request in flight:
+  - a form id;
+  - `action:target` for button actions (`actionKey()`, drawn by `markPending()` after every render, run through `pendingWhile()`);
+  - `zone:<id>:<op>` for zone save, delete and restore.
+
+  A second press of the same key sends nothing and opens no second confirmation. While a zone change is pending, its draft is locked in a disabled `fieldset.zone-lock`. New admin mutations should use the same pattern.
 - **Confirmations** use `confirm.js`, with four tiers, documented in the Phase 3 report:
   1. Type the name to confirm.
   2. Danger dialog with focus on Cancel.
@@ -76,12 +83,12 @@ Read these first:
 
 ```
 npm test                 # engine (24)
-npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (68 on the Phase 4 branch)
+npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (85)
 npx playwright install chromium   # once
 ```
 
 **`tests/ui/harness.mjs`** answers every Supabase request with a fake backend built on the real engine. Any other host fails the test, and the supabase-js CDN module is cached in `tests/ui/.cache`. It provides:
-- **`FakeBackend({ hero, players, chat, events, zones, quests, reports })`**: `failNext(action, status, msg)`, `hold(action)` (returns a release function) and `broadcast()` for Realtime. Recorded `calls` and `unexpected` requests are available for assertions.
+- **`FakeBackend({ hero, players, chat, events, zones, quests, reports })`**. Its admin actions write the audit log and refuse repeats the way `supabase/functions/admin/index.ts` does, so a duplicate request shows up as a duplicate audit entry (`backend.adminData().log`). Keep it in step when server behaviour changes. It also provides `failNext(action, status, msg)`, `hold(action)` (returns a release function) and `broadcast()` for Realtime. Recorded `calls` and `unexpected` requests are available for assertions.
 - **Test accounts:** `ACCOUNTS.player`, `admin`, `mod` (a moderator) and `fresh`.
 - **Fixtures:** `makeHero()`, `bigZone(n)`, `fixedQuest()`, `ADMIN_CHAT`/`ADMIN_REPORTS`.
 - **Keyboard:** `fakeKeyboard()` / `setKeyboard(px, pan)` simulate an iOS-style overlay keyboard.

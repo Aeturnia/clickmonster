@@ -1,5 +1,11 @@
 # UI modernization — Phase 4 report: admin console
 
+**Status: complete.**
+- **Approved:** in the final independent review at `a8d9dc6`. All four review findings (P4-01 to P4-04) are closed.
+- **Merged:** into `main` as PR #13 (`baa75d9`) on 2026-11-12.
+- **After the merge,** on `main` at `baa75d9`: `npm test` 24 of 24 and `npm run test:ui` 85 of 85 in each of 3 consecutive full runs.
+- **Still owed before a release:** real devices, screen readers and live-backend staging, listed in `docs/backlog.md` under "Pre-release verification".
+
 Branch `claude/ui-phase-4-admin`, based on `main` at a45095b (Phase 3 merged).
 Scope is the six approved Phase 4 priorities, following the Phase 0 admin plan.
 It keeps the vanilla JS architecture and the game's design language. All admin permissions and server checks are unchanged: no server code, database schema, API contract or moderation consequence changed. The Phase 1–3 accessibility work is kept, and no dependency was added.
