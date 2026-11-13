@@ -1,0 +1,3 @@
+# The vendored supabase-js files must stay byte-identical to the published package
+# (their SHA-256 hashes are in public/vendor/README.md), so git never converts their line endings.
+public/vendor/** -text

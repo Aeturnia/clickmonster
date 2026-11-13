@@ -1,0 +1,153 @@
+{
+  "entryModule": "js/entry.js",
+  "staticDepth": 1,
+  "gameDepth": 7,
+  "visitor": {
+    "requests": 3,
+    "bytes": 25363,
+    "byType": {
+      "document": {
+        "requests": 1,
+        "bytes": 4594
+      },
+      "css": {
+        "requests": 1,
+        "bytes": 9312
+      },
+      "ownJs": {
+        "requests": 1,
+        "bytes": 11457
+      }
+    },
+    "modules": 1,
+    "gameModules": 0,
+    "library": false,
+    "loadedBeforeForm": [
+      "css",
+      "ownJs"
+    ],
+    "idle10s": {
+      "requests": 3,
+      "bytes": 25363,
+      "byType": {
+        "document": {
+          "requests": 1,
+          "bytes": 4594
+        },
+        "css": {
+          "requests": 1,
+          "bytes": 9312
+        },
+        "ownJs": {
+          "requests": 1,
+          "bytes": 11457
+        }
+      },
+      "modules": 1,
+      "gameModules": 0,
+      "library": false
+    },
+    "afterFocus": {
+      "requests": 6,
+      "bytes": 140590,
+      "byType": {
+        "document": {
+          "requests": 2,
+          "bytes": 115391
+        },
+        "css": {
+          "requests": 1,
+          "bytes": 9312
+        },
+        "ownJs": {
+          "requests": 3,
+          "bytes": 15887
+        }
+      },
+      "modules": 3,
+      "gameModules": 0,
+      "library": true
+    }
+  },
+  "returning": {
+    "requests": 43,
+    "bytes": 422281,
+    "byType": {
+      "document": {
+        "requests": 2,
+        "bytes": 115391
+      },
+      "css": {
+        "requests": 2,
+        "bytes": 70530
+      },
+      "ownJs": {
+        "requests": 27,
+        "bytes": 223441
+      },
+      "api": {
+        "requests": 12,
+        "bytes": 12919
+      }
+    },
+    "modules": 27,
+    "gameModules": 24,
+    "library": true
+  },
+  "formBlockedBy": {
+    "libraryDown": {
+      "formAppeared": true,
+      "screenText": "A PERSISTENT FANTASY WORLD ClickMonster Exploration, combat and adventure, in a world every player shares. Enter the rea"
+    },
+    "zonesDown": {
+      "formAppeared": true,
+      "screenText": "A PERSISTENT FANTASY WORLD ClickMonster Exploration, combat and adventure, in a world every player shares. Enter the rea"
+    }
+  },
+  "throttled": {
+    "msToForm": 673,
+    "runs": [
+      672,
+      673,
+      690
+    ]
+  },
+  "shots": [
+    {
+      "size": "320x640",
+      "formTop": 241,
+      "formBottomInView": true,
+      "violations": []
+    },
+    {
+      "size": "390x844",
+      "formTop": 242,
+      "formBottomInView": true,
+      "violations": []
+    },
+    {
+      "size": "844x390",
+      "formTop": 94,
+      "formBottomInView": true,
+      "violations": []
+    },
+    {
+      "size": "1024x768",
+      "formTop": 123,
+      "formBottomInView": true,
+      "violations": []
+    },
+    {
+      "size": "1440x900",
+      "formTop": 134,
+      "formBottomInView": true,
+      "violations": []
+    },
+    {
+      "size": "1920x1080",
+      "formTop": 148,
+      "formBottomInView": true,
+      "violations": []
+    }
+  ]
+}

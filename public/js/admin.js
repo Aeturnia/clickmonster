@@ -1,6 +1,6 @@
 // Admin and moderator console. All checks happen on the server (`admin` edge function);
 // this page only renders what the server allows, and never relies on hiding a control for safety.
-import { sb, fetchZoneDefs } from './net.js';
+import { client, fetchZoneDefs } from './net.js';
 import { setupZones } from './admin-zones.js';
 import { loadZones } from './data/zones.js';
 import { STATS, STAT_SHORT } from './data/stats.js';
@@ -11,6 +11,12 @@ import { ZONES } from './data/zones.js';
 import { RACES } from './data/races.js';
 import { MULT_KEYS, MULT_LABEL, MULT_MAX } from './engine/world-config.js';
 import { ask, setConfirmFallback } from './confirm.js';
+// The one Supabase client (net.js), from our own copy of supabase-js. If it can't load, say so.
+let sb;
+try { sb = await client(); } catch (err) {
+  document.getElementById('admin').innerHTML = '<p class="field-msg bad" role="alert" style="padding:16px">The sign-in service could not be loaded. Check your connection, then reload the page.</p>';
+  throw err;
+}
 // After a confirmation whose button was re-rendered away: the record or section heading.
 setConfirmFallback(() => document.getElementById('player-title') || document.getElementById('section-title') || document.querySelector('.a-tabs [aria-current]'));
 

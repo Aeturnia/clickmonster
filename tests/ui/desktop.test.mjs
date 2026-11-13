@@ -239,13 +239,17 @@ test('D-1 resizing across 1200px keeps focus where it was', async () => {
   await done(ctx);
 });
 
+// Landing L-1: sign-in moved out of #app into the entrance (index.html), which has its own layout
+// (tests/ui/entrance.test.mjs). The screen without a game left inside #app is hero creation.
 test('D-1 screens without a game use the full width', async () => {
-  const ctx = await open(1440, 900, { signedIn: false });
+  const ctx = await env.page({ backend: new FakeBackend(), viewport: { width: 1440, height: 900 }, mobile: false });
   const { page } = ctx;
+  await signIn(page, env.url, 'fresh');
+  await page.waitForSelector('#name', { timeout: 15000 });
   assert.equal(await layoutOf(page), 'desktop');
   const [app, main] = await Promise.all([box(page, '#app'), box(page, '#main')]);
-  assert.equal(main.width, app.width, 'sign-in uses the full width');
+  assert.equal(main.width, app.width, 'hero creation uses the full width');
   assert.equal(await page.isVisible('#side'), false, 'no empty side column');
-  await noAxe(page, 'desktop sign-in');
+  await noAxe(page, 'desktop hero creation');
   await done(ctx);
 });

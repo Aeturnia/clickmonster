@@ -1,0 +1,145 @@
+{
+  "entryModule": "js/main.js",
+  "staticDepth": 7,
+  "gameDepth": 7,
+  "visitor": {
+    "requests": 36,
+    "bytes": 415185,
+    "byType": {
+      "document": {
+        "requests": 1,
+        "bytes": 1458
+      },
+      "css": {
+        "requests": 1,
+        "bytes": 60347
+      },
+      "ownJs": {
+        "requests": 26,
+        "bytes": 213431
+      },
+      "cdnJs": {
+        "requests": 7,
+        "bytes": 127987
+      },
+      "api": {
+        "requests": 1,
+        "bytes": 11962
+      }
+    },
+    "modules": 26,
+    "gameModules": 24,
+    "library": true,
+    "loadedBeforeForm": [
+      "css",
+      "ownJs",
+      "cdnJs",
+      "api"
+    ],
+    "idle10s": {
+      "requests": 36,
+      "bytes": 415185,
+      "byType": {
+        "document": {
+          "requests": 1,
+          "bytes": 1458
+        },
+        "css": {
+          "requests": 1,
+          "bytes": 60347
+        },
+        "ownJs": {
+          "requests": 26,
+          "bytes": 213431
+        },
+        "cdnJs": {
+          "requests": 7,
+          "bytes": 127987
+        },
+        "api": {
+          "requests": 1,
+          "bytes": 11962
+        }
+      },
+      "modules": 26,
+      "gameModules": 24,
+      "library": true
+    },
+    "afterFocus": {
+      "requests": 36,
+      "bytes": 415185,
+      "byType": {
+        "document": {
+          "requests": 1,
+          "bytes": 1458
+        },
+        "css": {
+          "requests": 1,
+          "bytes": 60347
+        },
+        "ownJs": {
+          "requests": 26,
+          "bytes": 213431
+        },
+        "cdnJs": {
+          "requests": 7,
+          "bytes": 127987
+        },
+        "api": {
+          "requests": 1,
+          "bytes": 11962
+        }
+      },
+      "modules": 26,
+      "gameModules": 24,
+      "library": true
+    }
+  },
+  "returning": {
+    "requests": 55,
+    "bytes": 416142,
+    "byType": {
+      "api": {
+        "requests": 20,
+        "bytes": 12919
+      },
+      "document": {
+        "requests": 1,
+        "bytes": 1458
+      },
+      "css": {
+        "requests": 1,
+        "bytes": 60347
+      },
+      "ownJs": {
+        "requests": 26,
+        "bytes": 213431
+      },
+      "cdnJs": {
+        "requests": 7,
+        "bytes": 127987
+      }
+    },
+    "modules": 26,
+    "gameModules": 24,
+    "library": true
+  },
+  "formBlockedBy": {
+    "libraryDown": {
+      "formAppeared": false,
+      "screenText": ""
+    },
+    "zonesDown": {
+      "formAppeared": true,
+      "screenText": "Sign in ClickMonster A shared world of monsters, gold and glory. Sign in EMAIL PASSWORD Sign in New here? Create an acco"
+    }
+  },
+  "throttled": {
+    "msToForm": 2613,
+    "runs": [
+      2579,
+      2613,
+      2616
+    ]
+  }
+}

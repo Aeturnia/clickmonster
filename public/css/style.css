@@ -881,3 +881,12 @@ fieldset.f-set legend { padding: 0; margin-bottom: 4px; font-size: var(--fs-xs);
   .a-section-head h2 { font-size: var(--fs-lg); }
 }
 .review h3 { margin: 0 0 6px; font-family: Georgia, "Times New Roman", serif; font-size: var(--fs-lg); font-weight: 600; text-transform: none; letter-spacing: normal; color: var(--text); }
+
+/* ---------------------------------------------------------------- hero creation (landing L-1, Q11) */
+/* The last step of entering the realm keeps the entrance's look: its backdrop (body.creating in
+   entry.css), the title treatment and a centred column. The fields and behaviour are unchanged. */
+#app #main > .realm-create { max-width: 34rem; margin-left: auto; margin-right: auto; }
+.realm-head { padding-top: 22px; }
+.realm-head h1 { font-size: clamp(2.25rem, 1.6rem + 3vw, 3rem); line-height: 1.05; text-shadow: 0 2px 18px rgba(220, 174, 76, .18); }
+.realm-head::after { content: ""; display: block; width: 7rem; height: 1px; margin: 1rem auto 0; background: linear-gradient(90deg, transparent, var(--gold), transparent); }
+.intro .realm-kicker { margin: 0 0 .35rem; font-size: var(--fs-xs); font-weight: 700; letter-spacing: .16em; text-transform: uppercase; }
