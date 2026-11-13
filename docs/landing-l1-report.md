@@ -1,8 +1,11 @@
 # Landing page — phase L-1 report: the entrance
 
-**Status: review corrections made. Awaiting independent re-review.** It is in PR #25. L-2 is not started and not authorized.
-- **Review of `787b5df`:** changes requested. Two findings, L1-01 and L1-02 (account isolation for requests still on their way); everything else was accepted. Both are corrected in section 10.
-- **Integration:** `main` was merged into this branch after PR #24 (the scope approval record) merged.
+**Status: complete.**
+- **Approved:** in the final independent review at `c97f9fc`, and merged into `main` as PR #25 (`b911a79`) on 2026-11-13. The merged tree is identical to the reviewed head.
+- **Review of `787b5df`:** changes requested. Two findings, L1-01 and L1-02 (account isolation for requests still on their way); everything else was accepted. Both were corrected (section 10) and accepted in the final review, together with the six regression tests and the D2-03 test change.
+- **After the merge,** on `main` at `b911a79`: engine 28/28 and browser 146/146, in each of 3 runs.
+- **Follow-up, not blocking** (from the final review): `playEffects()` schedules battle animations with `setTimeout`, and those timers aren't tied to the game session. If a battle ends and the account changes at once, a queued animation could run on the next account's screen. It can't change hero or server state; it would be a brief visual glitch. Recorded in `docs/backlog.md`.
+- **Still owed before a release:** the pre-release verification in `docs/backlog.md`, now including L-1's items.
 
 The contract is `docs/landing-scope.md`, approved at `37f490a` and merged as PR #23. This phase covers LAC-1 to LAC-10 (with 5a, 5b and 10a), LAC-18 to LAC-20, and LAC-21's L-1 cases.
 

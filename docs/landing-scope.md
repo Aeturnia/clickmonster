@@ -1,6 +1,11 @@
 # Landing page: scope
 
-**Status: scope approved (2026-11-13). No implementation phase is authorized yet.**
+**Status: scope approved (2026-11-13). L-1 is complete; L-2 is authorized; L-3 and L-4 are not.**
+- **L-1, the entrance:** complete, merged as PR #25 (`b911a79`). See `docs/landing-l1-report.md`. Its gate, the vendored Supabase UMD build, was verified against the fake backend (report section 7). Running against the live project is a pre-release item.
+- **L-2, the interface picker:** authorized on 2026-11-13, after L-1 merged and passed its integration checks. On its own branch and PR.
+- **L-3 and L-4:** not authorized. No database change or function deploy.
+
+The original scope status follows.
 - **Approved:** in the final independent review at `37f490a`, and merged into `main` as PR #23 (`e385e38`). The merged document is identical to the reviewed head.
 - **What this document is now:** the implementation contract for L-1 to L-4, each with its own review gate.
 - **Decisions:** every question in section 5 is decided. The owner answered Q1–Q4 first, then Q2a and Q5–Q14 in the scope review of `350d23e`.
