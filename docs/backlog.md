@@ -43,6 +43,18 @@ Now scoped as phase L-2 of the landing page: see `docs/landing-scope.md` (not ye
 - `layout.js` takes a preference (Automatic, Desktop or Mobile) and sets `#app[data-layout]` from it, falling back when a forced Desktop doesn't fit. The Phase 2 wide rules move from plain media queries to `data-layout`, so a forced layout is honoured completely.
 - Offered on the entrance and in Hero, Settings; saved in `clickmonster.prefs`. Labelled, keyboard reachable, and stating the active layout. Tests for each choice at a phone and a desktop size.
 
+## Password recovery
+
+Raised in the landing-page scope review (2026-11-13, Q14). It is tracked separately from that milestone, as a higher-priority account-reliability item, and is not yet scheduled.
+
+- **Today:** there is no way to reset a forgotten password. A player who forgets it loses access to their hero.
+- **Needs:**
+  - a "Forgot password" request from the entrance;
+  - Supabase's reset email, with its redirect URL and email template configured;
+  - a page to set the new password;
+  - tests on the fake backend.
+- **Fits with the entrance** (L-1), but isn't part of it unless the owner schedules it.
+
 ## News and updates on the sign-in page
 
 Now scoped as phases L-3 and L-4 of the landing page: see `docs/landing-scope.md` (not yet authorized). The notes below are the original backlog entry.

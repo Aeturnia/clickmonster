@@ -19,7 +19,14 @@ Read these first:
   - **D-2, the persistent chat panel:** merged as PR #19 (`672a81a`). Findings D2-01 to D2-03 are closed. See `docs/desktop-d2-report.md`.
   - **D-3, keyboard shortcuts:** merged as PR #21 (`d567be2`), approved with no corrections. See `docs/desktop-d3-report.md`.
   - **Separate, and not approved:** the layout picker, wider desktop sheets, and the possible rename to "Monstra Regna", which is a working title only. None of them is to be started without the owner's approval.
-- **Landing page:** being scoped in `docs/landing-scope.md` (the entrance, the interface picker, public news). Not authorized for implementation. Q1–Q4 are decided (section 5): a Netlify Edge Function for article pages, uncached at first; supabase-js vendored into `public/vendor/`; four PRs (L-1 to L-4); article bodies of paragraphs and bullet lists. Q5–Q14 are recommendations awaiting review.
+- **Landing page:** being scoped in `docs/landing-scope.md` (the entrance, the interface picker, public news). Not authorized for implementation.
+  - **Every question in section 5 is decided.** The main ones:
+    - a Netlify Edge Function for article pages, uncached at first;
+    - Supabase's UMD build vendored into `public/vendor/`;
+    - four PRs, L-1 to L-4;
+    - article bodies of paragraphs and bullet lists.
+  - **The scope review of `350d23e` requested documentation corrections.** They are recorded in section 12: no gameplay download for anonymous visitors, one Supabase client owned by `net.js`, and the local RLS tests and production gate in L-3.
+  - **Approving the scope is separate from authorizing L-1.**
 - **Development moved to the owner's Windows laptop.** `npm run deploy:functions` now runs from any shell (PR #15) and needs `SUPABASE_ACCESS_TOKEN` set in the environment.
 - **Don't start another milestone, or make gameplay or server changes,** until the owner approves it. There is no approved next milestone.
 - **Before a release:** the pre-release verification in `docs/backlog.md` is still owed:

@@ -1,11 +1,14 @@
 # Landing page: scope
 
 **Status: scoping. Nothing in this document is authorized for implementation yet.**
-- **Decided (2026-11-13):** the owner's answers to Q1–Q4 are recorded in section 5.
-- **Open for review:**
-  - **Q2a,** which vendored artifact. It departs from the owner's wording ("ESM"), so it needs the owner's confirmation.
-  - **Q5–Q14,** which carry recommendations for the owner to confirm or change.
-- **Next:** independent review of this scope. L-1 does not begin until it is approved.
+- **Decided (2026-11-13):** every question in section 5. The owner answered Q1–Q4 first, then Q2a and Q5–Q14 in the scope review of `350d23e`.
+- **Review of `350d23e`:** changes requested, documentation only. Five corrections, recorded in section 12:
+  - no gameplay download for anonymous visitors;
+  - one Supabase client;
+  - the L-3 security gate;
+  - the returning-player count;
+  - L-4's escaping and failure criteria.
+- **Next:** independent review of the corrected scope. Approving the scope is separate from authorizing L-1.
 
 This scope covers the public entry experience: the game's first screen before sign-in, the interface picker, and public news. It works like the desktop scope (`docs/desktop-scope.md`): evidence, findings, the owner's direction, decisions, constraints, acceptance criteria and phasing.
 
@@ -17,7 +20,10 @@ This scope covers the public entry experience: the game's first screen before si
   - It runs on the UI test harness: files are served locally and the fake backend answers Supabase. The raw data is in `docs/ui-audit/landing/metrics-before.json`.
   - Later phases can rerun it with `UI_PUBLIC_DIR` to measure a change the same way.
 - **Screens:** the sign-in screen at 320×640, 390×844, 844×390, 1024×768, 1440×900 and 1920×1080, in `docs/ui-audit/landing/before-auth-*.png`. Axe-core 4.10.2 at all impacts found **0 violations on all 6**.
-- **Bytes are decoded sizes** as served locally, not the compressed sizes Netlify and the CDN send. The counts include requests that finished up to 300ms after the form appeared.
+- **Bytes are decoded sizes** as served locally, not the compressed sizes Netlify and the CDN send.
+- **Startup requests, not render-blocking dependencies.**
+  - The request and byte counts include everything that finished by the moment measured, plus up to 300 ms after it. So they are startup resource counts, and they vary slightly between runs.
+  - What actually blocks the form is measured separately, by making one dependency fail at a time (`formBlockedBy`, the second table in section 2).
 - **The throttled timing:**
   - It uses Chrome's network throttling (150ms latency, 1.6 Mbit/s down) and a 4× CPU slowdown, taking the median of 3 runs.
   - The supabase-js CDN module is answered from the harness's cache and may not be throttled, so the figure is an **underestimate**.
@@ -36,9 +42,9 @@ This scope covers the public entry experience: the game's first screen before si
 
 Measured (`metrics-before.json`):
 
-| Measure | Fresh visitor, until the sign-in form is visible | Returning player, until the hero bar is drawn |
+| Measure (startup resources, section 1) | Fresh visitor, until the sign-in form is visible | Returning player, until the hero bar is drawn |
 |---|---|---|
-| Requests | 36 | 52 |
+| Startup requests | 36 | 53 (an earlier, uncommitted run gave 52; the committed data prevails) |
 | Decoded bytes | 415 KB | 416 KB |
 | Own JS modules (`/js/`) | 26 (213 KB) | 26 |
 | supabase-js from the CDN | 7 requests (128 KB) | 7 |
@@ -46,7 +52,7 @@ Measured (`metrics-before.json`):
 | Longest static import chain from `main.js` | 7 levels | 7 |
 | Time to the form, throttled (underestimate) | 2.6 s (unthrottled: about 0.2 s) | not measured |
 
-What happens when one dependency fails, measured in separate runs:
+Render-blocking dependencies: what happens when one fails, measured in separate runs:
 
 | Failure | Sign-in form appears? | What the visitor sees |
 |---|---|---|
@@ -126,6 +132,22 @@ These are scope decisions, not authorization to start implementation.
 
 The owner also added requirement 7 (section 4): independent failure handling for authentication, public news and gameplay start-up.
 
+### Decided by the owner in the scope review (2026-11-13)
+
+| Question | Decision |
+|---|---|
+| Q2a. Vendored artifact | **Supabase's official UMD browser build,** `dist/umd/supabase.js` of the pinned version, with its auxiliary chunk, its licence, SHA-256 hashes and update instructions. Supabase supports loading the client as a browser script that exposes a `supabase` global. L-1 must verify that the exact pinned artifact works before it replaces the current client. The entrance and the game share **one** initialized client (section 6, "One Supabase client") |
+| Q5. Maintenance notices | Accepted: optional start and end times, shown near sign-in, never blocking authentication |
+| Q6. Publishing | Accepted: administrators only, for the first release |
+| Q7. Byline | Accepted: published under the game's identity; no staff email or identity exposed |
+| Q8. Editing | Accepted: the slug is immutable after first publication; the original publication date is kept, and the updated date is shown. Fixing a typo must never break a shared link |
+| Q9. Unavailable URLs | Accepted: the same 404 for unknown and unavailable articles |
+| Q10. Entrance news | Accepted: the 3 latest published articles, with summary and date, and All news |
+| Q11. Character creation | Accepted: visually integrated into the entrance, with no change to its mechanics |
+| Q12. Layout choices | Accepted: Automatic, Desktop and Mobile, with a visible explanation when falling back. **The stored preference stays Desktop** while the game temporarily falls back for lack of space; a fallback never overwrites the player's choice |
+| Q13. Share image | Accepted: text-only previews at first; no image asset is required |
+| Q14. Extras | RSS and in-game notification are deferred. **Password recovery** is tracked separately, as a higher-priority account-reliability item (`docs/backlog.md`), not as part of this milestone |
+
 ### The options as they were put
 
 **Q1. How article pages get readable HTML and link previews.** Link-preview crawlers generally don't run JavaScript, so `/news/<slug>` needs HTML from a server.
@@ -147,15 +169,13 @@ The owner also added requirement 7 (section 4): independent failure handling for
 - **Chosen:** plain text with paragraphs and simple bullet lists (lines starting with `- `), for patch notes. No HTML, no links and no images in the first version, consistent with the chat link policy. The server escapes everything.
 - Not chosen: links to the game's own site, which wait for a demonstrated need.
 
-### Recommendations to confirm in review
+### Recommendations as they were put (all decided above)
 
-Section 6 assumes these. The owner can confirm or change any of them in the scope review.
-
-**Q2a. Which vendored artifact (needs the owner's confirmation).** The owner asked for the "vendored ESM artifact" to be verified as self-contained. The ESM build the game uses today is not self-contained (section 6), so the choice is between these:
+**Q2a. Which vendored artifact.** The owner asked for the "vendored ESM artifact" to be verified as self-contained. The ESM build the game uses today is not self-contained (section 6), so the choice is between these:
 
 | Option | For | Against |
 |---|---|---|
-| **The package's own browser build, `dist/umd/supabase.js` (recommended, a deviation from "ESM")** | Byte-identical to what Supabase published, and checkable against its hash. One file, plus a 223-byte stub chunk | Not an ES module. It is a classic script that sets a global, `supabase`. It must load before `net.js` runs, and `net.js` reads `createClient` from the global |
+| **The package's own browser build, `dist/umd/supabase.js` (recommended, a deviation from "ESM"; chosen)** | Byte-identical to what Supabase published, and checkable against its hash. One file, plus a 223-byte stub chunk | Not an ES module. It is a classic script that sets a global, `supabase`. It must load before `net.js` runs, and `net.js` reads `createClient` from the global |
 | The seven `+esm` modules, with their absolute `/npm/` imports rewritten to relative paths | Stays ESM; `net.js` keeps a normal `import` | Our copies are no longer byte-identical to the published files. Seven files to update by hand, and each update repeats the rewrite |
 
 **Q5. Maintenance notices.**
@@ -196,10 +216,14 @@ Section 6 assumes these. The owner can confirm or change any of them in the scop
                   entry.css (small)  +  entry.js (small module)
                     |  first paint: identity, sign-in form, interface picker; no game code
                     |  after paint:  news list (plain fetch, with a timeout, failing quietly)
-                    |                supabase-js and the game modules fetched in the background
-                    |  saved session found (synchronously): start the game at once
+                    |  sign-in begins (the form is used): load supabase-js, nothing else
+                    |  saved session found (synchronously): load supabase-js and the game
                     v
-                  game (main.js and the rest), started on sign-in or with a session;
+                  net.js: the one Supabase client and the one auth listener
+                    |  signed in (new user): start the game
+                    |  signed out or session ended: stop the game, show the entrance
+                    v
+                  game (main.js and the rest), loaded only after sign-in or with a session;
                   the entrance gives way to the hero and world in place
 /news, /news/*    Netlify Edge Function: server-rendered HTML in the entrance's design,
                   published rows only, no game code
@@ -213,7 +237,7 @@ Section 6 assumes these. The owner can confirm or change any of them in the scop
 - **The vendored supabase-js (Q2).**
   - **Not self-contained today.** The jsDelivr module the game imports now is not self-contained. `supabase-js@2.45.4/+esm` imports six more modules by absolute `/npm/` paths: `auth-js`, `functions-js`, `node-fetch`, `postgrest-js`, `realtime-js` and `storage-js`. That is the 7 CDN requests in section 2, so a copy of that one file would not work offline from the CDN.
   - **Candidate artifacts:**
-    - **Recommended (Q2a, to confirm):** the package's own browser build, `dist/umd/supabase.js` of the same pinned version (111 KB, minified as published), copied unmodified from the published package. It is loaded as a classic script and exposes `supabase.createClient`, and `net.js` reads it from there.
+    - **Chosen (Q2a):** the package's own browser build, `dist/umd/supabase.js` of the same pinned version (111 KB, minified as published), copied unmodified from the published package. It is loaded as a classic script and exposes `supabase.createClient`, and `net.js` reads it from there.
       - It is nearly self-contained. It has one lazily loaded chunk, `dist/umd/591.supabase.js` (223 bytes): a stub that throws "ws does not work in the browser". Realtime loads it only where there is no native `WebSocket`.
       - The chunk is vendored beside the main file, so even that path makes no third-party request.
       - The package's MIT `LICENSE` file is kept beside them.
@@ -222,7 +246,8 @@ Section 6 assumes these. The owner can confirm or change any of them in the scop
     - **The admin console uses it too.** `admin.js` imports `sb` from `net.js`, so it moves to the vendored copy in the same change. With the UMD build, `admin.html` loads the same classic script before `admin.js`.
     - **The edge functions are not affected.** They import `npm:@supabase/supabase-js@2.45.4` themselves and don't use `net.js`.
     - Bundling it ourselves would add a bundler as a dev dependency, and it isn't proposed.
-  - **L-1 verifies the chosen artifact:**
+  - **L-1 verifies the chosen artifact before it replaces the current client:**
+    - sign-in, sign-up, session restore, token refresh, functions calls, table reads and Realtime chat all work with it on the harness;
     - it makes no network request except to Supabase;
     - the test harness's CDN allowance is removed, so any third-party request fails a test, in the admin tests as well;
     - the package's `LICENSE` is kept beside it.
@@ -231,14 +256,40 @@ Section 6 assumes these. The owner can confirm or change any of them in the scop
     - The webpack chunk resolves relative to the main script, so it sits in the same directory.
     - Because the path changes with every version, L-1 adds a `/vendor/*` rule to `netlify.toml` with a long, immutable cache.
 - **`entry.js` is small and imports no game code.**
-  - **Returning players:** it checks `localStorage['clickmonster.auth']` synchronously. If a session is saved, it starts loading the game at once and shows an in-place status on the entrance ("Returning to the realm"), not a separate screen. It does not wait for news.
-  - **Visitors:** it wires up the form. After the first paint it fetches supabase-js and the game modules in the background, without running them.
-  - **On submit,** it uses supabase-js to sign in.
+  - **Returning players:**
+    - It checks `localStorage['clickmonster.auth']` synchronously.
+    - If a saved session is there, it loads supabase-js and the game at once, and shows an in-place status on the entrance ("Returning to the realm"), not a separate screen. It does not wait for news.
+    - That check is only a hint for starting early; the client's own session restore decides (section 6, "One Supabase client").
+  - **Anonymous visitors download no gameplay code.**
+    - Reading the entrance, or its news, fetches no game module and no supabase-js.
+    - supabase-js loads when sign-in begins: the first focus or input in the sign-in or create-account form, or its submission.
+    - The game's modules load only after sign-in succeeds, or when a saved session is being restored.
+    - This removes the 26-module download from anonymous visits; it doesn't move it into the background.
+    - Idle prefetching of the game is not part of L-1. If it is proposed later, it is justified and measured separately.
+  - **On submit,** it signs in through the shared client. If supabase-js is still loading, the button shows its pending state until it is ready.
   - **If the vendored library can't load, or Supabase can't be reached,** the form shows a persistent, useful error with Try again. The entrance itself stays usable.
   - It reads and writes `clickmonster.prefs` itself for the picker, and doesn't import `main.js`.
+- **One Supabase client, one owner** (review correction 2).
+  - **`net.js` owns the client.** It is the only code that calls `createClient`, and it does so once per page.
+    - It loads the vendored script if it isn't loaded, creates the client, and returns the same instance to every caller: `entry.js`, the game (`main.js`, `chat-ui.js`) and the admin console.
+    - If loading fails, the error is returned, and a retry loads again. A failed attempt never leaves a half-made client, and a retry never creates a second one.
+  - **One auth listener.** The entrance's session controller is the only `onAuthStateChange` subscriber on the game page, and it drives every transition:
+    - **Signed in with a new user:** start the game.
+    - **Signed out, or the session ended or failed to refresh:** stop the game and show the entrance.
+    - **Token refreshes, user updates, and repeated sign-in events for the user already playing:** no transition. The browser can repeat sign-in events, for example when a tab regains focus, and today's `wasSignedIn` check guards against them.
+    - **A different user** (an account switch): stop, then start, using the chat session rule (`current(s)`) that already guards Realtime callbacks.
+    - `main.js` no longer subscribes itself.
+  - **Token refresh** comes from that single client's `autoRefreshToken`, so nothing refreshes twice.
+  - **The admin console** keeps its own page and listener, using the same `net.js` client code.
+  - **Saved sessions.** The synchronous check is only a hint:
+    - **valid:** the game starts, with no form shown in between;
+    - **expired, with a working refresh token:** the session is refreshed and the game starts;
+    - **expired and not refreshable,** or **revoked:** the entrance shows the form with "Your session has ended. Please sign in again." The game is not started and no `state` call is made;
+    - **malformed** (not JSON, or the wrong shape): treated as no session. The entrance works, no error escapes to the console, and the bad entry doesn't block a fresh sign-in.
+    - In every case the in-place status resolves; it never hangs.
 - **The game becomes something the entrance starts.**
   - `main.js` stops being the page's entry point and drawing the sign-in form.
-  - It exposes a start function, which the entrance calls with a session.
+  - It exposes start and stop functions, which the session controller calls with the shared client and the session. Starting is idempotent for the same session.
   - **Signing out, or an expired session,** hands back to the entrance without a reload. `chat.stop()` and the existing account-reset rules still apply.
   - **If the game can't start** (its modules fail to load, or the first `state` call fails), the entrance stays. It shows a persistent error with Try again and a way to sign out, not a blank page or a half-drawn game.
   - **The handover is in place:** the entrance keeps showing until the hero and world are ready to draw, then gives way to them. The movement is transform and opacity only, and none with reduced motion. Focus lands at a defined place and the change is announced.
@@ -295,8 +346,26 @@ Section 6 assumes these. The owner can confirm or change any of them in the scop
 - **Tests:**
   - **The fake backend** gains anonymous REST reads of `news` (published only) and the admin news actions, kept in step with the real function.
   - **Failure tests** use `failNext` and route aborts to prove sign-in works with news down, and that the form explains a supabase-js failure.
+  - **Session tests** need the fake backend to model token refresh (`grant_type=refresh_token`), including a refresh that fails. Saved sessions are seeded valid, expired-and-refreshable, expired-and-refused, and malformed.
   - **The edge function's handler** is tested directly in Node with a fake `fetch`. The harness may route `/news/*` to it for browser tests.
-- **RLS can't be tested on the fake backend.** The policies are checked in the migration review, and with documented queries run as the `anon` role in the Supabase SQL editor once the migration is applied. That step needs the owner, and it is listed as not verified until it is done.
+- **RLS can't be tested on the fake backend.** L-3 therefore adds a local database (review correction 3):
+  - **Local stack:** the Supabase CLI, pinned as a dev dependency. It is justified by this and only this: it runs a local Postgres, PostgREST and Auth in Docker.
+    - `supabase start` applies every migration in `supabase/migrations/` to a fresh local database.
+    - Docker 29.7.2 is installed on the owner's laptop. The CLI is not installed yet, and nothing has been run. Whether the existing migrations apply cleanly on a fresh local database is the first thing L-3 checks.
+  - **Database tests:** pgTAP files in `supabase/tests/`, run with `supabase test db`, as `anon`, as `authenticated`, and with the service role:
+    - published rows are readable;
+    - drafts, unpublished rows, and rows with a future publication time are not;
+    - ungranted columns can't be selected;
+    - insert, update and delete are refused for `anon` and `authenticated`.
+  - **Local REST tests:** a Node test calls the local stack's REST API with its anonymous key, making the same checks over HTTP. They include `select=*`, selecting an ungranted column, filtering on hidden fields, and every write method.
+  - **No production change without explicit authorization.** Approving the L-3 PR does not authorize the migration. Applying it to production and deploying the `admin` function each need the owner's explicit go-ahead. Before asking, the L-3 report documents the rollback: a migration that drops the table and its grants.
+  - **After the migration is applied:** `tools/news-public-check.mjs` calls the production REST API with the publishable (anonymous) key, not only the SQL editor. It checks:
+    - published reads;
+    - that hidden rows stay hidden;
+    - the column restrictions;
+    - that writes are denied.
+  - **A published row is needed for the read check.** It is an entry the owner approves for publication, or a clearly marked test entry, which is unpublished and deleted afterwards. The report records which.
+  - The results go in the L-3 report. L-4 does not start until they have been reviewed.
 
 ## 8. Draft acceptance criteria
 
@@ -305,10 +374,12 @@ These are measured with `tools/entry-metrics.mjs` (extended as needed) at the si
 | AC | Phase | Criterion | Before | Draft target |
 |---|---|---|---|---|
 | LAC-1 | L-1 | The identity and sign-in form are in the HTML, visible with scripts disabled (with a note that signing in needs JavaScript) | blank page | met |
-| LAC-2 | L-1 | Before the sign-in form is visible: requests, decoded bytes and own modules needed | 36 requests, 415 KB, 26 modules, import chain of 7 | at most 3 requests besides the icon and manifest (document, entry CSS, entry JS), at most 30 KB decoded, no game module |
+| LAC-2 | L-1 | Startup requests and decoded bytes by the time the sign-in form is visible, counted as the tool does (section 1). Render-blocking dependencies are checked separately by failure runs (LAC-21) | 36 requests, 415 KB, 26 game modules, import chain of 7 | at most 3 requests besides the icon and manifest (document, entry CSS, entry JS), at most 30 KB decoded, no game module and no supabase-js |
 | LAC-3 | L-1 | Throttled time to a visible form, same method | 2.6 s (underestimate) | at most 0.8 s, same method |
 | LAC-4 | L-1 | No third-party host on the path: from the first request through sign-in to the drawn hero, every request goes to our own site or to Supabase (the harness allows no CDN). The vendored supabase-js is verified self-contained, its licence notice kept, and its version and update steps documented | 7 requests to `cdn.jsdelivr.net`; with them failing, a blank page | met; tested |
 | LAC-5 | L-1 | Returning player: with a saved session, the game starts loading immediately, with no "Loading" screen; the entrance shows its in-place status until the hero is drawn | separate Loading screen, then the game | met; tested |
+| LAC-5a | L-1 | **No gameplay download for anonymous visitors:**<br>- a visitor who stays 10 s on the entrance without using the form has fetched no game module and no supabase-js;<br>- after focusing the form, supabase-js only;<br>- game modules only after a successful sign-in, or with a saved session | 26 game modules and supabase-js before the form | met; measured with `entry-metrics.mjs` (extended) and tested |
+| LAC-5b | L-1 | **One Supabase client:**<br>- `createClient` runs once per page load, and the entrance, game, chat and admin use that instance;<br>- one `onAuthStateChange` subscriber on the game page;<br>- token refresh, user updates and repeated sign-in events for the same user cause no transition and no second `state` call;<br>- an account switch stops and restarts once;<br>- saved sessions that are valid, expired but refreshable, expired and refused, and malformed each behave as in section 6;<br>- a failed library load retried successfully still gives one client | one client, created on import | met; tested (calls counted in the page; fake backend models refresh) |
 | LAC-6 | L-1 | Continuity: after sign-in, no screen between the entrance and the game or character creation; focus lands at a defined place and the change is announced; no motion with reduced motion | Loading screen in between | met; tested |
 | LAC-7 | L-1 | Sign-in first: the email field is the first form control in the reading and tab order on phones; the whole form, through the Sign in button, is on screen without scrolling at 320×640 and 390×844; the email field is on screen at 844×390 | form in view in portrait; button below the fold at 844×390 | met |
 | LAC-8 | L-1 | Signing out, and an expired session, return to the entrance without a reload; chat's account state is reset | form redrawn in `#app` | met; tested |
@@ -317,9 +388,10 @@ These are measured with `tools/entry-metrics.mjs` (extended as needed) at the si
 | LAC-11 | L-2 | The picker: native radio buttons in a labelled group, on the entrance and in Hero, Settings; keyboard reachable; default Automatic; saved in `clickmonster.prefs`; the active layout, and any fallback, is stated next to it | — | met; tested |
 | LAC-12 | L-2 | Forced Desktop gives the desktop layout where the usable width allows, with a coarse pointer too, and falls back otherwise; forced Mobile gives the phone column at 1024, 1440 and 1920 with no sideways scroll; Automatic matches today's results exactly | — | met; tested at a phone and a desktop size for each choice |
 | LAC-13 | L-3 | Publication states: draft, published and unpublished, with the Q8 rules; admin only (Q6); every change in `admin_log`; single-flight; confirmation tiers as in section 7 | — | met; tested on the fake backend |
-| LAC-14 | L-3 | Public reads: only published rows and only the granted columns, as `anon` | — | checked in review and, with the owner, in the SQL editor |
+| LAC-14 | L-3 | **Public-read security, before production:** on the local stack, pgTAP and REST tests prove:<br>- published rows are readable;<br>- drafts, unpublished and future rows are hidden;<br>- ungranted columns are refused;<br>- all writes are denied, for `anon` and `authenticated`.<br>**After the owner explicitly authorizes the migration,** `tools/news-public-check.mjs` repeats the REST checks against production with the publishable key, and the results go in the L-3 report | — | met locally before the L-3 review; production checks recorded before L-4 starts |
 | LAC-15 | L-4 | The entrance's news: the latest 3 published entries after the form, fetched after the first paint with a timeout; with news failing or slow, sign-in and the returning-player path are unaffected and nothing broken shows | — | met; tested with news failing and held |
 | LAC-16 | L-4 | Article pages: `/news/<slug>` returns 200 HTML with a title, description, canonical URL and Open Graph and Twitter card tags, readable without JS, in the entrance's design; unknown and unpublished slugs return 404 (Q9); `/news` lists published entries; responses are sent `Cache-Control: no-store`, so an unpublished article is gone on the next request; with Supabase down, a 503 page in the same design | — | met; handler and browser tests |
+| LAC-16a | L-4 | **Escaping, canonical URL and failure responses** (handler tests):<br>- article fields with hostile content (`<script>`, `</title>`, quotes, `&`, newlines, very long text) are escaped correctly in the body and in every metadata attribute (`<title>`, description, Open Graph, Twitter);<br>- the canonical and `og:url` come from a trusted site origin constant, never from the request's `Host` or forwarded headers;<br>- slugs that don't match the slug pattern return 404 without querying Supabase;<br>- Supabase errors, timeouts and malformed responses give the 503 page;<br>- every response is `text/html; charset=utf-8` with `Cache-Control: no-store` | — | met; tested |
 | LAC-17 | L-4 | An article page downloads no game modules and no supabase-js | — | 0 `/js/` game modules; measured |
 | LAC-18 | all | No sideways scrolling at any measured size | none | none |
 | LAC-19 | all | axe, all impacts, on the entrance (and, by phase, the picker, the news list, article pages and the admin News section) at the measured sizes | 0 violations (6 captures) | 0 violations |
@@ -338,7 +410,7 @@ One branch and PR per phase, each stopping at an independent review gate. The ow
   - the vendored supabase-js (Q2), with its README, and the harness's CDN allowance removed;
   - the failure handling of requirement 7 for sign-in and game start-up;
   - character creation in the entrance's style (Q11).
-  - The news region is not built yet; there is no placeholder. Criteria: LAC-1 to 10, 18 to 20, and LAC-21's L-1 cases.
+  - The news region is not built yet; there is no placeholder. Criteria: LAC-1 to 10 (with 5a and 5b), 18 to 20, and LAC-21's L-1 cases.
 - **L-2. The interface picker:**
   - the preference in `layout.js` with the fallbacks, and the Phase 2 rules re-keyed to `data-layout`;
   - the control on the entrance and in Hero, Settings.
@@ -347,25 +419,29 @@ One branch and PR per phase, each stopping at an independent review gate. The ow
 **Stage 2: public news**
 
 - **L-3. Publication:**
-  - the `news` migration (table, constraints, grants, RLS);
+  - the `news` migration (table, constraints, grants, RLS) and its rollback migration;
+  - the local Supabase stack (pinned CLI), with pgTAP and local REST tests;
   - the `admin` function's news actions;
   - the admin console's News section with preview;
-  - the fake backend's support.
-  - The migration push and function deploy need the owner's go-ahead. Criteria: LAC-13, 14 and 18 to 20.
-  - **L-4 does not start** until L-3's publication permissions and public-read security have been accepted. "Accepted" means more than code review:
-    - the migration has been applied;
-    - the documented queries, run as the `anon` role (published rows only, granted columns only, no writes), have been run against it;
-    - their results are recorded in the L-3 report.
-  - **There is no staging project,** so the migration lands in production before L-4. That is harmless while nothing reads the table publicly. The admin News section is usable from then on.
+  - the fake backend's support;
+  - `tools/news-public-check.mjs`.
+  - Criteria: LAC-13, 14 and 18 to 20.
+  - **The order:**
+    1. The local database tests pass, and the L-3 PR is reviewed.
+    2. The owner explicitly authorizes applying the migration to production and deploying the `admin` function. This is separate from approving the PR.
+    3. The anonymous-key REST checks run against production, and their results are added to the L-3 report.
+    4. Those results are reviewed.
+  - **L-4 does not start until step 4.**
+  - **There is no staging project,** so the migration is a production change. The REST API is public, so a new table is reachable as soon as it exists. Its security rests on the grants and policies verified in step 1 and checked again in step 3, not on nothing reading it yet.
 - **L-4. Public reading:**
   - the entrance's news list and the maintenance line (Q5);
   - the Netlify Edge Function for `/news` and `/news/<slug>`, with link-preview metadata, uncached at first.
-  - Criteria: LAC-15 to 21.
+  - Criteria: LAC-15 to 21, with 16a.
 
 ## 10. Out of scope
 
 - The rename to Monstra Regna (title, repository, metadata, domain, trademark checks). It is a separate decision; this work keeps "ClickMonster" and keeps the name in a few listed places.
-- Q14's items: password reset, RSS, and in-game news notification.
+- Q14's items: RSS and in-game news notification (deferred). Password recovery is a separate, higher-priority account-reliability item in `docs/backlog.md`.
 - Live public data: player counts, player names, world events, hunts and chat.
 - The admin console's own sign-in page and design. Only its supabase-js source moves to the vendored copy, with `net.js` (Q2).
 - Gameplay, the `game` function and the existing tables.
@@ -378,3 +454,17 @@ One branch and PR per phase, each stopping at an independent review gate. The ow
 - **The compressed transfer sizes** from Netlify and the CDN, against the decoded sizes here.
 - **The owner's browser viewport,** still owed from the desktop scope.
 - **After L-4 is live:** that publishing and unpublishing behave as specified on the real site. Only then is a cache TTL or invalidation considered (Q1).
+
+## 12. Scope review corrections (review of `350d23e`)
+
+The disposition was changes requested, for documentation only. The baseline, the entrance direction, the four phases, the independent-failure requirements and the publication architecture were accepted in principle.
+
+| # | Correction | Where |
+|---|---|---|
+| 1 | Anonymous visitors download no gameplay code. supabase-js loads when sign-in begins, and the game only after sign-in or with a saved session. Idle prefetching would need separate justification and measurement | Section 6, "`entry.js`"; LAC-5a |
+| 2 | One Supabase client, owned by `net.js`, and one auth listener, the entrance's session controller. Transitions are defined for sign-in, sign-out, refresh, repeated events and account switches. Tests cover valid, expired (refreshable and refused) and malformed saved sessions | Section 6, "One Supabase client"; section 7, tests; LAC-5b |
+| 3 | The L-3 security gate: local pgTAP and REST tests before any production change, explicit authorization to apply the migration, then anonymous-key REST checks against production before L-4. The claim that the production migration is harmless is removed | Section 7; section 9, L-3; LAC-14 |
+| 4 | The returning-player baseline is 53 requests, as in the committed data. Counts are labelled as startup resources, distinct from render-blocking dependencies | Sections 1 and 2; LAC-2 |
+| 5 | L-4 criteria for escaping in the body and metadata, a trusted canonical origin, slug validation, and failure responses | LAC-16a |
+
+The owner's answers to Q2a and Q5–Q14 are recorded in section 5.
