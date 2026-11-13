@@ -79,10 +79,13 @@ the `staff` table on every request and records every action in `admin_log`.
 
 ```
 public/              ← deployed site (Netlify publishes this folder)
-  index.html
-  css/style.css
-  js/main.js         ← UI: rendering and button handling
-  js/net.js          ← Supabase client: auth, game API, players list
+  index.html         ← the entrance (sign-in), in plain HTML, plus the game's empty regions
+  css/entry.css      ← the entrance's small stylesheet
+  css/style.css      ← the game's stylesheet, loaded when the game starts
+  js/entry.js        ← the entrance: sign-in, saved sessions, starting and stopping the game
+  js/main.js         ← the game UI: rendering and button handling (started by entry.js)
+  js/net.js          ← the one Supabase client, the game API, players list
+  vendor/            ← supabase-js, served from our own site (see vendor/README.md)
   js/config.js       ← Supabase URL + publishable key (public by design)
   js/engine/         ← game rules (combat, leveling, world, inventory) — no DOM
   js/data/           ← content: races, zones, monsters, items, gems

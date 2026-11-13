@@ -12,18 +12,21 @@ import {
   maxHp, xpToNext, totalStats, gemBonuses, totalArmor, playerCombatant,
   applyRegen, healCost, findItem, equippedItem, meetsRequirements, NAME_RE, deathPenalty,
 } from './engine/character.js';
-import { ask, onConfirmClose, setConfirmFallback } from './confirm.js';
+import { ask, cancelAsk, onConfirmClose, setConfirmFallback } from './confirm.js';
 import { currentZone, featuresAt, inTown, monstersHere, directionTo } from './engine/world.js';
 import { monsterCombatant } from './engine/monster.js';
 import { meleeChance, spellChance, meleeBase, spellBase } from './engine/combat.js';
 import { shopItems, isEquipped, sellPrice } from './engine/inventory.js';
 import { PVP_LEVEL_GAP } from './engine/pvp.js';
-import { sb, api, playersAt, recentEvents, fetchZoneDefs } from './net.js';
+import { sb, api, playersAt, recentEvents, fetchZoneDefs, signOut } from './net.js';
 import { setupChat } from './chat-ui.js';
 import { questTitle, canAccept } from './engine/quests.js';
 import { setWorld, activeEvents, MULT_LABEL, MULT_KEYS } from './engine/world-config.js';
 import { huntCombatant } from './engine/hunt.js';
 import { watchLayout } from './layout.js';
+
+// The entrance (entry.js) imports this module only once net.js has created the Supabase client.
+if (!sb) throw new Error('main.js is started by entry.js, after the Supabase client is ready.');
 
 // ---------------------------------------------------------------- state
 const PREFS_KEY = 'clickmonster.prefs';
@@ -38,9 +41,10 @@ function savePrefs() {
 let session = null;
 let char = null; // the server's copy of our hero
 let layout = 'mobile'; // set by watchLayout(): mobile, wide or desktop (layout.js)
-const ui = {
-  phase: 'loading', // loading | auth | game
-  authMode: 'signin',
+// Per-account UI state. stop() replaces it with a fresh copy at every account boundary
+// (landing L-1 review, L1-02). Device-level settings live in prefs, not here.
+const freshUi = () => ({
+  phase: 'idle', // idle (the entrance is showing) | game
   tab: 'explore',
   list: 'monsters',
   race: 'human',
@@ -59,7 +63,14 @@ const ui = {
   createError: null,
   bankError: null,
   hunts: [],
-};
+});
+const ui = freshUi();
+
+// The game session: one per start(), ended by stop(). Anything that awaits (an action, a read)
+// notes the session it began in and drops its result if that session has ended, so a late
+// answer for one account never reaches the next (landing L-1 review, L1-01 and L1-02).
+let gameGen = 0;
+const live = (g) => g === gameGen;
 
 const SEEN_KEY = 'clickmonster.seenAnnouncement';
 const seenAnnouncement = () => { try { return Number(localStorage.getItem(SEEN_KEY) || 0); } catch { return 0; } };
@@ -357,29 +368,12 @@ function viewBanned() {
     ${btn('signout', null, 'Sign out', 'block')}`;
 }
 
-function viewLoading() {
-  return '<div class="intro"><h1>ClickMonster</h1><p>Loading</p></div>';
-}
-
-function viewAuth() {
-  const signup = ui.authMode === 'signup';
-  return `
-    <div class="intro"><h1>ClickMonster</h1><p>A shared world of monsters, gold and glory.</p></div>
-    <form id="authform" autocomplete="on">
-      <h2>${signup ? 'Create an account' : 'Sign in'}</h2>
-      <label class="field">Email<input id="email" type="email" inputmode="email" autocomplete="email" required value="${esc(ui.email || '')}"${ui.authMsg && ui.authMsgKind === 'bad' ? ' aria-invalid="true" aria-describedby="auth-msg"' : ''}></label>
-      <label class="field">Password<input id="password" type="password" autocomplete="${signup ? 'new-password' : 'current-password'}" minlength="6" required${ui.authMsg && ui.authMsgKind === 'bad' ? ' aria-invalid="true" aria-describedby="auth-msg"' : ''}></label>
-      ${ui.authMsg ? `<p id="auth-msg" class="field-msg ${ui.authMsgKind || 'muted'}" ${ui.authMsgKind === 'bad' ? 'role="alert"' : 'role="status"'}>${esc(ui.authMsg)}</p>` : ''}
-      <button type="submit" class="btn primary block" style="margin-top:18px">${signup ? 'Create account' : 'Sign in'}</button>
-    </form>
-    <p style="text-align:center;margin-top:14px"><button class="textbtn" data-a="authmode" data-v="${signup ? 'signin' : 'signup'}">${signup ? 'I already have an account' : 'New here? Create an account'}</button></p>`;
-}
-
 function viewCreate() {
   const r = RACES[ui.race];
   const bonuses = Object.entries(r.bonus).map(([s, n]) => `+${n} ${STAT_SHORT[s]}`).join(', ');
   return `
-    <div class="intro"><h1>ClickMonster</h1><p>Who are you?</p></div>
+    <div class="realm-create">
+    <div class="intro realm-head"><p class="realm-kicker">The last step into the realm</p><h1>ClickMonster</h1><p>Who are you?</p></div>
     <label class="field">Name<input id="name" type="text" maxlength="18" autocomplete="off" autocapitalize="words" placeholder="Your hero's name" value="${esc(ui.draftName || '')}"${ui.createError ? ' aria-invalid="true" aria-describedby="name-error"' : ''}></label>
     ${ui.createError ? `<p id="name-error" class="field-msg bad" role="alert">${esc(ui.createError)}</p>` : ''}
     <label class="field">Race</label>
@@ -395,7 +389,8 @@ function viewCreate() {
       </dl>
       <p class="small faint" style="margin:10px 0 0">Every weapon and element has a mastery that grows as you fight. Your race starts ahead in its specialty and can master it furthest. There are no classes: you decide where every point goes.</p>
     </div>
-    ${btn('create', null, 'Begin your adventure', 'primary block')}`;
+    ${btn('create', null, 'Begin your adventure', 'primary block')}
+    </div>`;
 }
 
 // ---------------------------------------------------------------- explore
@@ -978,11 +973,14 @@ function sheetQuests() {
 }
 
 async function loadBoard() {
+  const g = gameGen;
   try {
     const [res, news] = await Promise.all([api('quests'), recentEvents().catch(() => [])]);
+    if (!live(g)) return;
     ui.questBoard = res.quests;
     ui.news = news;
   } catch (err) {
+    if (!live(g)) return;
     toast(err.message, 'bad');
   }
   render();
@@ -1081,8 +1079,6 @@ function dismissSheet() {
 sheetDlg.addEventListener('cancel', (e) => { e.preventDefault(); dismissSheet(); render(); });
 
 function screenTitle() {
-  if (ui.phase === 'loading') return 'Loading';
-  if (ui.phase === 'auth') return ui.authMode === 'signup' ? 'Create an account' : 'Sign in';
   if (char && ui.sanctions?.banned) return 'Banned';
   if (!char) return 'Create your hero';
   if (ui.tab === 'hero') return 'Hero';
@@ -1097,8 +1093,7 @@ function render() {
   let main;
   let dock = '';
   let fill = false;
-  if (ui.phase === 'loading') main = viewLoading();
-  else if (ui.phase === 'auth') main = viewAuth();
+  if (ui.phase !== 'game') main = '';
   else if (char && ui.sanctions?.banned) main = viewBanned();
   else if (!char) main = viewCreate();
   else if (ui.tab === 'hero') main = viewHero();
@@ -1112,7 +1107,8 @@ function render() {
   const mapBox = $('#map-scroll');
   const mapScroll = mapBox && [mapBox.scrollLeft, mapBox.scrollTop];
   focusLost = false;
-  const changed = paint('main', `<h1 class="sr-only" id="screen-title" tabindex="-1">${esc(screenTitle())}</h1>${main}`);
+  const changed = paint('main', ui.phase === 'game' ? `<h1 class="sr-only" id="screen-title" tabindex="-1">${esc(screenTitle())}</h1>${main}` : '');
+  document.body.classList.toggle('creating', ui.phase === 'game' && !char); // hero creation keeps the entrance's backdrop
   const inGame = ui.phase === 'game' && !!char && !ui.sanctions?.banned;
   paint('top', inGame ? viewTop() : '');
   paint('dock', inGame ? dock : '');
@@ -1255,7 +1251,6 @@ const BATTLE_ACTIONS = new Set(['melee', 'cast', 'flee', 'again', 'fight', 'atta
 function handleLocal(a, v) {
   switch (a) {
     case 'race': ui.draftName = $('#name')?.value || ''; ui.race = v; return true;
-    case 'authmode': ui.authMode = v; ui.authMsg = ''; ui.email = $('#email')?.value || ui.email; return true;
     case 'tab': ui.tab = v; ui.sheet = null; if (v === 'explore') refreshPlayers(); return true;
     case 'list': ui.list = v; refreshPlayers(); return true;
     case 'mapcenter': {
@@ -1377,8 +1372,9 @@ async function remoteCall(a, v) {
 }
 
 async function runRemote(a, v, el) {
-  const call = await remoteCall(a, v);
-  if (!call) return;
+  const g = gameGen;
+  const call = await remoteCall(a, v); // may wait for a confirmation
+  if (!call || !live(g)) return;
   const [action, args, msg] = call;
   const before = char && {
     loc: locKey(), zone: char.loc.zone, gold: char.gold, xp: char.xp, level: char.level, masteries: { ...char.masteries },
@@ -1389,35 +1385,44 @@ async function runRemote(a, v, el) {
   // Pending: remembered by key so it survives re-renders (regeneration ticks every second).
   ui.pendingKey = el ? focusKey(el) : null;
   markPending();
+  let res;
   try {
-    const res = await api(action, args);
-    char = res.char;
-    trackChanges(action, before);
-    if ('sanctions' in res) ui.sanctions = res.sanctions;
-    resolveErrors(action);
-    if (action === 'create') ui.createError = null;
-    if (action === 'deposit' || action === 'withdraw') ui.bankError = null;
-    if (msg) toast(msg);
-    if (action === 'create' && char) { ui.tab = 'explore'; toast(`Welcome to ${ZONES[char.loc.zone].name}, ${char.name}.`); chat.start(); }
-    if (action === 'sell' || action === 'buyequip') ui.sheet = null;
-    if (action === 'fight' || action === 'attack' || action === 'hunt') ui.tab = 'explore';
-    if (char?.battle?.hunt && ['melee', 'cast'].includes(action)) {
-      const h = ui.hunts.find((x) => x.id === char.battle.hunt);
-      if (h) h.hp = char.battle.hp;
-      if (char.battle.over === 'victory' || char.battle.over === 'ended') loadHunts();
-    }
-    if (char && before && char.loc.zone !== before.zone && char.battle?.over !== 'defeat') toast(`You travel to ${ZONES[char.loc.zone].name}.`);
-    if (action === 'accept' || action === 'abandon') loadBoard();
+    res = await api(action, args);
   } catch (err) {
-    const message = err.message || 'Something went wrong.';
-    if (action === 'create') ui.createError = message; // shown next to the name field
-    else addError(err.status == null ? `Can't reach the game server. ${message}` : message, err.status == null ? 'connection' : action);
-    if (err.status === 401) await sb.auth.signOut();
-  } finally {
+    if (!live(g)) return; // the account changed while this was on its way: not ours to report
     ui.busy = false;
     ui.pendingKey = null;
     markPending();
+    const message = err.message || 'Something went wrong.';
+    if (action === 'create') ui.createError = message; // shown next to the name field
+    else addError(err.status == null ? `Can't reach the game server. ${message}` : message, err.status == null ? 'connection' : action);
+    render();
+    if (err.status === 401) await sb.auth.signOut();
+    return;
   }
+  // The answer belongs to the session that asked. If that session has ended (signed out, or
+  // another account signed in), it is dropped: no hero, feedback or pending state from it.
+  if (!live(g)) return;
+  ui.busy = false;
+  ui.pendingKey = null;
+  markPending();
+  char = res.char;
+  trackChanges(action, before);
+  if ('sanctions' in res) ui.sanctions = res.sanctions;
+  resolveErrors(action);
+  if (action === 'create') ui.createError = null;
+  if (action === 'deposit' || action === 'withdraw') ui.bankError = null;
+  if (msg) toast(msg);
+  if (action === 'create' && char) { ui.tab = 'explore'; toast(`Welcome to ${ZONES[char.loc.zone].name}, ${char.name}.`); chat.start(); }
+  if (action === 'sell' || action === 'buyequip') ui.sheet = null;
+  if (action === 'fight' || action === 'attack' || action === 'hunt') ui.tab = 'explore';
+  if (char?.battle?.hunt && ['melee', 'cast'].includes(action)) {
+    const h = ui.hunts.find((x) => x.id === char.battle.hunt);
+    if (h) h.hp = char.battle.hp;
+    if (char.battle.over === 'victory' || char.battle.over === 'ended') loadHunts();
+  }
+  if (char && before && char.loc.zone !== before.zone && char.battle?.over !== 'defeat') toast(`You travel to ${ZONES[char.loc.zone].name}.`);
+  if (action === 'accept' || action === 'abandon') loadBoard();
   render();
   // Battle feedback for the new log lines.
   const b = char?.battle;
@@ -1438,7 +1443,7 @@ document.addEventListener('click', async (e) => {
   const el = e.target.closest('[data-a]');
   if (!el || el.disabled) return;
   const a = el.dataset.a;
-  if (a === 'signout') { await sb.auth.signOut(); return; }
+  if (a === 'signout') { await signOut(); return; }
   if (handleLocal(a, el.dataset.v)) { render(); return; }
   if (el.getAttribute('aria-disabled') === 'true') return;
   // Taps that are not acted on say so, instead of being silently dropped.
@@ -1449,37 +1454,6 @@ document.addEventListener('click', async (e) => {
     ui.nextActionAt = now + 250;
   }
   await runRemote(a, el.dataset.v, el);
-});
-
-document.addEventListener('submit', async (e) => {
-  if (e.target.id !== 'authform') return;
-  e.preventDefault();
-  const email = $('#email').value.trim();
-  const password = $('#password').value;
-  ui.email = email;
-  const submit = e.target.querySelector('button[type=submit]');
-  submit.disabled = true;
-  submit.classList.add('pending');
-  try {
-    if (ui.authMode === 'signup') {
-      const { data, error } = await sb.auth.signUp({ email, password });
-      if (error) throw error;
-      if (!data.session) {
-        ui.authMode = 'signin';
-        ui.authMsg = 'Account created. Check your email to confirm it, then sign in here.';
-        ui.authMsgKind = 'good';
-        render();
-      }
-    } else {
-      const { error } = await sb.auth.signInWithPassword({ email, password });
-      if (error) throw error;
-    }
-  } catch (err) {
-    ui.authMsg = err.message || 'Could not sign in.';
-    ui.authMsgKind = 'bad';
-    painted.main = null;
-    render();
-  }
 });
 
 // Keyboard support for desktop testing.
@@ -1614,14 +1588,15 @@ document.addEventListener('keydown', (e) => {
 async function refreshPlayers() {
   if (!char || ui.list !== 'players' || ui.tab !== 'explore' || char.battle) return;
   const key = locKey();
+  const g = gameGen;
   try {
     const list = await playersAt(char.loc, char.name);
-    if (!char || key !== locKey()) return;
+    if (!live(g) || !char || key !== locKey()) return;
     ui.players = list;
     ui.playersKey = key;
     render();
   } catch (err) {
-    toast(err.message, 'bad');
+    if (live(g)) toast(err.message, 'bad');
   }
 }
 
@@ -1642,11 +1617,16 @@ setInterval(() => {
 // Pick up zone edits now and then (the server moves heroes out of removed areas).
 setInterval(async () => {
   if (document.visibilityState !== 'visible' || !char) return;
+  const g = gameGen;
   await loadZoneDefs();
+  if (!live(g) || !char) return;
   if (!ZONES[char.loc.zone]) {
-    try { char = (await api('state')).char; } catch { /* next action will sort it out */ }
+    try {
+      const fresh = (await api('state')).char;
+      if (live(g)) char = fresh;
+    } catch { /* next action will sort it out */ }
   }
-  render();
+  if (live(g)) render();
 }, 120000);
 
 let zonesLoaded = null;
@@ -1662,69 +1642,89 @@ function zonesReady() {
 }
 
 async function loadWorldConfig() {
+  const g = gameGen;
   try {
     const { data } = await sb.from('world_config').select('data').eq('id', 1).maybeSingle();
+    if (!live(g)) return;
     setWorld(data?.data || null);
     render();
   } catch { /* keep defaults */ }
 }
 
 async function loadHunts() {
+  const g = gameGen;
   try {
     const { data } = await sb.from('hunts').select('id, zone, name, level, hp, max_hp, ends_at')
       .eq('status', 'active').gt('ends_at', new Date().toISOString()).limit(20);
+    if (!live(g)) return;
     ui.hunts = data || [];
     render();
   } catch { /* not important */ }
 }
 
 async function loadAnnouncement() {
+  const g = gameGen;
   try {
     const { data } = await sb.from('events').select('id, text, created_at').eq('kind', 'announce')
       .gt('created_at', new Date(Date.now() - 3 * 86400000).toISOString())
       .order('created_at', { ascending: false }).limit(1);
+    if (!live(g)) return;
     ui.announcement = data?.[0] || null;
     render();
   } catch { /* not important */ }
 }
 
-async function loadHero() {
-  try {
-    await zonesReady();
-    const res = await api('state');
-    char = res.char;
-    ui.sanctions = res.sanctions || null;
-    ui.phase = 'game';
-    if (char) chat.start().then(() => chat.setZone(char.loc.zone));
-    loadAnnouncement();
-    loadWorldConfig();
-    loadHunts();
-  } catch (err) {
-    toast(err.message, 'bad');
-    ui.phase = 'auth';
-  }
+// The entrance (entry.js) starts and stops the game; it owns the one auth listener. A start for
+// an account that has since changed or signed out is abandoned when it returns (isCurrent).
+// Resolves true when the hero (or hero creation) is drawn; throws if the hero can't be loaded.
+export async function start(newSession, isCurrent = () => true) {
+  const g = ++gameGen;
+  const current = () => isCurrent() && live(g);
+  session = newSession;
+  ui.phase = 'idle';
+  await zonesReady();
+  if (!current()) return false;
+  const res = await api('state');
+  if (!current()) return false;
+  char = res.char;
+  ui.sanctions = res.sanctions || null;
+  ui.phase = 'game';
+  // Chat starts after the hero; by then the account may have changed or signed out.
+  if (char) chat.start().then(() => { if (current() && char) chat.setZone(char.loc.zone); });
+  loadAnnouncement();
+  loadWorldConfig();
+  loadHunts();
   render();
   refreshPlayers();
+  return true;
 }
 
-sb.auth.onAuthStateChange((event, newSession) => {
-  const wasSignedIn = !!session;
-  session = newSession;
-  if (!newSession) {
-    chat.stop();
-    ui.errors = [];
-    char = null;
-    ui.phase = 'auth';
-    ui.sheet = null;
-    render();
-  } else if (!wasSignedIn) {
-    ui.phase = 'loading';
-    render();
-    setTimeout(loadHero, 0); // don't call Supabase from inside the auth callback
-  }
-});
+// Signed out, the session ended, or another account is starting: drop everything that belongs to
+// this account. The regions are emptied; the entrance takes over.
+// Everything per-account is replaced, including a pending action's busy state, so the next
+// account starts clean; requests still on their way are dropped when they return (live()).
+export function stop() {
+  gameGen++;
+  cancelAsk(); // a question for this account (delete, attack…) closes, answered "no"
+  chat.stop();
+  clearTimeout(ui.deltaTimer);
+  char = null;
+  session = null;
+  for (const k of Object.keys(ui)) delete ui[k];
+  Object.assign(ui, freshUi());
+  lastView = null;
+  render();
+}
 
-zonesReady().then(render);
+// The game was drawn while hidden behind the entrance: recentre the map and the battle log now
+// that it can be measured.
+export function shown() {
+  ui.mapKey = null;
+  render();
+  const log = $('#log');
+  if (log) log.scrollTop = log.scrollHeight;
+}
+
 // The layout (mobile, wide or desktop) sets the region order; the desktop side column is drawn
 // only in the desktop layout.
 watchLayout((next, panel) => { layout = next; chat.setMode(panel ? 'panel' : 'drawer'); render(); });

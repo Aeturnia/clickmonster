@@ -2,8 +2,10 @@
 // built on the real game engine. Nothing reaches the live backend:
 //   - every request is routed; Supabase hosts are answered by the fake
 //   - the Realtime websocket is answered by a fake socket
-//   - any other host fails the test, except the pinned supabase-js module from the CDN,
-//     which is cached on disk after the first download so later runs are offline.
+//   - any other host fails the test. supabase-js is served from public/vendor/ like the rest of
+//     the site (landing L-1). Only when measuring another checkout (UI_PUBLIC_DIR, which may be
+//     older code that loads it from the CDN) is the pinned CDN module allowed, cached on disk
+//     after the first download so later runs are offline.
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -24,7 +26,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const PUBLIC = path.resolve(ROOT, process.env.UI_PUBLIC_DIR || 'public');
 const CACHE = path.join(ROOT, 'tests/ui/.cache');
 const SUPA = new URL(SUPABASE_URL);
-const ALLOWED_CDN = /^https:\/\/cdn\.jsdelivr\.net\/npm\/@supabase\//;
+const ALLOWED_CDN = process.env.UI_PUBLIC_DIR ? /^https:\/\/cdn\.jsdelivr\.net\/npm\/@supabase\// : null;
 
 // ---------------------------------------------------------------- static server
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.png': 'image/png' };
@@ -77,10 +79,20 @@ export function makeHero({ name = 'Bartholomew Thorne', race = 'halfling', level
   return c;
 }
 
-function fakeJwt(sub, email) {
+function fakeJwt(sub, email, expiresIn = 3600) {
   const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
-  const exp = Math.floor(Date.now() / 1000) + 3600;
+  const exp = Math.floor(Date.now() / 1000) + expiresIn;
   return `${b64({ alg: 'HS256', typ: 'JWT' })}.${b64({ sub, email, role: 'authenticated', aud: 'authenticated', exp })}.signature`;
+}
+
+// A session as supabase-js stores it (localStorage 'clickmonster.auth') and as the token endpoint
+// returns it. expiresIn below zero gives an expired one, for session-restore tests.
+export function savedSession(acct, expiresIn = 3600) {
+  return {
+    access_token: fakeJwt(acct.id, acct.email, expiresIn), token_type: 'bearer', expires_in: expiresIn,
+    expires_at: Math.floor(Date.now() / 1000) + expiresIn, refresh_token: `refresh-${acct.id}`,
+    user: { id: acct.id, email: acct.email, aud: 'authenticated', role: 'authenticated' },
+  };
 }
 
 // ---------------------------------------------------------------- fake backend
@@ -106,6 +118,8 @@ export class FakeBackend {
     this.holds = {}; // action -> promise: requests for it wait until released
     this.offline = false;
     this.sockets = [];
+    this.revoked = new Set(); // refresh tokens the auth server refuses
+    this.authCalls = []; // grant types requested from /auth/v1/token, in order
     // The real board depends on the hour; tests that need a quest pass a fixed one (fixedQuest()).
     this.quests = quests || generateQuests(hourBucket()).map((q, i) => ({ ...q, id: `quest-${i}`, completedBy: null }));
   }
@@ -122,6 +136,7 @@ export class FakeBackend {
   userFor(token) {
     try {
       const payload = JSON.parse(Buffer.from(String(token).split('.')[1], 'base64url').toString());
+      if (payload.exp && payload.exp * 1000 < Date.now()) return null; // expired, as the real server refuses it
       return Object.values(ACCOUNTS).find((a) => a.id === payload.sub) || null;
     } catch { return null; }
   }
@@ -432,7 +447,7 @@ export async function attach(context, backend, baseUrl) {
     const req = route.request();
     const url = new URL(req.url());
     if (req.url().startsWith(baseUrl)) return route.continue();
-    if (ALLOWED_CDN.test(req.url())) return cdnFetch(route);
+    if (ALLOWED_CDN?.test(req.url())) return cdnFetch(route);
     if (url.host !== SUPA.host) {
       backend.unexpected.push(req.url());
       return route.abort('blockedbyclient');
@@ -445,13 +460,23 @@ export async function attach(context, backend, baseUrl) {
     try {
       if (p === '/auth/v1/token') {
         const body = JSON.parse(req.postData() || '{}');
-        const acct = Object.values(ACCOUNTS).find((x) => x.email === body.email && x.password === body.password);
+        // Refresh tokens are refresh-<account id>; anything else (or a revoked one) is refused.
+        const acct = url.searchParams.get('grant_type') === 'refresh_token'
+          ? (backend.revoked.has(body.refresh_token) ? null : Object.values(ACCOUNTS).find((x) => body.refresh_token === `refresh-${x.id}`))
+          : Object.values(ACCOUNTS).find((x) => x.email === body.email && x.password === body.password);
+        backend.authCalls.push(url.searchParams.get('grant_type') || 'password');
+        if (!acct && url.searchParams.get('grant_type') === 'refresh_token') return json(route, 400, { error: 'invalid_grant', error_description: 'Invalid Refresh Token: Refresh Token Not Found', msg: 'Invalid Refresh Token: Refresh Token Not Found', code: 'refresh_token_not_found' });
         if (!acct) return json(route, 400, { error: 'invalid_grant', error_description: 'Invalid login credentials', msg: 'Invalid login credentials' });
-        const access = fakeJwt(acct.id, acct.email);
-        return json(route, 200, { access_token: access, token_type: 'bearer', expires_in: 3600, expires_at: Math.floor(Date.now() / 1000) + 3600, refresh_token: 'refresh', user: { id: acct.id, email: acct.email, aud: 'authenticated', role: 'authenticated' } });
+        return json(route, 200, savedSession(acct));
       }
       if (p === '/auth/v1/user') return user ? json(route, 200, { id: user.id, email: user.email, aud: 'authenticated', role: 'authenticated' }) : json(route, 401, { msg: 'no user' });
       if (p === '/auth/v1/logout') return route.fulfill({ status: 204 });
+      // Sign-up with email confirmation on (as the live project): a user, no session yet.
+      if (p === '/auth/v1/signup') {
+        const body = JSON.parse(req.postData() || '{}');
+        if (Object.values(ACCOUNTS).some((x) => x.email === body.email)) return json(route, 422, { code: 'user_already_exists', msg: 'User already registered' });
+        return json(route, 200, { id: '00000000-0000-4000-8000-0000000000ff', email: body.email, aud: 'authenticated', role: '', confirmation_sent_at: new Date().toISOString() });
+      }
       if (p.startsWith('/functions/v1/')) {
         const fnName = p.split('/').pop();
         const body = JSON.parse(req.postData() || '{}');

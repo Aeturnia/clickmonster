@@ -6,13 +6,61 @@
   <meta name="theme-color" content="#16120f">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
+  <meta name="description" content="A persistent fantasy world of exploration, combat and adventure, shared by every player.">
   <title>ClickMonster</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/entry.css">
+  <!-- A saved session: show "Returning to the realm" from the first paint instead of the form.
+       entry.js checks the session properly and shows the form again if it isn't usable.
+       The storage key is the one net.js gives supabase-js (AUTH_STORAGE_KEY). -->
+  <script>try { if (localStorage.getItem('clickmonster.auth')) document.documentElement.classList.add('resuming'); } catch (e) { /* storage unavailable */ }</script>
 </head>
-<body>
-  <div id="app">
+<body class="realm">
+  <!-- The entrance (docs/landing-scope.md). Plain HTML, styled by entry.css, drawn before any
+       script runs. entry.js signs in and starts the game; no game code loads before that. -->
+  <main id="entry" class="entry">
+    <div class="e-wrap">
+      <header class="e-id">
+        <p class="e-kicker">A persistent fantasy world</p>
+        <h1 class="e-title">ClickMonster</h1>
+        <p class="e-sub">Exploration, combat and adventure, in a world every player shares.</p>
+      </header>
+
+      <section class="e-gate" aria-labelledby="gate-h">
+        <h2 id="gate-h" class="e-h" tabindex="-1">Enter the realm</h2>
+        <p id="gate-status" class="e-status" role="status"><span class="e-resume">Returning to the realm</span></p>
+        <form id="authform" method="post" autocomplete="on">
+          <label class="e-field">Email<input id="email" class="e-input" type="email" inputmode="email" autocomplete="email" required></label>
+          <label class="e-field">Password<input id="password" class="e-input" type="password" autocomplete="current-password" minlength="6" required></label>
+          <p id="auth-msg" class="e-msg" hidden></p>
+          <button type="submit" class="e-btn" disabled>Sign in</button>
+        </form>
+        <p class="e-switch"><button type="button" id="authmode" class="e-link" disabled>New here? Create an account</button></p>
+        <div id="gate-problem" class="e-problem" hidden>
+          <p id="gate-problem-text" role="alert"></p>
+          <div class="e-actions">
+            <button type="button" id="gate-retry" class="e-btn">Try again</button>
+            <button type="button" id="gate-signout" class="e-btn e-quiet">Sign out</button>
+          </div>
+        </div>
+        <noscript><p class="e-msg e-bad">Signing in needs JavaScript. Turn it on in your browser to enter the realm.</p></noscript>
+      </section>
+
+      <section class="e-about" aria-labelledby="about-h">
+        <h2 id="about-h" class="e-h">The realm</h2>
+        <p>Choose your race and set out into lands that grow more dangerous the further you travel. Every zone has its level, its monsters and its rewards; some let heroes fight each other.</p>
+        <ul class="e-points">
+          <li>There are no classes. You decide where every point goes, and your stats have no cap.</li>
+          <li>Win gold, gems and relic gear in battle, and master the weapons and elements you fight with.</li>
+          <li>Take on quests, join world events and boss hunts, and talk with the realm in chat.</li>
+        </ul>
+      </section>
+    </div>
+  </main>
+
+  <!-- The game, started by entry.js after sign-in (js/main.js). -->
+  <div id="app" hidden>
     <header id="top" aria-label="Your hero"></header>
     <main id="main"></main>
     <aside id="chatbar" aria-label="Chat"></aside>
@@ -25,7 +73,6 @@
   <div id="toast" role="status" aria-live="polite"></div>
   <div id="sr-status" class="sr-only" aria-live="polite"></div>
   <div id="alerts" aria-label="Problems"></div>
-  <noscript>ClickMonster needs JavaScript to run.</noscript>
-  <script type="module" src="js/main.js"></script>
+  <script type="module" src="js/entry.js"></script>
 </body>
 </html>

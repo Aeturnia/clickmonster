@@ -1,5 +1,5 @@
 // Entry measurements on the UI test harness (fake backend, never the live one).
-//   node tools/entry-metrics.mjs [out.json] [screenshot-dir]
+//   node tools/entry-metrics.mjs [out.json] [screenshot-dir] [shot-prefix: before | after]
 // Set UI_PUBLIC_DIR to measure another checkout's public/ folder (for "before" numbers).
 //
 // Definitions (390x844 phone, a fresh visitor and a returning player with a saved session):
@@ -8,13 +8,20 @@
 //   byType             the same, split into document, css, own scripts (/js/), the supabase-js
 //                      CDN module, and Supabase API calls
 //   modules            own ES modules (/js/*.js) loaded by then
-//   staticDepth        the longest import chain from the entry module, counted from the files
-//                      (each level is one more round trip before the module can run)
+//   gameModules        of those, the game's (everything but entry.js, net.js and config.js)
+//   library            whether supabase-js had been requested (the CDN module or public/vendor/)
+//   staticDepth        the longest static import chain from the page's entry module (entry.js
+//                      since landing L-1, main.js before), counted from the files; each level is
+//                      one more round trip before the module can run
+//   gameDepth          the same from main.js
+//   visitor.idle10s    a visitor who reads the entrance for 10 s without touching it: what had
+//                      been requested by then (landing LAC-5a)
+//   visitor.afterFocus the same visitor, 1.5 s after focusing the email field
 //   loadedBeforeForm   the kinds of request that had finished when the form appeared (not all of
 //                      them block it: see docs/landing-scope.md)
-//   formBlockedBy      separate runs with one dependency failing (the supabase-js CDN aborted; the
-//                      zones read answered with 500): does the sign-in form appear within 8s, and
-//                      what does the screen say instead
+//   formBlockedBy      separate runs with one dependency failing (supabase-js aborted, from the
+//                      CDN or public/vendor/; the zones read answered with 500): does the sign-in
+//                      form appear within 8s, and what does the screen say instead
 //   throttled          time from navigation to the visible sign-in form with Chrome's network
 //                      throttling (150ms latency, 1.6 Mbit/s down) and 4x CPU slowdown, median of
 //                      3 runs. Only requests that really go over the network are throttled; the
@@ -52,6 +59,8 @@ function track(page, base) {
   return log;
 }
 
+const ENTRY_PATH = /\/js\/(entry|net|config)\.js$/;
+const isLibrary = (u) => /cdn\.jsdelivr\.net\/npm\/@supabase|\/vendor\/supabase-js/.test(u);
 function sum(log) {
   const byType = {};
   for (const r of log) {
@@ -64,6 +73,8 @@ function sum(log) {
     bytes: log.reduce((n, r) => n + r.bytes, 0),
     byType,
     modules: log.filter((r) => r.kind === 'ownJs').length,
+    gameModules: log.filter((r) => r.kind === 'ownJs' && !ENTRY_PATH.test(new URL(r.url).pathname)).length,
+    library: log.some((r) => isLibrary(r.url)),
   };
 }
 
@@ -83,7 +94,8 @@ function depth(file, seen = new Map()) {
 }
 
 const h = await setup();
-const result = { staticDepth: depth(path.join(PUBLIC, 'js/main.js')) };
+const entryModule = fs.existsSync(path.join(PUBLIC, 'js/entry.js')) ? 'js/entry.js' : 'js/main.js';
+const result = { entryModule, staticDepth: depth(path.join(PUBLIC, entryModule)), gameDepth: depth(path.join(PUBLIC, 'js/main.js')) };
 
 { // A fresh visitor: no saved session.
   const { page, context } = await h.page();
@@ -93,6 +105,11 @@ const result = { staticDepth: depth(path.join(PUBLIC, 'js/main.js')) };
   await page.waitForTimeout(300); // let finished requests report their sizes
   result.visitor = sum(log);
   result.visitor.loadedBeforeForm = [...new Set(log.filter((r) => r.kind !== 'document').map((r) => r.kind))];
+  await page.waitForTimeout(10000 - 300);
+  result.visitor.idle10s = sum(log);
+  await page.focus('#email');
+  await page.waitForTimeout(1500);
+  result.visitor.afterFocus = sum(log);
   await context.close();
 }
 
@@ -111,7 +128,7 @@ const result = { staticDepth: depth(path.join(PUBLIC, 'js/main.js')) };
 // What blocks the form: one dependency failing at a time.
 result.formBlockedBy = {};
 for (const [name, pattern, how] of [
-  ['cdnDown', /cdn\.jsdelivr\.net/, (r) => r.abort('internetdisconnected')],
+  ['libraryDown', /cdn\.jsdelivr\.net|\/vendor\//, (r) => r.abort('internetdisconnected')],
   ['zonesDown', /\/rest\/v1\/zones/, (r) => r.fulfill({ status: 500, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: '{}' })],
 ]) {
   const { page, context } = await h.page();
@@ -151,7 +168,7 @@ if (shotDir) {
     await page.goto(h.url + '/');
     await page.waitForSelector('#authform', { state: 'visible' });
     await page.waitForTimeout(250);
-    await page.screenshot({ path: `${shotDir}/before-auth-${w}x${hh}.png` });
+    await page.screenshot({ path: `${shotDir}/${process.argv[4] || 'before'}-auth-${w}x${hh}.png` });
     const v = await axe(page, { minImpact: 'minor' });
     const form = await page.locator('#authform').boundingBox();
     result.shots.push({ size: `${w}x${hh}`, formTop: Math.round(form.y), formBottomInView: form.y + form.height <= hh, violations: v.map((x) => `${x.id}:${x.impact}`) });

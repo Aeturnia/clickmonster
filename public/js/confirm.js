@@ -131,5 +131,9 @@ export function ask({ title, lead = '', points = [], confirm = 'Confirm', cancel
   });
 }
 
+/** Close a question that is showing, as if Cancel were pressed (its ask() resolves false). The
+ *  game calls this when the account's session ends, so one account's question never outlives it. */
+export function cancelAsk() { finish(null); }
+
 /** True while a confirmation is showing (keyboard shortcuts elsewhere should stand down). */
 export const isAsking = () => !!pending;

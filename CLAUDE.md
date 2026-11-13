@@ -35,6 +35,7 @@ Read these first:
     - one Supabase client owned by `net.js`;
     - the local RLS tests and production gate in L-3.
 - **Development moved to the owner's Windows laptop.** `npm run deploy:functions` now runs from any shell (PR #15) and needs `SUPABASE_ACCESS_TOKEN` set in the environment.
+- **Landing page L-1 (the entrance) is implemented** on its own branch and PR, awaiting independent review. See `docs/landing-l1-report.md`. The scope was approved and merged as PR #23 (`e385e38`). L-2 and later phases are not authorized.
 - **Don't start another milestone, or make gameplay or server changes,** until the owner approves it. There is no approved next milestone.
 - **Before a release:** the pre-release verification in `docs/backlog.md` is still owed:
   - real devices and other browsers (including Firefox and Safari on desktop);
@@ -82,6 +83,13 @@ Read these first:
 
 - **The engine runs on both sides.** `public/js/engine` and `public/js/data` are shared with the edge functions through symlinks (`supabase/functions/{game,admin}/js -> ../../../public/js`). On Windows these check out as small text files unless Developer Mode is on and `git config core.symlinks true` is set before checkout (the deploy script reads `public/js` directly, so only `supabase functions serve` needs them). After changing either, redeploy the functions (`npm run deploy:functions`, which needs `SUPABASE_ACCESS_TOKEN`, a Supabase personal access token, in your environment) so server and client agree.
 - **Zones** live in the `zones` table, edited in the admin console. `loadZones()` replaces the live `ZONES`/`MONSTERS` registries in place. The built-ins in `data/zones.js` seed it and are the fallback.
+- **The entrance** (landing L-1, `docs/landing-scope.md`) is plain HTML in `index.html`, styled by `css/entry.css`, with `js/entry.js`.
+  - **Anonymous visitors download no game code.** supabase-js loads when they first focus or type in the form; `main.js`, its modules and `css/style.css` load only after sign-in, or at once when a saved session is found. There is no autofocus.
+  - **`entry.js` is the page's only auth listener.** It starts the game (`start(session, isCurrent)` in `main.js`) for a new user and stops it (`stop()`) on sign-out or when the session ends. Refreshes and repeated sign-in events for the same user do nothing. Each start has a generation number, and a stale one is dropped.
+  - **Failures stay separate.** If the library, Supabase, the game's code or the first `state` call fails, the entrance stays with a message. A module that failed to load stays failed for the page, so Try again reloads in that case.
+  - **Account isolation in `main.js`** (L-1 review, L1-01 and L1-02). Per-account UI state comes from `freshUi()`, and `stop()` replaces it. Every `start()` and `stop()` advances `gameGen`. Anything that awaits (an action in `runRemote()`, `loadBoard`, `refreshPlayers`, `loadHunts` and the other reads) records `gameGen` first and drops its result unless `live(g)`. New async game code must do the same.
+  - **The entrance's CSS never reads `data-layout`.** Its colour tokens copy `style.css` `:root`, and `tests/entrance-files.test.mjs` checks they match.
+- **The Supabase client:** `net.js` owns the one client. `client()` loads `vendor/supabase-js@2.45.4/supabase.js` (Supabase's UMD build, byte-identical to the npm package; hashes and update steps in `public/vendor/README.md`) and creates the client once. `sb` is a live binding, and `signOut()` marks a player's own sign-out. Nothing else may call `createClient`. The admin console uses `await client()`.
 - **Game UI** is `public/js/main.js`:
   - `render()` paints regions with `paint(id, html)`, which keeps focus by key (`focusKey`: `id` or `data-a` + `data-v`).
   - Actions go through one delegated click handler. `handleLocal` covers view-only actions; `remoteCall`/`runRemote` call the server.
@@ -115,14 +123,15 @@ Read these first:
 ## Testing
 
 ```
-npm test                 # engine (24)
-npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (119)
+npm test                 # engine, plus the entrance file checks (28)
+npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (146)
 npx playwright install chromium   # once
 ```
 
-**`tests/ui/harness.mjs`** answers every Supabase request with a fake backend built on the real engine. Any other host fails the test, and the supabase-js CDN module is cached in `tests/ui/.cache`. It provides:
+**`tests/ui/harness.mjs`** answers every Supabase request with a fake backend built on the real engine. Any other host fails the test. supabase-js comes from `public/vendor/`; the CDN module is allowed only when `UI_PUBLIC_DIR` points at another checkout, which may be older code, and is cached in `tests/ui/.cache`. It provides:
 - **`FakeBackend({ hero, players, chat, events, zones, quests, reports, worldEvents, activeHunts })`**. Its admin actions write the audit log and refuse repeats the way `supabase/functions/admin/index.ts` does, so a duplicate request shows up as a duplicate audit entry (`backend.adminData().log`). Keep it in step when server behaviour changes. It also provides `failNext(action, status, msg)`, `hold(action)` (returns a release function) and `broadcast()` for Realtime. Recorded `calls` and `unexpected` requests are available for assertions.
 - **Test accounts:** `ACCOUNTS.player`, `admin`, `mod` (a moderator) and `fresh`.
+- **Auth:** `savedSession(acct, expiresIn)` builds a stored session to seed `localStorage` (a negative `expiresIn` gives an expired one). Refresh tokens are `refresh-<id>`; add one to `backend.revoked` to make the server refuse it. `backend.authCalls` lists the grant types requested, and `/auth/v1/signup` answers as with email confirmation on.
 - **Fixtures:** `makeHero()`, `bigZone(n)`, `fixedQuest()`, `ADMIN_CHAT`/`ADMIN_REPORTS`.
 - **Keyboard:** `fakeKeyboard()` / `setKeyboard(px, pan)` simulate an iOS-style overlay keyboard.
 - **Navigation and pages:** `adminTab()` opens admin sections on phones. `page.nativeDialogs` records any native dialog.
@@ -132,7 +141,8 @@ npx playwright install chromium   # once
 - `tools/ui-shots.mjs` (screens plus axe);
 - `tools/ui-states.mjs` (interaction states);
 - `tools/admin-shots.mjs` (admin at 320, 390, 768, 1024 and 1440);
-- `tools/desktop-metrics.mjs` (desktop layout geometry: side column, battle actions, chat panel).
+- `tools/desktop-metrics.mjs` (desktop layout geometry: side column, battle actions, chat panel);
+- `tools/entry-metrics.mjs` (the entry: startup requests and bytes, what an idle visitor downloads, what blocks the form, throttled time to the form, the sign-in screen with axe).
 
 **Measuring the old version:** set `UI_PUBLIC_DIR` to another checkout's `public/` folder, for example `git worktree add ../cm-main origin/main`.
 
