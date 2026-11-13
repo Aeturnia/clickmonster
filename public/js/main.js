@@ -1631,7 +1631,7 @@ sb.auth.onAuthStateChange((event, newSession) => {
 zonesReady().then(render);
 // The layout (mobile, wide or desktop) sets the region order; the desktop side column is drawn
 // only in the desktop layout.
-watchLayout((next) => { layout = next; render(); });
+watchLayout((next, panel) => { layout = next; chat.setMode(panel ? 'panel' : 'drawer'); render(); });
 render();
 
 // Expose for debugging from the browser console.

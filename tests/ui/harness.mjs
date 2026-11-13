@@ -85,7 +85,11 @@ function fakeJwt(sub, email) {
 
 // ---------------------------------------------------------------- fake backend
 export class FakeBackend {
-  constructor({ hero = makeHero(), players = [], chat = [], events = [], seed = 7, zones = [], quests = null, reports = null } = {}) {
+  // worldEvents: timed events in world_config (e.g. { id, name, until, xp: 2 }); activeHunts:
+  // world-boss hunts players can see ({ id, zone, name, level, hp, max_hp, ends_at }).
+  constructor({ hero = makeHero(), players = [], chat = [], events = [], seed = 7, zones = [], quests = null, reports = null, worldEvents = [], activeHunts = [] } = {}) {
+    this.worldEvents = worldEvents;
+    this.activeHunts = activeHunts;
     this.reportsSeed = reports; // admin chat reports: [{ message_id, reporter_name, reason }]
     this.zoneDefs = [...DEFAULT_ZONES, ...zones];
     loadZones(this.zoneDefs);
@@ -384,8 +388,8 @@ export class FakeBackend {
     const c = user ? this.heroes[user.id] : null;
     switch (table) {
       case 'zones': return this.zoneDefs.map((z, i) => ({ data: z, sort: i }));
-      case 'world_config': return single ? { data: { base: { xp: 1, gold: 1, drop: 1, elite: 1, mastery: 1 }, events: [] } } : [{ data: { base: {}, events: [] } }];
-      case 'hunts': return [];
+      case 'world_config': return single ? { data: { base: { xp: 1, gold: 1, drop: 1, elite: 1, mastery: 1 }, events: this.worldEvents } } : [{ data: { base: {}, events: this.worldEvents } }];
+      case 'hunts': return this.activeHunts;
       case 'events': return [...this.events].reverse();
       case 'characters': return this.players.filter((p) => p.zone === eq('zone') && String(p.x) === eq('x') && String(p.y) === eq('y'));
       case 'chat_messages': {

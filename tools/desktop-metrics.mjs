@@ -9,7 +9,13 @@
 //   sideEmpty       empty height in the side column above the chat line: from the lowest block
 //                   above it (the hero bar in the Phase 2 layout; the summary or minimap on
 //                   desktop) to the chat line
+//                   With the persistent chat panel (D-2) there is no chat line: the empty height
+//                   is what is left below the side column's last block
 //   The side column is #side when the desktop layout shows it, otherwise the column holding #top.
+//   chatPanel       whether the persistent chat panel is mounted
+//   chatInputInView whether the chat message box is entirely within the window (panel only)
+//   chatLines       how many lines of text the panel's message list has room for (its inner
+//                   height divided by the list's line height), panel only
 //   mainEmptyBelow  empty height in #main below its content (Explore)
 //   bodyFont        computed body font size
 //   battle.eyeTravel distance from the centre of the bottom edge of the battle log to the centre
@@ -36,10 +42,27 @@ const EXPLORE = () => {
   const right = box((...b) => Math.max(...b.map((x) => x.right)));
   const left = box((...b) => Math.min(...b.map((x) => x.left)));
   const bottom = box((...b) => Math.max(...b.map((x) => x.bottom)));
+  const panelEl = document.getElementById('chatpanel');
+  const panelOn = !!(panelEl && panelEl.getClientRects().length);
+  let sideEmpty;
+  if (panelOn) {
+    const blocks = [...sideEl.children].filter((e) => e.getClientRects().length).map((e) => e.getBoundingClientRect().bottom);
+    sideEmpty = Math.round(Math.min(side.bottom, innerHeight) - Math.max(side.top, ...blocks));
+  } else {
+    sideEmpty = Math.round(chat.top - Math.max(side.top, ...above.map((b) => b.bottom)));
+  }
+  const input = panelOn && panelEl.querySelector('#chat-input')?.getBoundingClientRect();
+  const list = panelOn && panelEl.querySelector('#chat-list');
+  const lineH = list ? parseFloat(getComputedStyle(list).lineHeight) || 0 : 0;
   return {
     appW: Math.round(app.width), appShare: Math.round((app.width / innerWidth) * 100),
     contentW: Math.round(right - left), gapToSide: Math.round(side.left - right),
-    sideW: Math.round(side.width), sideEmpty: Math.round(chat.top - Math.max(side.top, ...above.map((b) => b.bottom))),
+    sideW: Math.round(side.width), sideEmpty,
+    ...(panelOn ? {
+      chatPanel: true,
+      chatInputInView: input.top >= 0 && input.bottom <= innerHeight && input.left >= 0 && input.right <= innerWidth,
+      chatLines: lineH ? Math.floor(list.clientHeight / lineH) : null,
+    } : {}),
     mainEmptyBelow: Math.max(0, Math.round(main.bottom - bottom)),
     bodyFont: getComputedStyle(document.body).fontSize,
   };
