@@ -39,13 +39,13 @@ Built in phases D-1 to D-3 and merged on 2026-11-13. See `docs/desktop-scope.md`
 
 ## Layout choice: desktop or mobile
 
-- **Since the desktop milestone:** the layout is already a single state, `#app[data-layout]`, set by `layout.js`, and the CSS keys off it. A picker would force that state, falling back when there isn't room. The notes below predate that.
-- A choice on the sign-in page: **Automatic** (default, by screen size as now), **Desktop** or **Mobile**.
-- Implement it as a class on `#app` (for example `layout-desktop` / `layout-mobile`) that overrides the media queries. With no class set, the media queries keep deciding.
-- Save it in the local preferences (`clickmonster.prefs` in `main.js`, alongside `leftHanded`), and also offer it on the Hero screen so it can be changed after signing in.
-- The control must be labelled and keyboard reachable, and announce the active layout. Add tests for each forced layout at a phone and a desktop size.
+Now scoped as phase L-2 of the landing page: see `docs/landing-scope.md` (not yet authorized).
+- `layout.js` takes a preference (Automatic, Desktop or Mobile) and sets `#app[data-layout]` from it, falling back when a forced Desktop doesn't fit. The Phase 2 wide rules move from plain media queries to `data-layout`, so a forced layout is honoured completely.
+- Offered on the entrance and in Hero, Settings; saved in `clickmonster.prefs`. Labelled, keyboard reachable, and stating the active layout. Tests for each choice at a phone and a desktop size.
 
 ## News and updates on the sign-in page
+
+Now scoped as phases L-3 and L-4 of the landing page: see `docs/landing-scope.md` (not yet authorized). The notes below are the original backlog entry.
 
 - The sign-in page (`viewAuth`) shows recent news and game updates before signing in.
 - Today's announcements (`world_config`) and world events (`events`) are readable only by signed-in players (row-level security `to authenticated`). Options:
