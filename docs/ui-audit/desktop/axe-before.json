@@ -1,0 +1,457 @@
+[
+ {
+  "width": "1024x768",
+  "screen": "auth",
+  "violations": []
+ },
+ {
+  "width": "1024x768",
+  "screen": "levelup-sheet",
+  "violations": []
+ },
+ {
+  "width": "1024x768",
+  "screen": "explore-town",
+  "violations": []
+ },
+ {
+  "width": "1024x768",
+  "screen": "shop-sheet",
+  "violations": []
+ },
+ {
+  "width": "1024x768",
+  "screen": "explore-open",
+  "violations": []
+ },
+ {
+  "width": "1024x768",
+  "screen": "battle",
+  "violations": []
+ },
+ {
+  "width": "1024x768",
+  "screen": "battle-result",
+  "violations": []
+ },
+ {
+  "width": "1024x768",
+  "screen": "hero",
+  "violations": []
+ },
+ {
+  "width": "1024x768",
+  "screen": "gear",
+  "violations": []
+ },
+ {
+  "width": "1024x768",
+  "screen": "item-sheet",
+  "violations": []
+ },
+ {
+  "width": "1024x768",
+  "screen": "map",
+  "violations": []
+ },
+ {
+  "width": "1024x768",
+  "screen": "chat-drawer",
+  "violations": []
+ },
+ {
+  "width": "1024x768",
+  "screen": "map-40x40",
+  "violations": []
+ },
+ {
+  "width": "1280x800",
+  "screen": "auth",
+  "violations": []
+ },
+ {
+  "width": "1280x800",
+  "screen": "levelup-sheet",
+  "violations": []
+ },
+ {
+  "width": "1280x800",
+  "screen": "explore-town",
+  "violations": []
+ },
+ {
+  "width": "1280x800",
+  "screen": "shop-sheet",
+  "violations": []
+ },
+ {
+  "width": "1280x800",
+  "screen": "explore-open",
+  "violations": []
+ },
+ {
+  "width": "1280x800",
+  "screen": "battle",
+  "violations": []
+ },
+ {
+  "width": "1280x800",
+  "screen": "battle-result",
+  "violations": []
+ },
+ {
+  "width": "1280x800",
+  "screen": "hero",
+  "violations": []
+ },
+ {
+  "width": "1280x800",
+  "screen": "gear",
+  "violations": []
+ },
+ {
+  "width": "1280x800",
+  "screen": "item-sheet",
+  "violations": []
+ },
+ {
+  "width": "1280x800",
+  "screen": "map",
+  "violations": []
+ },
+ {
+  "width": "1280x800",
+  "screen": "chat-drawer",
+  "violations": []
+ },
+ {
+  "width": "1280x800",
+  "screen": "map-40x40",
+  "violations": []
+ },
+ {
+  "width": "1366x768",
+  "screen": "auth",
+  "violations": []
+ },
+ {
+  "width": "1366x768",
+  "screen": "levelup-sheet",
+  "violations": []
+ },
+ {
+  "width": "1366x768",
+  "screen": "explore-town",
+  "violations": []
+ },
+ {
+  "width": "1366x768",
+  "screen": "shop-sheet",
+  "violations": []
+ },
+ {
+  "width": "1366x768",
+  "screen": "explore-open",
+  "violations": []
+ },
+ {
+  "width": "1366x768",
+  "screen": "battle",
+  "violations": []
+ },
+ {
+  "width": "1366x768",
+  "screen": "battle-result",
+  "violations": []
+ },
+ {
+  "width": "1366x768",
+  "screen": "hero",
+  "violations": []
+ },
+ {
+  "width": "1366x768",
+  "screen": "gear",
+  "violations": []
+ },
+ {
+  "width": "1366x768",
+  "screen": "item-sheet",
+  "violations": []
+ },
+ {
+  "width": "1366x768",
+  "screen": "map",
+  "violations": []
+ },
+ {
+  "width": "1366x768",
+  "screen": "chat-drawer",
+  "violations": []
+ },
+ {
+  "width": "1366x768",
+  "screen": "map-40x40",
+  "violations": []
+ },
+ {
+  "width": "1440x900",
+  "screen": "auth",
+  "violations": []
+ },
+ {
+  "width": "1440x900",
+  "screen": "levelup-sheet",
+  "violations": []
+ },
+ {
+  "width": "1440x900",
+  "screen": "explore-town",
+  "violations": []
+ },
+ {
+  "width": "1440x900",
+  "screen": "shop-sheet",
+  "violations": []
+ },
+ {
+  "width": "1440x900",
+  "screen": "explore-open",
+  "violations": []
+ },
+ {
+  "width": "1440x900",
+  "screen": "battle",
+  "violations": []
+ },
+ {
+  "width": "1440x900",
+  "screen": "battle-result",
+  "violations": []
+ },
+ {
+  "width": "1440x900",
+  "screen": "hero",
+  "violations": []
+ },
+ {
+  "width": "1440x900",
+  "screen": "gear",
+  "violations": []
+ },
+ {
+  "width": "1440x900",
+  "screen": "item-sheet",
+  "violations": []
+ },
+ {
+  "width": "1440x900",
+  "screen": "map",
+  "violations": []
+ },
+ {
+  "width": "1440x900",
+  "screen": "chat-drawer",
+  "violations": []
+ },
+ {
+  "width": "1440x900",
+  "screen": "map-40x40",
+  "violations": []
+ },
+ {
+  "width": "1536x864",
+  "screen": "auth",
+  "violations": []
+ },
+ {
+  "width": "1536x864",
+  "screen": "levelup-sheet",
+  "violations": []
+ },
+ {
+  "width": "1536x864",
+  "screen": "explore-town",
+  "violations": []
+ },
+ {
+  "width": "1536x864",
+  "screen": "shop-sheet",
+  "violations": []
+ },
+ {
+  "width": "1536x864",
+  "screen": "explore-open",
+  "violations": []
+ },
+ {
+  "width": "1536x864",
+  "screen": "battle",
+  "violations": []
+ },
+ {
+  "width": "1536x864",
+  "screen": "battle-result",
+  "violations": []
+ },
+ {
+  "width": "1536x864",
+  "screen": "hero",
+  "violations": []
+ },
+ {
+  "width": "1536x864",
+  "screen": "gear",
+  "violations": []
+ },
+ {
+  "width": "1536x864",
+  "screen": "item-sheet",
+  "violations": []
+ },
+ {
+  "width": "1536x864",
+  "screen": "map",
+  "violations": []
+ },
+ {
+  "width": "1536x864",
+  "screen": "chat-drawer",
+  "violations": []
+ },
+ {
+  "width": "1536x864",
+  "screen": "map-40x40",
+  "violations": []
+ },
+ {
+  "width": "1920x1080",
+  "screen": "auth",
+  "violations": []
+ },
+ {
+  "width": "1920x1080",
+  "screen": "levelup-sheet",
+  "violations": []
+ },
+ {
+  "width": "1920x1080",
+  "screen": "explore-town",
+  "violations": []
+ },
+ {
+  "width": "1920x1080",
+  "screen": "shop-sheet",
+  "violations": []
+ },
+ {
+  "width": "1920x1080",
+  "screen": "explore-open",
+  "violations": []
+ },
+ {
+  "width": "1920x1080",
+  "screen": "battle",
+  "violations": []
+ },
+ {
+  "width": "1920x1080",
+  "screen": "battle-result",
+  "violations": []
+ },
+ {
+  "width": "1920x1080",
+  "screen": "hero",
+  "violations": []
+ },
+ {
+  "width": "1920x1080",
+  "screen": "gear",
+  "violations": []
+ },
+ {
+  "width": "1920x1080",
+  "screen": "item-sheet",
+  "violations": []
+ },
+ {
+  "width": "1920x1080",
+  "screen": "map",
+  "violations": []
+ },
+ {
+  "width": "1920x1080",
+  "screen": "chat-drawer",
+  "violations": []
+ },
+ {
+  "width": "1920x1080",
+  "screen": "map-40x40",
+  "violations": []
+ },
+ {
+  "width": "2560x1440",
+  "screen": "auth",
+  "violations": []
+ },
+ {
+  "width": "2560x1440",
+  "screen": "levelup-sheet",
+  "violations": []
+ },
+ {
+  "width": "2560x1440",
+  "screen": "explore-town",
+  "violations": []
+ },
+ {
+  "width": "2560x1440",
+  "screen": "shop-sheet",
+  "violations": []
+ },
+ {
+  "width": "2560x1440",
+  "screen": "explore-open",
+  "violations": []
+ },
+ {
+  "width": "2560x1440",
+  "screen": "battle",
+  "violations": []
+ },
+ {
+  "width": "2560x1440",
+  "screen": "battle-result",
+  "violations": []
+ },
+ {
+  "width": "2560x1440",
+  "screen": "hero",
+  "violations": []
+ },
+ {
+  "width": "2560x1440",
+  "screen": "gear",
+  "violations": []
+ },
+ {
+  "width": "2560x1440",
+  "screen": "item-sheet",
+  "violations": []
+ },
+ {
+  "width": "2560x1440",
+  "screen": "map",
+  "violations": []
+ },
+ {
+  "width": "2560x1440",
+  "screen": "chat-drawer",
+  "violations": []
+ },
+ {
+  "width": "2560x1440",
+  "screen": "map-40x40",
+  "violations": []
+ }
+]
