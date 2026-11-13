@@ -1,0 +1,32 @@
+[
+ {
+  "width": "1280x720",
+  "screen": "shortcuts-list",
+  "violations": []
+ },
+ {
+  "width": "1280x720",
+  "screen": "hero-settings",
+  "violations": []
+ },
+ {
+  "width": "1280x720",
+  "screen": "battle-keys",
+  "violations": []
+ },
+ {
+  "width": "1920x1080",
+  "screen": "shortcuts-list",
+  "violations": []
+ },
+ {
+  "width": "1920x1080",
+  "screen": "hero-settings",
+  "violations": []
+ },
+ {
+  "width": "1920x1080",
+  "screen": "battle-keys",
+  "violations": []
+ }
+]

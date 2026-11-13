@@ -618,6 +618,18 @@ input[aria-invalid="true"] { border-color: var(--bad) !important; }
 @media (min-width: 112.5em) { :root:has(#app[data-layout="desktop"]) { font-size: 106.25%; } }
 @media (min-width: 150em) { :root:has(#app[data-layout="desktop"]) { font-size: 112.5%; } }
 
+/* ---------------------------------------------------------------- keyboard shortcuts (D-3) */
+table.keys { width: 100%; border-collapse: collapse; margin-top: var(--space-3); font-size: var(--fs-sm); }
+table.keys th { text-align: left; font-size: var(--fs-xs); font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); padding: 0 0 6px; border-bottom: 1px solid var(--line); }
+table.keys td { padding: 8px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+table.keys td:first-child { width: 7.5rem; padding-right: var(--space-3); }
+table.keys small { display: block; color: var(--muted); font-size: var(--fs-xs); }
+kbd {
+  display: inline-block; min-width: 1.6em; padding: 1px 6px; text-align: center;
+  font: 600 var(--fs-xs)/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; color: var(--text);
+  background: var(--surface-2); border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: 4px;
+}
+
 /* ---------------------------------------------------------------- confirmations (Phase 3) */
 /* A centred card in the visible area (above an on-screen keyboard), on every screen size. */
 dialog.confirm {
