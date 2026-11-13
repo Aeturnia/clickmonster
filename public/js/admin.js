@@ -2,6 +2,7 @@
 // this page only renders what the server allows, and never relies on hiding a control for safety.
 import { client, fetchZoneDefs } from './net.js';
 import { setupZones } from './admin-zones.js';
+import { setupNews } from './admin-news.js';
 import { loadZones } from './data/zones.js';
 import { STATS, STAT_SHORT } from './data/stats.js';
 import { MASTERIES, MASTERY_LABEL, masteryCap } from './data/masteries.js';
@@ -41,6 +42,10 @@ function detailsText(action, d) {
   }
   if (action.startsWith('sanction:')) return `${d.reason || ''}${d.days ? ` (${d.days} days)` : d.until ? ' (permanent)' : ''}`;
   if (action === 'announce') return d.text;
+  if (action.startsWith('news:')) {
+    return [d.slug ? `/news/${d.slug}` : '', d.revised ? 'text corrected after publishing' : '', d.republished ? 'published again' : '',
+      action === 'news:delete' && d.status ? `was ${d.status}` : ''].filter(Boolean).join(', ');
+  }
   return JSON.stringify(d);
 }
 const untilText = (t) => (new Date(t).getFullYear() > 9000 ? 'permanently' : `until ${when(t)}`);
@@ -149,11 +154,14 @@ function formFoot(id, label, extra = '') {
 const GROUPS = [
   { id: 'people', label: 'Players and moderation', short: 'Players', items: [['players', 'Players'], ['chat', 'Reports and chat'], ['log', 'Audit log']] },
   { id: 'world', label: 'World', short: 'World', items: [['dashboard', 'Overview'], ['world', 'Events and rates'], ['hunts', 'Hunts'], ['economy', 'Economy']] },
-  { id: 'content', label: 'Content', short: 'Content', items: [['zones', 'Zones'], ['announce', 'Announcements']] },
+  { id: 'content', label: 'Content', short: 'Content', items: [['zones', 'Zones'], ['announce', 'Announcements'], ['news', 'Public news', 'admin']] },
   { id: 'staff', label: 'Staff', short: 'Staff', items: [['staff', 'Staff']], admin: true },
 ];
 const SECTION_LABEL = Object.fromEntries(GROUPS.flatMap((g) => g.items));
-const groupsFor = () => GROUPS.filter((g) => !g.admin || isAdmin());
+// Groups and sections a moderator can't use are left out (the server refuses them anyway).
+const groupsFor = () => GROUPS.filter((g) => !g.admin || isAdmin())
+  .map((g) => ({ ...g, items: g.items.filter(([, , who]) => who !== 'admin' || isAdmin()) }));
+const adminOnly = (tab) => tab === 'staff' || GROUPS.some((g) => g.items.some(([id, , who]) => id === tab && who === 'admin'));
 const groupOf = (tab) => GROUPS.find((g) => g.items.some(([id]) => id === tab))?.id || 'world';
 
 function viewLogin() {
@@ -582,7 +590,7 @@ function snapshotForms(root) {
   const out = new Map();
   for (const el of root.querySelectorAll('form[id] input, form[id] select, form[id] textarea')) {
     const form = el.form;
-    if (!form || form.id === 'zone-form' || st.clearForms.has(form.id)) continue;
+    if (!form || form.id === 'zone-form' || form.id === 'news-form' || st.clearForms.has(form.id)) continue;
     const key = `${form.id}::${el.id || el.name}`;
     if (!el.id && !el.name) continue;
     out.set(key, el.type === 'checkbox' || el.type === 'radio' ? { checked: el.checked } : { value: el.value });
@@ -609,7 +617,7 @@ function render() {
   else if (st.phase === 'login') html = viewLogin();
   else if (st.phase === 'denied') html = viewDenied();
   else {
-    const body = { dashboard: viewDashboard, players: viewPlayers, world: viewWorld, hunts: viewHunts, economy: viewEconomy, zones: zones.view, chat: viewChat, announce: viewAnnounce, log: viewLog, staff: viewStaff }[st.tab]();
+    const body = { dashboard: viewDashboard, players: viewPlayers, world: viewWorld, hunts: viewHunts, economy: viewEconomy, zones: zones.view, news: news.view, chat: viewChat, announce: viewAnnounce, log: viewLog, staff: viewStaff }[st.tab]();
     const section = st.tab === 'players' && st.player ? `Player: ${st.player.player.name}` : SECTION_LABEL[st.tab] || st.tab;
     const group = GROUPS.find((g) => g.id === groupOf(st.tab));
     html = `<div class="a-shell">${header()}${nav()}<div class="a-main">
@@ -644,6 +652,7 @@ function render() {
 function route() {
   if (st.tab === 'players' && st.player) return `#player/${st.player.player.id}`;
   if (st.tab === 'zones' && st.zoneEdit && !st.zoneEdit.isNew) return `#zone/${st.zoneEdit.originalId}`;
+  if (st.tab === 'news' && st.newsEdit && st.newsEdit.id != null) return `#news/${st.newsEdit.id}`;
   return `#${st.tab}`;
 }
 function pushRoute() { if (location.hash !== route()) history.pushState(null, '', route()); }
@@ -651,7 +660,8 @@ async function applyRoute() {
   const [kind, id] = decodeURIComponent(location.hash.slice(1)).split('/');
   if (kind === 'player' && id) { await openPlayer(id, { push: false }); return; }
   if (kind === 'zone' && id) { st.tab = 'zones'; st.navGroup = 'content'; st.zoneEdit = null; render(); await zones.load(); zones.edit(id); return; }
-  const tab = SECTION_LABEL[kind] && (kind !== 'staff' || isAdmin()) ? kind : 'dashboard';
+  if (kind === 'news' && id && isAdmin()) { st.tab = 'news'; st.navGroup = 'content'; st.newsEdit = null; render(); await news.edit(id); return; }
+  const tab = SECTION_LABEL[kind] && (!adminOnly(kind) || isAdmin()) ? kind : 'dashboard';
   showTab(tab, { push: false });
 }
 window.addEventListener('popstate', () => { if (st.phase === 'ready') applyRoute(); });
@@ -661,6 +671,7 @@ function showTab(tab, { push = true } = {}) {
   st.player = null;
   st.navGroup = groupOf(tab);
   if (tab !== 'zones') st.zoneEdit = null;
+  if (tab !== 'news') st.newsEdit = null;
   render();
   if (push) pushRoute();
   load(tab);
@@ -675,6 +686,7 @@ async function load(tab = st.tab) {
     if (tab === 'log') st.log = (await call('log')).log;
     if (tab === 'staff') st.staff = (await call('staff')).staff;
     if (tab === 'zones') { if (!st.zoneEdit) await zones.load(); return; }
+    if (tab === 'news') { await news.load(); return; }
     if (tab === 'chat') {
       const [log, rep] = await Promise.all([call('chatLog', st.chatQ), call('chatReports')]);
       st.chat = log.messages;
@@ -838,8 +850,10 @@ async function submitting(id, fn) {
 
 // ---------------------------------------------------------------- events
 const zones = setupZones({ st, call, toast, render, esc, isAdmin, field, input, pushRoute });
+const news = setupNews({ st, call, toast, render, esc, field, input, dataTable, pushRoute });
 document.addEventListener('input', (e) => {
   zones.onInput(e);
+  if (news.onInput(e)) return;
   // Typing fixes an inline error: clear it for that field once it is valid again.
   const el = e.target;
   if (el.id && st.fieldErrors?.[el.id] && el.form) {
@@ -847,7 +861,7 @@ document.addEventListener('input', (e) => {
     if (!errs[el.id]) { delete st.fieldErrors[el.id]; el.removeAttribute('aria-invalid'); document.getElementById(`${el.id}-err`)?.remove(); el.setAttribute('aria-describedby', (el.getAttribute('aria-describedby') || '').replace(`${el.id}-err`, '').trim()); }
   }
 });
-document.addEventListener('change', (e) => { if (e.target.dataset.toggle || e.target.dataset.list || e.target.tagName === 'SELECT') zones.onInput(e); });
+document.addEventListener('change', (e) => { if (news.onInput(e)) return; if (e.target.dataset.toggle || e.target.dataset.list || e.target.tagName === 'SELECT') zones.onInput(e); });
 
 async function toggleReview(rid) {
   const r = st.reports?.find((x) => String(x.id) === String(rid));
@@ -873,6 +887,7 @@ document.addEventListener('click', async (e) => {
   const a = el.dataset.a;
   const v = el.dataset.v;
   if (a.startsWith('zone') && await zones.onClick(a, v)) return;
+  if (a.startsWith('news') && await news.onClick(a, v)) return;
   if (a === 'dismissProblem') {
     const i = problems.findIndex((p) => String(p.id) === v);
     if (i >= 0) problems.splice(i, 1);
@@ -932,7 +947,7 @@ document.addEventListener('click', async (e) => {
 
 // What each role can do, as the admin edge function enforces it.
 const MOD_POWERS = 'look up players and their records, warn, mute, jail or ban for up to 7 days, lift sanctions, post news, and review reports and remove chat messages';
-const ADMIN_POWERS = 'everything a moderator can, and also edit heroes and their items, sanction for longer or permanently, change world settings, events and hunts, edit zones, delete news, see players’ email addresses, and add or remove staff';
+const ADMIN_POWERS = 'everything a moderator can, and also edit heroes and their items, sanction for longer or permanently, change world settings, events and hunts, edit zones, delete news, see players’ email addresses, write and publish public news, and add or remove staff';
 
 // Granting staff access asks first. Admin is full control of the game, so the email is typed.
 function staffQuestion(email, role) {
@@ -1008,6 +1023,7 @@ document.addEventListener('submit', async (e) => {
     return;
   }
   if (id === 'search') { st.q = $('#q').value; st.players = null; render(); load('players'); return; }
+  if (await news.onSubmit(form)) return;
   // Before validating or asking anything: a press while this form is sending does nothing.
   if (stillWorking(id)) return;
   if (!validate(id, form)) return;

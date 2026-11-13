@@ -42,7 +42,11 @@ Read these first:
     - one Supabase client owned by `net.js`;
     - the local RLS tests and production gate in L-3.
 - **Development moved to the owner's Windows laptop.** `npm run deploy:functions` now runs from any shell (PR #15) and needs `SUPABASE_ACCESS_TOKEN` set in the environment.
-- **Don't start L-3, or anything else, or make gameplay or server changes,** until the owner approves it. There is no authorized next phase.
+- **Landing L-3 (publication) is implemented and tested on the local Supabase stack,** in its own PR, awaiting independent review. See `docs/landing-l3-report.md`.
+  - **Nothing is in production yet.** Applying the news migration and deploying the `admin` function each need the owner's explicit authorization, separate from approving the PR.
+  - **The PR must not merge before that deploy:** merging publishes the admin console, which would call actions the live function doesn't have.
+  - **Then:** run `tools/news-public-check.mjs` against production and review its results. L-4 waits for that.
+- **Don't start L-4, or anything else, or make gameplay or server changes,** until the owner approves it.
 - **Before a release:** the pre-release verification in `docs/backlog.md` is still owed:
   - real devices and other browsers (including Firefox and Safari on desktop);
   - screen readers, including keyboard navigation with the shortcuts;
@@ -115,6 +119,15 @@ Read these first:
 - **Chat** is `chat-ui.js`. It draws one chat state into the drawer or the desktop panel (`setMode()`).
   - Each sign-in is a chat session. `stop()` resets everything that belongs to the account. Anything awaited, including Realtime callbacks and confirmations, checks on return that its session is still current.
 - **Admin** is `admin.js` and `admin-zones.js`: grouped navigation with hash routes, `dataTable()`, `field()`, `checkForm`/`validate`/`submitting`, and form values kept across re-renders.
+- **Public news** (landing L-3) is the `news` table (`supabase/migrations/20261115090000_news.sql`).
+  - **Access:**
+    - `anon` and `authenticated` can read only published rows whose time has passed, and only the ten article columns (column grants plus RLS);
+    - only the `admin` function writes, admins only;
+    - a trigger enforces the publication rules: the address and first publication time are fixed once published, and a published row can't be deleted.
+  - **The shared rules** are `public/js/data/news.js`: validation, the address, and the plain-text body format.
+  - **The console section** is `admin-news.js`. Its pending keys are `news:<id>:<op>`.
+  - **Rollback:** `supabase/rollback/20261115090000_news_down.sql`.
+- **Edge functions import shared code only from `js/engine/` and `js/data/`,** because `tools/deploy-functions.mjs` uploads only those; `tests/news.test.mjs` checks this.
 - **Admin requests are single-flight** (Phase 4 review, P4-01 to P4-04). `st.pendingForms` holds one key per request in flight:
   - a form id;
   - `action:target` for button actions (`actionKey()`, drawn by `markPending()` after every render, run through `pendingWhile()`);
@@ -135,10 +148,22 @@ Read these first:
 ## Testing
 
 ```
-npm test                 # engine, plus the entrance file checks (29)
-npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (156)
+npm test                 # engine, entrance file checks and news rules (36)
+npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (166)
+npm run test:db          # database (pgTAP, 42) and API/function tests (8) on the LOCAL Supabase stack
 npx playwright install chromium   # once
 ```
+
+**The local Supabase stack** (landing L-3) runs in Docker Desktop. The pinned CLI is a dev dependency.
+- **Start it:**
+  ```
+  npx supabase start -x studio,imgproxy,storage-api,logflare,vector,supavisor,mailpit,realtime,postgres-meta
+  ```
+  This applies every migration to a fresh local database. Then run `npm run test:db`.
+- **`npx supabase db reset`** re-applies the migrations from scratch. **`npx supabase stop`** stops it.
+- **Local only:** the URL and keys are the CLI's local defaults (`npx supabase status`), and the tests refuse anything not on 127.0.0.1. Nothing here touches the live project.
+- **Memory:** on the owner's laptop (about 8 GB for Docker), don't run the browser suite while the stack is running. In L-3, the two together starved the browsers and the run was stopped. Stop the stack (`npx supabase stop`) before `npm run test:ui`.
+- **The functions run too,** at `127.0.0.1:54321/functions/v1/<name>`. The CLI mounts each imported file when the stack starts, so after adding or moving a shared file, stop and start the stack.
 
 **`tests/ui/harness.mjs`** answers every Supabase request with a fake backend built on the real engine. Any other host fails the test. supabase-js comes from `public/vendor/`; the CDN module is allowed only when `UI_PUBLIC_DIR` points at another checkout, which may be older code, and is cached in `tests/ui/.cache`. It provides:
 - **`FakeBackend({ hero, players, chat, events, zones, quests, reports, worldEvents, activeHunts })`**. Its admin actions write the audit log and refuse repeats the way `supabase/functions/admin/index.ts` does, so a duplicate request shows up as a duplicate audit entry (`backend.adminData().log`). Keep it in step when server behaviour changes. It also provides `failNext(action, status, msg)`, `hold(action)` (returns a release function) and `broadcast()` for Realtime. Recorded `calls` and `unexpected` requests are available for assertions.
@@ -172,4 +197,4 @@ npx playwright install chromium   # once
 
 - **Site:** Netlify publishes `public/` from `main` on merge.
 - **Functions:** `npm run deploy:functions`.
-- **Database:** add a new file in `supabase/migrations/`, then `supabase db push` or the SQL editor. The Supabase project URL is in `public/js/config.js`.
+- **Database:** add a new file in `supabase/migrations/`, apply it to the local stack and test it (`npm run test:db`), then, with the owner's authorization, `supabase db push` or the SQL editor. The Supabase project URL is in `public/js/config.js`.

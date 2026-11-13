@@ -48,7 +48,7 @@ test('navigation: four labelled groups, every section listed, current one marked
   assert.deepEqual(nav, [
     { label: 'Players and moderation', items: ['players', 'chat', 'log'] },
     { label: 'World', items: ['dashboard', 'world', 'hunts', 'economy'] },
-    { label: 'Content', items: ['zones', 'announce'] },
+    { label: 'Content', items: ['zones', 'announce', 'news'] }, // news: landing L-3, admins only
     { label: 'Staff', items: ['staff'] },
   ]);
   assert.equal(await page.getAttribute('[aria-current="page"]', 'data-v'), 'dashboard');

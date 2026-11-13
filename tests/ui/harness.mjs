@@ -21,6 +21,7 @@ import { buy, buyAndEquip, sell, equip, unequip, socketGem, extractGem, deposit,
 import { generateQuests, accept, hourBucket } from '../../public/js/engine/quests.js';
 import { canSend } from '../../public/js/engine/chat.js';
 import { duel } from '../../public/js/engine/pvp.js';
+import { checkNews, canDeleteNews } from '../../public/js/data/news.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const PUBLIC = path.resolve(ROOT, process.env.UI_PUBLIC_DIR || 'public');
@@ -99,7 +100,10 @@ export function savedSession(acct, expiresIn = 3600) {
 export class FakeBackend {
   // worldEvents: timed events in world_config (e.g. { id, name, until, xp: 2 }); activeHunts:
   // world-boss hunts players can see ({ id, zone, name, level, hp, max_hp, ends_at }).
-  constructor({ hero = makeHero(), players = [], chat = [], events = [], seed = 7, zones = [], quests = null, reports = null, worldEvents = [], activeHunts = [] } = {}) {
+  // news: rows of the public news table (landing L-3), as the admin function returns them.
+  constructor({ hero = makeHero(), players = [], chat = [], events = [], seed = 7, zones = [], quests = null, reports = null, worldEvents = [], activeHunts = [], news = [] } = {}) {
+    this.news = structuredClone(news);
+    this.newsSeq = Math.max(0, ...this.news.map((n) => n.id)) + 1;
     this.worldEvents = worldEvents;
     this.activeHunts = activeHunts;
     this.reportsSeed = reports; // admin chat reports: [{ message_id, reporter_name, reason }]
@@ -354,6 +358,59 @@ export class FakeBackend {
       case 'economy': return { rows: D.economy };
       case 'events': return { events: this.events };
       case 'announce': this.events.unshift({ id: this.events.length + 10, kind: 'announce', text: a.text, created_at: new Date().toISOString() }); return { ok: true };
+      // Public news (landing L-3), as supabase/functions/admin/index.ts does it: admins only,
+      // repeats refused, one audit entry per change. The real function and database are tested
+      // on the local stack (tests/db/).
+      case 'news': requireAdmin(); return { news: this.newsList() };
+      case 'newsSave': {
+        requireAdmin();
+        const { value, errors } = checkNews(a.entry || {});
+        const first = Object.values(errors)[0];
+        if (first) throw err(first);
+        const now = new Date().toISOString();
+        const taken = (slug, id) => this.news.some((n) => n.slug === slug && n.id !== id);
+        const fields = { slug: value.slug, kind: value.kind, title: value.title, summary: value.summary, body: value.body, maintenance_starts_at: value.startsAt, maintenance_ends_at: value.endsAt };
+        if (a.id == null) {
+          if (taken(value.slug, null)) throw err('That address is already used by another news entry.', 409);
+          const entry = { id: this.newsSeq++, ...fields, status: 'draft', published_at: null, revised_at: null, created_at: now, updated_at: now };
+          this.news.push(entry);
+          log({ action: 'news:create', target_name: value.title, details: { id: entry.id, slug: value.slug, kind: value.kind } });
+          return { entry: structuredClone(entry), news: this.newsList() };
+        }
+        const old = this.news.find((n) => n.id === Number(a.id));
+        if (!old) throw err('That news entry no longer exists.', 404);
+        if (old.published_at && value.slug !== old.slug) throw err("The address can't change once the entry has been published.", 409);
+        if (taken(value.slug, old.id)) throw err('That address is already used by another news entry.', 409);
+        const t = (x) => (x == null ? null : new Date(x).getTime());
+        const textChanged = old.title !== value.title || old.summary !== value.summary || old.body !== value.body || old.kind !== value.kind
+          || t(old.maintenance_starts_at) !== t(value.startsAt) || t(old.maintenance_ends_at) !== t(value.endsAt);
+        if (!textChanged && old.slug === value.slug) throw err('Nothing has changed.');
+        Object.assign(old, fields, { updated_at: now }, old.published_at && textChanged ? { revised_at: now } : {});
+        log({ action: 'news:edit', target_name: value.title, details: { id: old.id, slug: value.slug, revised: !!(old.published_at && textChanged) } });
+        return { entry: structuredClone(old), news: this.newsList() };
+      }
+      case 'newsPublish': case 'newsUnpublish': {
+        requireAdmin();
+        const old = this.news.find((n) => n.id === Number(a.id));
+        if (!old) throw err('That news entry no longer exists.', 404);
+        const to = action === 'newsPublish' ? 'published' : 'unpublished';
+        if (to === 'published' && old.status === 'published') throw err('That entry is already published.', 409);
+        if (to === 'unpublished' && old.status !== 'published') throw err('Only a published entry can be unpublished.', 409);
+        const republished = to === 'published' && !!old.published_at;
+        const now = new Date().toISOString();
+        Object.assign(old, { status: to, updated_at: now }, to === 'published' && !old.published_at ? { published_at: now } : {});
+        log({ action: to === 'published' ? 'news:publish' : 'news:unpublish', target_name: old.title, details: { id: old.id, slug: old.slug, republished } });
+        return { entry: structuredClone(old), news: this.newsList() };
+      }
+      case 'newsDelete': {
+        requireAdmin();
+        const old = this.news.find((n) => n.id === Number(a.id));
+        if (!old) throw err('That news entry no longer exists.', 404);
+        if (!canDeleteNews(old.status)) throw err("A published entry can't be deleted. Unpublish it first.", 409);
+        this.news = this.news.filter((n) => n !== old);
+        log({ action: 'news:delete', target_name: old.title, details: { id: old.id, slug: old.slug, status: old.status } });
+        return { news: this.newsList() };
+      }
       case 'deleteEvent': requireAdmin(); this.events = this.events.filter((e) => String(e.id) !== String(a.id)); log({ action: 'deleteEvent', details: { id: a.id } }); return { ok: true };
       case 'log': return { log: D.log };
       case 'staff': return { staff: D.staff };
@@ -413,8 +470,32 @@ export class FakeBackend {
       }
       case 'chat_ignores': return [];
       case 'staff': return single ? (user?.role ? { role: user.role } : null) : (user?.role ? [{ role: user.role }] : []);
+      case 'news': return this.newsRead(params);
       default: return [];
     }
+  }
+
+  // Admin list: newest change first.
+  newsList() { return structuredClone([...this.news].sort((x, y) => String(y.updated_at).localeCompare(String(x.updated_at)) || y.id - x.id)); }
+
+  // The public read of news, as the database allows it (checked on the local stack in tests/db/):
+  // published rows whose time has passed, and only the article columns; anything else is the
+  // same 401 / 42501 the API returns.
+  newsRead(params) {
+    const PUBLIC = ['id', 'slug', 'kind', 'title', 'summary', 'body', 'published_at', 'revised_at', 'maintenance_starts_at', 'maintenance_ends_at'];
+    const denied = { __status: 401, body: { code: '42501', details: null, hint: null, message: 'permission denied for table news' } };
+    const cols = (params.get('select') || '*').split(',').map((c) => c.trim());
+    if (cols.some((c) => !PUBLIC.includes(c))) return denied;
+    for (const k of params.keys()) if (!['select', 'order', 'limit', 'offset'].includes(k) && !PUBLIC.includes(k)) return denied;
+    const order = params.get('order');
+    if (order && !PUBLIC.includes(order.split('.')[0])) return denied;
+    let rows = this.news.filter((n) => n.status === 'published' && n.published_at && new Date(n.published_at).getTime() <= Date.now());
+    for (const [k, v] of params) if (PUBLIC.includes(k)) rows = rows.filter((n) => String(n[k]) === v.replace(/^eq\./, ''));
+    rows.sort((x, y) => new Date(y.published_at) - new Date(x.published_at));
+    if (order && order.endsWith('.asc')) rows.reverse();
+    const from = Number(params.get('offset')) || 0;
+    const limit = Number(params.get('limit')) || rows.length;
+    return rows.slice(from, from + limit).map((n) => Object.fromEntries(cols.map((c) => [c, n[c] ?? null])));
   }
 
   broadcast(table, type, record) {
@@ -500,6 +581,7 @@ export async function attach(context, backend, baseUrl) {
         const table = p.split('/').pop();
         const single = /vnd\.pgrst\.object/.test(req.headers().accept || '');
         const out = backend.rest(user, table, url.searchParams, single);
+        if (out?.__status) return json(route, out.__status, out.body);
         if (single && out == null) return json(route, 406, { message: 'no rows' });
         return json(route, 200, out);
       }
