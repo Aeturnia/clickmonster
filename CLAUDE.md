@@ -96,6 +96,10 @@ Read these first:
   - The pending state is tracked by key (`ui.pendingKey`, `markPending()`).
   - Toasts and alerts are re-homed into the topmost open dialog (`placeOverlays()`).
 - **Layout state** is `layout.js`. It sets `#app[data-layout]` (`mobile`, `wide` or `desktop`) and `#app[data-chat]` (`panel` or `drawer`), and reorders the regions in the DOM for desktop. Desktop starts at 75em with a fine pointer, and the chat panel at 80em. Both conditions also check the usable width in rem, so larger text falls back.
+- **The interface choice** (landing L-2) is `prefs.layout`: `auto`, `desktop` or `mobile`. It can be set on the entrance and in Hero, Settings.
+  - `layout.js` resolves it (`setLayoutPreference()`, `resolveLayout()`, `layoutStatus()`). Desktop falls back to Automatic when it doesn't fit, without changing the saved choice.
+  - The Phase 2 two-column rules are keyed off `#app:is([data-layout="wide"], [data-layout="desktop"])`, so a forced layout applies fully.
+  - `entry.js` copies the Desktop rule's numbers, and a file test keeps them in step.
 - **Keyboard shortcuts** (desktop only) are the `SHORTCUTS` table in `main.js`. The same table drives `shortcut()` and the `?` list (`sheetKeys()`).
   - A shortcut presses the existing button, and `markShortcuts()` adds `aria-keyshortcuts` after every render.
   - The off setting is `prefs.keys`.
@@ -123,8 +127,8 @@ Read these first:
 ## Testing
 
 ```
-npm test                 # engine, plus the entrance file checks (28)
-npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (146)
+npm test                 # engine, plus the entrance file checks (29)
+npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (156)
 npx playwright install chromium   # once
 ```
 

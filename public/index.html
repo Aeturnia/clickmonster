@@ -37,6 +37,15 @@
           <button type="submit" class="e-btn" disabled>Sign in</button>
         </form>
         <p class="e-switch"><button type="button" id="authmode" class="e-link" disabled>New here? Create an account</button></p>
+        <fieldset id="iface" class="e-iface" aria-describedby="iface-note">
+          <legend class="e-legend">Interface</legend>
+          <div class="e-choices">
+            <label class="e-choice"><input type="radio" name="iface" value="auto" checked> Automatic</label>
+            <label class="e-choice"><input type="radio" name="iface" value="desktop"> Desktop</label>
+            <label class="e-choice"><input type="radio" name="iface" value="mobile"> Mobile</label>
+          </div>
+          <p id="iface-note" class="e-note">Automatic chooses the layout for your screen.</p>
+        </fieldset>
         <div id="gate-problem" class="e-problem" hidden>
           <p id="gate-problem-text" role="alert"></p>
           <div class="e-actions">

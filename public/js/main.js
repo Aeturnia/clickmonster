@@ -23,17 +23,23 @@ import { setupChat } from './chat-ui.js';
 import { questTitle, canAccept } from './engine/quests.js';
 import { setWorld, activeEvents, MULT_LABEL, MULT_KEYS } from './engine/world-config.js';
 import { huntCombatant } from './engine/hunt.js';
-import { watchLayout } from './layout.js';
+import { watchLayout, setLayoutPreference, layoutStatus, LAYOUT_CHOICES } from './layout.js';
 
 // The entrance (entry.js) imports this module only once net.js has created the Supabase client.
 if (!sb) throw new Error('main.js is started by entry.js, after the Supabase client is ready.');
 
 // ---------------------------------------------------------------- state
 const PREFS_KEY = 'clickmonster.prefs';
-const prefs = (() => {
-  const defaults = { leftHanded: false, vibrate: true, keys: true }; // keys: desktop keyboard shortcuts (D-3)
-  try { return { ...defaults, ...JSON.parse(localStorage.getItem(PREFS_KEY) || '{}') }; } catch { return defaults; }
-})();
+// Device-level settings. keys: desktop keyboard shortcuts (D-3). layout: the interface choice
+// (landing L-2: auto, desktop or mobile), which the entrance can also change before sign-in.
+const PREF_DEFAULTS = { leftHanded: false, vibrate: true, keys: true, layout: 'auto' };
+function readPrefs() {
+  let p;
+  try { p = { ...PREF_DEFAULTS, ...JSON.parse(localStorage.getItem(PREFS_KEY) || '{}') }; } catch { p = { ...PREF_DEFAULTS }; }
+  if (!LAYOUT_CHOICES.includes(p.layout)) p.layout = 'auto';
+  return p;
+}
+const prefs = readPrefs();
 function savePrefs() {
   try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch { /* storage unavailable */ }
 }
@@ -704,10 +710,35 @@ function viewHero() {
       <button class="row" data-a="pref" data-v="keys"><span class="nm">Keyboard shortcuts<small>Number and letter keys for screens and battle actions</small></span><span class="go">${prefs.keys ? 'On' : 'Off'}</span></button>
       <button class="row" data-a="keys"><span class="nm">Show keyboard shortcuts<small>Or press ? while playing</small></span><span class="go">Show</span></button>` : ''}
     </div>
+    ${viewLayoutPicker()}
     <h3>Account</h3>
     <p class="small muted">Signed in as ${esc(session?.user?.email || '')}. Your hero is saved online.</p>
     <div class="choose" style="grid-template-columns:1fr 1fr">${btn('signout', null, 'Sign out')}${btn('delete', null, 'Delete hero', 'danger')}</div>`;
 }
+
+// The interface choice (landing L-2): native radio buttons, with what is in use and why.
+const LAYOUT_LABEL = { auto: 'Automatic', desktop: 'Desktop', mobile: 'Mobile' };
+const LAYOUT_NAME = { mobile: 'the phone layout', wide: 'the two-column layout', desktop: 'the desktop layout' };
+function layoutNote() {
+  const { choice, layout: inUse, fallback } = layoutStatus();
+  if (fallback) return `Desktop needs a wider window, so Automatic is in use for now (${LAYOUT_NAME[inUse]}). Your choice is kept and applies when there is room.`;
+  if (choice === 'auto') return `Automatic chooses for this screen: ${LAYOUT_NAME[inUse]} now.`;
+  return `Using ${LAYOUT_NAME[inUse]}.`;
+}
+function viewLayoutPicker() {
+  return `<fieldset class="iface" aria-describedby="layout-note"><legend>Interface</legend>
+      <div class="iface-choices">${LAYOUT_CHOICES.map((c) => `<label class="iface-choice"><input type="radio" name="layout-pref" id="layout-${c}" value="${c}"${prefs.layout === c ? ' checked' : ''}> ${LAYOUT_LABEL[c]}</label>`).join('')}</div>
+      <p class="small muted" id="layout-note">${esc(layoutNote())}</p>
+    </fieldset>`;
+}
+document.addEventListener('change', (e) => {
+  if (e.target.name !== 'layout-pref') return;
+  prefs.layout = e.target.value;
+  savePrefs();
+  setLayoutPreference(prefs.layout); // re-applies the layout and renders
+  render();
+  announce(layoutNote());
+});
 
 // ---------------------------------------------------------------- gear
 function itemRow(item) {
@@ -1679,6 +1710,9 @@ async function loadAnnouncement() {
 // Resolves true when the hero (or hero creation) is drawn; throws if the hero can't be loaded.
 export async function start(newSession, isCurrent = () => true) {
   const g = ++gameGen;
+  // The entrance may have changed the interface choice since this module loaded.
+  Object.assign(prefs, readPrefs());
+  setLayoutPreference(prefs.layout);
   const current = () => isCurrent() && live(g);
   session = newSession;
   ui.phase = 'idle';
@@ -1727,6 +1761,7 @@ export function shown() {
 
 // The layout (mobile, wide or desktop) sets the region order; the desktop side column is drawn
 // only in the desktop layout.
+setLayoutPreference(prefs.layout);
 watchLayout((next, panel) => { layout = next; chat.setMode(panel ? 'panel' : 'drawer'); render(); });
 render();
 
