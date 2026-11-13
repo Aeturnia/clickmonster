@@ -9,7 +9,7 @@ Read these first:
 - `README.md`: features, architecture, layout, commands and deploying.
 - `docs/ui-modernization-audit.md`: the Phase 0 audit and the phase plan.
 - `docs/ui-phase-1-report.md` … `docs/ui-phase-4-report.md`: what each phase changed, its acceptance criteria, deviations and the review corrections.
-- `docs/backlog.md`: agreed but unscheduled work (desktop layout, layout picker, sign-in news), and the pre-release verification still owed (real devices, screen readers, live-backend staging).
+- `docs/backlog.md`: agreed but unscheduled work (sign-in news, password recovery, follow-ups), and the pre-release verification still owed (real devices, screen readers, live-backend staging, the live site).
 
 ## Where things stand (2026-11-13)
 
@@ -18,17 +18,19 @@ Read these first:
   - **D-1, the desktop frame:** merged as PR #18. See `docs/desktop-d1-report.md`.
   - **D-2, the persistent chat panel:** merged as PR #19 (`672a81a`). Findings D2-01 to D2-03 are closed. See `docs/desktop-d2-report.md`.
   - **D-3, keyboard shortcuts:** merged as PR #21 (`d567be2`), approved with no corrections. See `docs/desktop-d3-report.md`.
-  - **Separate:** the layout picker is now landing phase L-2 (below). Wider desktop sheets and the possible rename to "Monstra Regna", a working title only, are not approved.
+  - **Separate:** the layout picker was built as landing phase L-2 (below). Wider desktop sheets and the possible rename to "Monstra Regna", a working title only, are not approved.
 - **Landing page: the scope is approved and merged** (PR #23, `e385e38`, 2026-11-13). `docs/landing-scope.md` is the implementation contract for L-1 to L-4, covering the entrance, the interface picker and public news.
   - **L-1, the entrance: complete.**
     - Merged as PR #25 (`b911a79`) after its final review at `c97f9fc`. Findings L1-01 and L1-02 (account isolation) are closed. See `docs/landing-l1-report.md`.
     - Its gate, the vendored Supabase UMD build, was verified against the fake backend only.
-  - **L-2, the interface picker: authorized** (2026-11-13), on its own branch and PR. It covers:
-    - Automatic, Desktop and Mobile, on the entrance and in Hero, Settings;
-    - the choice saved locally;
-    - Desktop falling back when it doesn't fit, without changing the saved choice;
-    - Automatic exactly as today.
+  - **L-2, the interface picker: complete.**
+    - Merged as PR #27 (`4c9d049`) after review with no corrections. See `docs/landing-l2-report.md`.
+    - It covers Automatic, Desktop and Mobile, on the entrance and in Hero, Settings, saved locally. Desktop falls back without changing the choice, and Automatic is exactly as before.
+  - **Regression baseline** on `main` at `4c9d049`: engine 29/29 and browser 156/156, in each of 3 runs.
   - **Not authorized:** L-3 and L-4, database changes, function deploys, and the rename.
+    - L-3 (migrations, access policies, admin publishing) needs the owner's separate authorization.
+    - It also needs the scope's gates: the local Supabase stack, database and REST tests before any production change, and explicit authorization for the migration and the deploy.
+  - **For L-4:** the entrance is at 29.8 KB of its 30 KB startup budget (LAC-2).
   - **Implementation gate still open:** L-3 needs the local Supabase stack running before any production change.
   - **Every question in section 5 is decided.** The main ones:
     - a Netlify Edge Function for article pages, uncached at first;
@@ -40,13 +42,14 @@ Read these first:
     - one Supabase client owned by `net.js`;
     - the local RLS tests and production gate in L-3.
 - **Development moved to the owner's Windows laptop.** `npm run deploy:functions` now runs from any shell (PR #15) and needs `SUPABASE_ACCESS_TOKEN` set in the environment.
-- **Don't start anything beyond L-2, or make gameplay or server changes,** until the owner approves it.
+- **Don't start L-3, or anything else, or make gameplay or server changes,** until the owner approves it. There is no authorized next phase.
 - **Before a release:** the pre-release verification in `docs/backlog.md` is still owed:
   - real devices and other browsers (including Firefox and Safari on desktop);
   - screen readers, including keyboard navigation with the shortcuts;
   - input methods and non-US keyboards;
   - the owner's actual browser viewport;
   - live-backend staging, including chat session changes and Realtime;
+  - the interface choice (L-2) on real tablets and phones, with browser zoom, and with screen readers;
   - the entrance (L-1) on the live site: the vendored supabase-js against the live auth server, edge functions and Realtime; Netlify serving `/vendor/*` with its cache header; a real confirmation email; password managers and autofill; real-phone timing.
 
   The test suites run in Chromium against a fake backend only.
