@@ -12,7 +12,11 @@ The UI modernization (Phases 1–4) was tested in Chromium only, against a fake 
 - Type-to-confirm with autocorrect on phone keyboards, and haptics on refused taps (Phase 3).
 - Admin console: the sticky zone save bar with the keyboard open, table cards and the phone navigation (Phase 4).
 
-**Screen readers** (VoiceOver, TalkBack, NVDA). Names, roles and live regions were only checked in the DOM and with axe:
+**The owner's actual browser viewport** (`innerWidth × innerHeight` and `devicePixelRatio`, measured in their normal window). Add it to the desktop measurements and screenshots; 1920×1080 has stood in for it.
+
+**Input methods and keyboards:** the desktop shortcuts (D-3) with real input-method composition (Japanese, Chinese, Korean) and non-US keyboards such as AZERTY, on real hardware. Composition was only simulated with synthetic events.
+
+**Screen readers** (VoiceOver, TalkBack, NVDA). Names, roles and live regions were only checked in the DOM and with axe. Also check keyboard navigation with the desktop shortcuts: in browse mode, screen readers take single-letter keys for themselves, and `aria-keyshortcuts` was only checked in the DOM.
 - Game: the dialogs and `alertdialog` confirmations, `role="status"` toasts, the roving map and the shortened amounts (Phases 1–3).
 - Admin console:
   - the group switcher, review panel and table cards;
@@ -29,17 +33,13 @@ The UI modernization (Phases 1–4) was tested in Chromium only, against a fake 
   - The tests use the fake backend. Late Realtime events were simulated by calling the old subscription's callbacks, because the harness could not deliver one during `removeChannel()`.
   - Also check a failed send while the window crosses 1280px.
 
-## Desktop layout
+## Desktop layout (done)
 
-To be designed at a desktop, after the UI modernization phases.
-
-- A layout made for large screens and mouse/keyboard play, rather than the phone layout stretched.
-- Starting point: the Phase 2 two-column layout (`@media (min-width: 900px)` in `public/css/style.css`) and its 1024×768 and 1440×900 tests in `tests/ui/responsive.test.mjs`.
-- Use the empty side-column space on tall screens. Candidates: a minimap of the current zone, inline chat instead of the drawer, quest and event notices.
-- Acceptance criteria and before/after measurements as in Phase 2 (`tools/ui-metrics.mjs`).
+Built in phases D-1 to D-3 and merged on 2026-11-13. See `docs/desktop-scope.md` and the three D reports. What remains from that scope is below and is not approved: the layout picker, wider desktop sheets, and the possible rename to "Monstra Regna".
 
 ## Layout choice: desktop or mobile
 
+- **Since the desktop milestone:** the layout is already a single state, `#app[data-layout]`, set by `layout.js`, and the CSS keys off it. A picker would force that state, falling back when there isn't room. The notes below predate that.
 - A choice on the sign-in page: **Automatic** (default, by screen size as now), **Desktop** or **Mobile**.
 - Implement it as a class on `#app` (for example `layout-desktop` / `layout-mobile`) that overrides the media queries. With no class set, the media queries keep deciding.
 - Save it in the local preferences (`clickmonster.prefs` in `main.js`, alongside `leftHanded`), and also offer it on the Hero screen so it can be changed after signing in.
