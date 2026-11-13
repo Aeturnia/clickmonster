@@ -3,7 +3,7 @@
 // hand-over to the game, signing out, and each part failing on its own.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { setup, signIn, settle, FakeBackend, ACCOUNTS, axe, savedSession, makeHero } from './harness.mjs';
+import { setup, signIn, settle, FakeBackend, ACCOUNTS, axe, savedSession, makeHero, fixedQuest } from './harness.mjs';
 import { SUPABASE_URL } from '../../public/js/config.js';
 
 let env;
@@ -515,3 +515,191 @@ test('the entrance has no axe violations at phone, landscape, tablet and desktop
   await inGame(ctx.page);
   await done(ctx);
 });
+
+// ---------------------------------------------------------------- L-1 review: L1-01 and L1-02
+// Requests still on their way when one account signs out and another signs in, in the same page.
+
+// Two accounts with heroes in the same village (so the same buttons), told apart by name.
+function twoHeroes(opts = {}) {
+  const backend = new FakeBackend(opts);
+  backend.heroes[ACCOUNTS.mod.id] = makeHero({ name: 'Moderator Mia' });
+  backend.charIds[ACCOUNTS.mod.id] = 'char-mod';
+  return backend;
+}
+// The same sign-out and sign-in the buttons take, through the page's own client.
+async function switchTo(page, acct, name) {
+  await page.evaluate(async (a) => {
+    const { sb } = await import(new URL('js/net.js', location.href));
+    await sb.auth.signOut();
+    await sb.auth.signInWithPassword({ email: a.email, password: a.password });
+  }, acct);
+  await page.waitForFunction((n) => document.querySelector('#top .hud-name')?.textContent.includes(n), name, { timeout: 15000 });
+  await settle(page);
+}
+const heroNow = (page) => page.evaluate(() => { const c = window.clickmonster.char; return c && { name: c.name, loc: { ...c.loc }, battle: !!c.battle }; });
+
+test('L1-01 a late action answer for the previous account never reaches the next, and does not block it', async () => {
+  const backend = twoHeroes();
+  const ctx = await open({ backend });
+  const { page } = ctx;
+  await signIn(page, env.url, 'player');
+  await page.waitForSelector('[data-a="fight"]', { timeout: 15000 });
+  await settle(page);
+  // Account A starts a fight; the server's answer is held.
+  const release = backend.hold('fight');
+  await page.click('[data-a="fight"]');
+  await page.waitForSelector('[data-a="fight"].pending[aria-busy="true"]');
+  // A signs out and B signs in while it is still on its way.
+  await switchTo(page, ACCOUNTS.mod, 'Moderator Mia');
+  assert.equal(await page.locator('.pending, [aria-busy="true"]').count(), 0, "no pending state carried over from A");
+  // B acts at once, and is not told the game is still busy with A's request.
+  const start = await heroNow(page);
+  await page.click('[data-a="move"]:not([aria-disabled="true"])');
+  await settle(page);
+  assert.doesNotMatch(await page.textContent('#toast'), /Still working/);
+  const moved = await heroNow(page);
+  assert.notDeepEqual(moved.loc, start.loc, "B's move went through");
+  assert.equal(backend.calls.filter((c) => c.action === 'move').length, 1);
+  // A's answer arrives now: it is dropped.
+  release();
+  await page.waitForTimeout(700);
+  assert.deepEqual(await heroNow(page), { name: 'Moderator Mia', loc: moved.loc, battle: false }, "B's hero, unchanged");
+  assert.match(await page.textContent('#top .hud-name'), /Moderator Mia/);
+  assert.equal(await page.locator('#log').count(), 0, "A's fight never appears");
+  assert.equal(await page.locator('.pending, [aria-busy="true"]').count(), 0);
+  assert.equal(await page.textContent('#alerts'), '', 'nothing reported for A');
+  // The same session keeps working normally.
+  await page.waitForTimeout(270);
+  await page.click('[data-a="move"]:not([aria-disabled="true"])');
+  await settle(page);
+  assert.equal(backend.calls.filter((c) => c.action === 'move').length, 2);
+  await done(ctx);
+});
+
+test("L1-02 a delayed quest board for the previous account never fills the next account's board", async () => {
+  const backend = twoHeroes({ quests: [fixedQuest()] });
+  const ctx = await open({ backend });
+  const { page } = ctx;
+  // A's board request is held, then answered with an empty board (B's own is the real one).
+  let openA;
+  const gateA = new Promise((r) => { openA = r; });
+  let first = true;
+  await page.route('**/functions/v1/game', async (r) => {
+    const body = JSON.parse(r.request().postData() || '{}');
+    if (body.action === 'quests' && first) {
+      first = false;
+      await gateA;
+      return r.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify({ quests: [] }) });
+    }
+    return r.fallback();
+  });
+  await signIn(page, env.url, 'player');
+  await page.waitForSelector('[data-a="quests"]', { timeout: 15000 });
+  await page.click('[data-a="quests"]');
+  await page.waitForSelector('#sheet[open]');
+  await switchTo(page, ACCOUNTS.mod, 'Moderator Mia');
+  assert.equal(await page.evaluate(() => document.getElementById('sheet').open), false, "A's sheet is not left open");
+  await page.click('[data-a="quests"]');
+  await page.waitForSelector('#sheet .quest-row', { timeout: 15000 });
+  openA(); // A's empty board arrives late
+  await page.waitForTimeout(700);
+  assert.equal(await page.locator('#sheet .quest-row').count(), 1, "B's board, not A's");
+  assert.doesNotMatch(await page.textContent('#sheet'), /The board is empty/);
+  await done(ctx);
+});
+
+test('L1-02 a delayed player list for the previous account never appears for the next', async () => {
+  const backend = twoHeroes();
+  const ctx = await open({ backend });
+  const { page } = ctx;
+  let openA;
+  const gateA = new Promise((r) => { openA = r; });
+  let first = true;
+  await page.route('**/rest/v1/characters*', async (r) => {
+    if (first && r.request().url().includes('updated_at=gt')) {
+      first = false;
+      await gateA;
+      return r.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify([{ id: 'ghost', name: 'Ghost Of Account A', race: 'human', level: 12, updated_at: new Date().toISOString() }]) });
+    }
+    return r.fallback();
+  });
+  await signIn(page, env.url, 'player');
+  await page.waitForSelector('[data-a="list"][data-v="players"]', { timeout: 15000 });
+  await page.click('[data-a="list"][data-v="players"]');
+  await switchTo(page, ACCOUNTS.mod, 'Moderator Mia');
+  await page.click('[data-a="list"][data-v="players"]');
+  await settle(page);
+  openA();
+  await page.waitForTimeout(700);
+  assert.doesNotMatch(await page.textContent('#main'), /Ghost Of Account A/, "A's list never shows for B");
+  await done(ctx);
+});
+
+test("L1-01 the late answer would have replaced the next account's hero: it is dropped", async () => {
+  const backend = twoHeroes();
+  const ctx = await open({ backend });
+  const { page } = ctx;
+  await signIn(page, env.url, 'player');
+  await page.waitForSelector('[data-a="fight"]', { timeout: 15000 });
+  await settle(page);
+  const release = backend.hold('fight');
+  await page.click('[data-a="fight"]');
+  await page.evaluate(async (a) => {
+    const { sb } = await import(new URL('js/net.js', location.href));
+    await sb.auth.signOut();
+    await sb.auth.signInWithPassword({ email: a.email, password: a.password });
+  }, ACCOUNTS.mod);
+  await page.waitForFunction(() => document.querySelector('#top .hud-name')?.textContent.includes('Moderator Mia'), null, { timeout: 15000 });
+  const mia = await heroNow(page);
+  release(); // A's fight answer, for A's hero, arrives in B's session
+  await page.waitForTimeout(800);
+  assert.deepEqual(await heroNow(page), { name: 'Moderator Mia', loc: mia.loc, battle: false });
+  assert.match(await page.textContent('#top .hud-name'), /Moderator Mia/);
+  await done(ctx);
+});
+
+test("L1-02 an older operation never clears the next account's pending indicator", async () => {
+  const backend = twoHeroes();
+  const ctx = await open({ backend });
+  const { page } = ctx;
+  await signIn(page, env.url, 'player');
+  await page.waitForSelector('[data-a="fight"]', { timeout: 15000 });
+  await settle(page);
+  const releaseA = backend.hold('fight');
+  await page.click('[data-a="fight"]');
+  await page.waitForSelector('[data-a="fight"].pending');
+  await switchTo(page, ACCOUNTS.mod, 'Moderator Mia');
+  const releaseB = backend.hold('move');
+  await page.click('[data-a="move"]:not([aria-disabled="true"])');
+  await page.waitForSelector('[data-a="move"].pending[aria-busy="true"]');
+  releaseA(); // A's answer finishes while B's move is still pending
+  await page.waitForTimeout(700);
+  assert.equal(await page.locator('[data-a="move"].pending[aria-busy="true"]').count(), 1, "B's move is still shown as pending");
+  releaseB();
+  await settle(page);
+  assert.equal(await page.locator('.pending, [aria-busy="true"]').count(), 0);
+  assert.equal(backend.calls.filter((c) => c.action === 'move').length, 1, "B's move completed");
+  await done(ctx);
+});
+
+test('L1-02 a confirmation open when the session ends is closed, and confirms nothing', async () => {
+  const backend = twoHeroes();
+  const ctx = await open({ backend });
+  const { page } = ctx;
+  await signIn(page, env.url, 'player');
+  await page.waitForSelector('[data-a="tab"][data-v="hero"]', { timeout: 15000 });
+  await page.click('[data-a="tab"][data-v="hero"]');
+  await page.click('[data-a="delete"]');
+  await page.waitForSelector('#confirm[open]');
+  await page.evaluate(async () => { const { sb } = await import(new URL('js/net.js', location.href)); await sb.auth.signOut({ scope: 'local' }); });
+  await page.waitForSelector('#authform', { state: 'visible' });
+  assert.equal(await page.evaluate(() => document.getElementById('confirm')?.open ?? false), false, "A's question is gone");
+  await page.fill('#email', ACCOUNTS.mod.email);
+  await page.fill('#password', ACCOUNTS.mod.password);
+  await page.click('#authform button[type=submit]');
+  await page.waitForFunction(() => document.querySelector('#top .hud-name')?.textContent.includes('Moderator Mia'), null, { timeout: 15000 });
+  assert.equal(await page.evaluate(() => document.getElementById('confirm')?.open ?? false), false);
+  assert.equal(backend.calls.filter((c) => c.action === 'delete').length, 0, 'nothing deleted');
+  await done(ctx);
+});
+

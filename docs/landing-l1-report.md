@@ -1,6 +1,8 @@
 # Landing page — phase L-1 report: the entrance
 
-**Status: implemented. Awaiting independent review.** It is on its own branch and PR. L-2 is not started and not authorized.
+**Status: review corrections made. Awaiting independent re-review.** It is in PR #25. L-2 is not started and not authorized.
+- **Review of `787b5df`:** changes requested. Two findings, L1-01 and L1-02 (account isolation for requests still on their way); everything else was accepted. Both are corrected in section 10.
+- **Integration:** `main` was merged into this branch after PR #24 (the scope approval record) merged.
 
 The contract is `docs/landing-scope.md`, approved at `37f490a` and merged as PR #23. This phase covers LAC-1 to LAC-10 (with 5a, 5b and 10a), LAC-18 to LAC-20, and LAC-21's L-1 cases.
 
@@ -34,7 +36,7 @@ The contract is `docs/landing-scope.md`, approved at `37f490a` and merged as PR 
   - `.gitattributes` stops git rewriting their line endings.
   - `netlify.toml` serves `/vendor/*` with a one-year immutable cache.
 - **Tests:**
-  - `tests/ui/entrance.test.mjs`: 21 new browser tests.
+  - `tests/ui/entrance.test.mjs`: 21 new browser tests, plus 6 from the review corrections (section 10).
   - `tests/entrance-files.test.mjs`: 4 new file checks in the engine suite.
   - **Harness changes:**
     - no CDN, except when measuring another checkout with `UI_PUBLIC_DIR`;
@@ -164,7 +166,16 @@ The scope requires L-1 to verify Supabase's UMD build before it replaces the CDN
 
 ## 8. Test runs
 
-The engine suite has **28** tests (24 before, plus 4 file checks) and the browser suite **140** (119 before, plus 21). Both were run three times on this branch, on the final code: all passed in each of 3 runs (engine 28/28, browser 140/140, three times).
+The engine suite has **28** tests (24 before, plus 4 file checks).
+
+| Code | Browser tests | Result |
+|---|---|---|
+| `787b5df`, as first reviewed | 140 (119 before, plus 21) | all passed in each of 3 runs; engine 28/28 each time |
+| The review corrections, after merging `main` | 146 (plus 6) | all passed in each of 3 runs; engine 28/28 each time |
+
+**A failed run on the way.** An earlier three-run pass on the corrections, before closing confirmations at sign-out was reflected in the D2-03 test, failed that one test in all three runs (145/146). It was the test change described in section 10. The runs above are on the final code.
+
+**Accessibility:** the axe checks in the suite all pass, at all impacts. They cover the entrance and its states, hero creation, the game after sign-in, the entrance after signing out, and the existing game and admin screens.
 
 ## 9. Not verified
 
@@ -175,3 +186,87 @@ The engine suite has **28** tests (24 before, plus 4 file checks) and the browse
 - **A real email-confirmation sign-up.** The fake backend imitates the confirmation-required answer.
 - **Input methods, password managers and browser autofill** on the new form. The fields keep their `autocomplete` values, but no real password manager was tried.
 - **A failed module load in other browsers.** The reload-on-retry rule (deviation 2) was observed in Chromium only.
+
+## 10. Review corrections (review of `787b5df`)
+
+The review accepted the entrance, the performance work, the vendored library, the single client and listener, saved sessions, the hand-over, start-up invalidation, hero creation and the game layouts. It found that requests still on their way when the account changes were not isolated.
+
+### L1-01: a late action answer could overwrite the next account's hero (high)
+
+**Defect.** `runRemote()` applied whatever `api()` returned (`char = res.char`, then feedback and toasts) without checking that the session that asked was still the current one. `stop()` didn't invalidate requests already sent.
+
+**Reproduced on `787b5df`** with the harness, before fixing:
+1. Account A starts a fight, and the server's answer is held.
+2. A signs out and B ("Moderator Mia") signs in.
+3. A's answer is released.
+
+Afterwards the page showed **A's hero, "Bartholomew Thorne", in battle**, in B's session, and A's pending state had carried over. With the correction, B's hero stays, nothing is pending, and B is not in battle.
+
+**Correction** (`public/js/main.js`):
+- **One game-session generation, `gameGen`.** It is advanced by `start()` and by `stop()`, and `live(g)` checks it.
+- **`runRemote()` records the generation before it does anything.** It checks it again:
+  - after the confirmation dialog (an account can change while one is open);
+  - after the server answers, on success and on failure.
+- **A stale answer is dropped completely:** no `char`, no `trackChanges`, no toast, no error, no 401 sign-out, no battle effects, no player refresh. It doesn't clear the busy or pending state either, which now belongs to the next account.
+- **`start()` takes a new generation** and combines it with the entrance's own `isCurrent()`.
+- The server request isn't cancelled. API contracts and game rules are unchanged.
+
+### L1-02: per-account UI state carried over, and background reads wrote late (medium)
+
+**Defect.**
+- `stop()` cleared `char`, `session`, the sheet and the error list. It left the rest: `ui.busy`, `ui.pendingKey`, the cached player list and quest board, hunts, the announcement, battle feedback (`delta`, `turnLog`, `losses`), drafts, the map cursor and the tab.
+- A's pending action made B's first tap say "Still working on your last action."
+- The background reads wrote their results whenever they returned.
+
+**Correction:**
+- **Fresh UI state at every account boundary.** The UI state now comes from one factory, `freshUi()`, and `stop()` replaces it entirely, clearing the feedback timer too.
+  - Device-level settings live in `prefs` and are untouched. So is the layout state.
+  - Chat keeps its accepted per-session behaviour (`chat.stop()`).
+  - B now starts on Explore with the monster list, as a fresh sign-in always did.
+- **Every background read checks the generation before writing:**
+  - `loadBoard` (quests and news);
+  - `refreshPlayers`;
+  - `loadHunts`;
+  - `loadAnnouncement`;
+  - `loadWorldConfig`;
+  - the two-minute zone check, including its `state` call.
+- **A pending indicator can no longer be cleared by an older operation,** because a stale answer returns before touching it.
+- **An open confirmation is closed when the session ends.** This was found while testing L1-02: A's "Delete Bartholomew Thorne?" stayed open over the entrance after a sign-out, and over B's game after B signed in.
+  - `confirm.js` gains `cancelAsk()`, which closes the question through its own Cancel path, so the waiting `ask()` resolves as "no".
+  - `stop()` calls it.
+  - A confirmation that would have been answered after the change is dropped anyway (`live(g)`).
+
+### Regression tests (`tests/ui/entrance.test.mjs`)
+
+All six are deterministic: answers are held by the fake backend or gated by a page route until released.
+
+| Test | Covers | On `787b5df` |
+|---|---|---|
+| `L1-01 a late action answer for the previous account never reaches the next, and does not block it` | A's fight is held, then A signs out and B signs in. No pending state reaches B, and B moves straight away (no "Still working"). After A's answer is released: B's hero, location and no battle, no battle log, nothing reported. B's next move still works | **fails**: A's pending state carries over to B (the test stops there). On the old code it clears only when A's answer arrives, and that answer also replaces B's hero (next row) |
+| `L1-01 the late answer would have replaced the next account's hero: it is dropped` | A's fight is held, A signs out, B signs in (no waiting for idle), and A's answer is released. B's name, location and no battle remain | **fails**: B's session shows **"Bartholomew Thorne", in battle**, A's hero |
+| `L1-02 an older operation never clears the next account's pending indicator` | A's fight is held. After the switch, B's move is held too. When A's answer arrives, B's move is still shown as pending; when B's answer arrives, it completes | **fails**: A's pending state carries over to B (the test stops there) |
+| `L1-02 a confirmation open when the session ends is closed, and confirms nothing` | A opens Delete hero, and the session ends. The question is gone from the entrance and from B's game, and nothing is deleted | **fails**: A's question stays open |
+| `L1-02 a delayed quest board for the previous account never fills the next account's board` | A's board request is held and later answered with an empty board. B opens its own board, which shows its quest. A's late answer doesn't replace it | **fails**: B's board is replaced by A's empty one |
+| `L1-02 a delayed player list for the previous account never appears for the next` | A's player-list read is held, and its late answer names "Ghost Of Account A". B's screen never shows it | **fails**: A's list appears on B's screen |
+
+All six were run against `787b5df`'s `main.js` with everything else current, and all six fail.
+
+**One more existing test changed:** `D2-03 a confirmation opened by one account sends nothing after another signs in` (`tests/ui/desktop-chat.test.mjs`).
+- **Before:** it kept the first account's chat confirmation (Ignore, Report or Remove) open across the account switch, then pressed its OK to show that nothing was sent.
+- **Now:** the question closes when the first account's session ends, so there is no OK to press. The test asserts the question is closed instead.
+- **Unchanged:** the rest, including "nothing is sent for the earlier account", and the new account's own confirmed Ignore still goes through.
+- **Why:** the intent is the same and the guarantee is stronger. This is the second existing test changed in L-1; the first is in section 4, deviation 7.
+
+Within one session, normal actions and reads keep working. B's second move, B's own quest board and B's player list all load in these tests, and the rest of the suite passes.
+
+### Integration with `main`
+
+PR #24 merged into `main` (`ab8feeb`), and `main` was then merged into this branch (`ca0bff2`) with no conflicts. The suites in section 8 ran on the merged code.
+
+The landing-page bullet in `CLAUDE.md`, from #24, still says no phase is authorized. As the review asked, it is brought up to date in the L-1 completion handoff, not here. The L-1 line this PR adds says where things stand.
+
+### Not verified for these corrections
+
+- **A real server answering late.** It was imitated by holding the fake backend's answers and gating routes.
+- **Chat's Realtime callbacks across account changes.** These are guarded by chat's own session check (D-2) and weren't changed here.
+

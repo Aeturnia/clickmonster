@@ -276,7 +276,7 @@ function twoAccounts() {
   return backend;
 }
 // Sign out from the Hero screen, then sign in again through the form: no page reload.
-// (The game keeps the screen that was open, Hero, for the next account; go back to Explore.)
+// (The next account starts on Explore since landing L-1, L1-02; going there again is harmless.)
 async function switchAccount(page, who, name = 'Moderator Mia') {
   await page.click('[data-a="tab"][data-v="hero"]');
   await page.click('#main [data-a="signout"]');
@@ -507,9 +507,10 @@ test('D2-03 a confirmation opened by one account sends nothing after another sig
     await page.click('#chatpanel .chat-line[data-v="2"]');
     await page.click(`#chatpanel .chat-menu [data-c="${action}"]`);
     await page.waitForSelector('#confirm[open]');
-    // ...the account changes while it is open, and then it is confirmed.
+    // ...and the account changes while it is open. Since landing L-1 (L1-02) the question closes
+    // when the first account's session ends, answered "no", so it can no longer be confirmed.
     await switchUnderDialog(page, 'player', 'Bartholomew Thorne');
-    await page.click('#confirm [data-r="ok"]');
+    assert.equal(await page.evaluate(() => document.getElementById('confirm').open), false, `${action}: the earlier account's question is closed`);
     await page.waitForTimeout(400);
     const stale = sent(call);
     // Within one session a confirmed action still goes through: the new account's own Ignore.

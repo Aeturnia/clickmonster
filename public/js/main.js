@@ -12,7 +12,7 @@ import {
   maxHp, xpToNext, totalStats, gemBonuses, totalArmor, playerCombatant,
   applyRegen, healCost, findItem, equippedItem, meetsRequirements, NAME_RE, deathPenalty,
 } from './engine/character.js';
-import { ask, onConfirmClose, setConfirmFallback } from './confirm.js';
+import { ask, cancelAsk, onConfirmClose, setConfirmFallback } from './confirm.js';
 import { currentZone, featuresAt, inTown, monstersHere, directionTo } from './engine/world.js';
 import { monsterCombatant } from './engine/monster.js';
 import { meleeChance, spellChance, meleeBase, spellBase } from './engine/combat.js';
@@ -41,7 +41,9 @@ function savePrefs() {
 let session = null;
 let char = null; // the server's copy of our hero
 let layout = 'mobile'; // set by watchLayout(): mobile, wide or desktop (layout.js)
-const ui = {
+// Per-account UI state. stop() replaces it with a fresh copy at every account boundary
+// (landing L-1 review, L1-02). Device-level settings live in prefs, not here.
+const freshUi = () => ({
   phase: 'idle', // idle (the entrance is showing) | game
   tab: 'explore',
   list: 'monsters',
@@ -61,7 +63,14 @@ const ui = {
   createError: null,
   bankError: null,
   hunts: [],
-};
+});
+const ui = freshUi();
+
+// The game session: one per start(), ended by stop(). Anything that awaits (an action, a read)
+// notes the session it began in and drops its result if that session has ended, so a late
+// answer for one account never reaches the next (landing L-1 review, L1-01 and L1-02).
+let gameGen = 0;
+const live = (g) => g === gameGen;
 
 const SEEN_KEY = 'clickmonster.seenAnnouncement';
 const seenAnnouncement = () => { try { return Number(localStorage.getItem(SEEN_KEY) || 0); } catch { return 0; } };
@@ -964,11 +973,14 @@ function sheetQuests() {
 }
 
 async function loadBoard() {
+  const g = gameGen;
   try {
     const [res, news] = await Promise.all([api('quests'), recentEvents().catch(() => [])]);
+    if (!live(g)) return;
     ui.questBoard = res.quests;
     ui.news = news;
   } catch (err) {
+    if (!live(g)) return;
     toast(err.message, 'bad');
   }
   render();
@@ -1360,8 +1372,9 @@ async function remoteCall(a, v) {
 }
 
 async function runRemote(a, v, el) {
-  const call = await remoteCall(a, v);
-  if (!call) return;
+  const g = gameGen;
+  const call = await remoteCall(a, v); // may wait for a confirmation
+  if (!call || !live(g)) return;
   const [action, args, msg] = call;
   const before = char && {
     loc: locKey(), zone: char.loc.zone, gold: char.gold, xp: char.xp, level: char.level, masteries: { ...char.masteries },
@@ -1372,35 +1385,44 @@ async function runRemote(a, v, el) {
   // Pending: remembered by key so it survives re-renders (regeneration ticks every second).
   ui.pendingKey = el ? focusKey(el) : null;
   markPending();
+  let res;
   try {
-    const res = await api(action, args);
-    char = res.char;
-    trackChanges(action, before);
-    if ('sanctions' in res) ui.sanctions = res.sanctions;
-    resolveErrors(action);
-    if (action === 'create') ui.createError = null;
-    if (action === 'deposit' || action === 'withdraw') ui.bankError = null;
-    if (msg) toast(msg);
-    if (action === 'create' && char) { ui.tab = 'explore'; toast(`Welcome to ${ZONES[char.loc.zone].name}, ${char.name}.`); chat.start(); }
-    if (action === 'sell' || action === 'buyequip') ui.sheet = null;
-    if (action === 'fight' || action === 'attack' || action === 'hunt') ui.tab = 'explore';
-    if (char?.battle?.hunt && ['melee', 'cast'].includes(action)) {
-      const h = ui.hunts.find((x) => x.id === char.battle.hunt);
-      if (h) h.hp = char.battle.hp;
-      if (char.battle.over === 'victory' || char.battle.over === 'ended') loadHunts();
-    }
-    if (char && before && char.loc.zone !== before.zone && char.battle?.over !== 'defeat') toast(`You travel to ${ZONES[char.loc.zone].name}.`);
-    if (action === 'accept' || action === 'abandon') loadBoard();
+    res = await api(action, args);
   } catch (err) {
-    const message = err.message || 'Something went wrong.';
-    if (action === 'create') ui.createError = message; // shown next to the name field
-    else addError(err.status == null ? `Can't reach the game server. ${message}` : message, err.status == null ? 'connection' : action);
-    if (err.status === 401) await sb.auth.signOut();
-  } finally {
+    if (!live(g)) return; // the account changed while this was on its way: not ours to report
     ui.busy = false;
     ui.pendingKey = null;
     markPending();
+    const message = err.message || 'Something went wrong.';
+    if (action === 'create') ui.createError = message; // shown next to the name field
+    else addError(err.status == null ? `Can't reach the game server. ${message}` : message, err.status == null ? 'connection' : action);
+    render();
+    if (err.status === 401) await sb.auth.signOut();
+    return;
   }
+  // The answer belongs to the session that asked. If that session has ended (signed out, or
+  // another account signed in), it is dropped: no hero, feedback or pending state from it.
+  if (!live(g)) return;
+  ui.busy = false;
+  ui.pendingKey = null;
+  markPending();
+  char = res.char;
+  trackChanges(action, before);
+  if ('sanctions' in res) ui.sanctions = res.sanctions;
+  resolveErrors(action);
+  if (action === 'create') ui.createError = null;
+  if (action === 'deposit' || action === 'withdraw') ui.bankError = null;
+  if (msg) toast(msg);
+  if (action === 'create' && char) { ui.tab = 'explore'; toast(`Welcome to ${ZONES[char.loc.zone].name}, ${char.name}.`); chat.start(); }
+  if (action === 'sell' || action === 'buyequip') ui.sheet = null;
+  if (action === 'fight' || action === 'attack' || action === 'hunt') ui.tab = 'explore';
+  if (char?.battle?.hunt && ['melee', 'cast'].includes(action)) {
+    const h = ui.hunts.find((x) => x.id === char.battle.hunt);
+    if (h) h.hp = char.battle.hp;
+    if (char.battle.over === 'victory' || char.battle.over === 'ended') loadHunts();
+  }
+  if (char && before && char.loc.zone !== before.zone && char.battle?.over !== 'defeat') toast(`You travel to ${ZONES[char.loc.zone].name}.`);
+  if (action === 'accept' || action === 'abandon') loadBoard();
   render();
   // Battle feedback for the new log lines.
   const b = char?.battle;
@@ -1566,14 +1588,15 @@ document.addEventListener('keydown', (e) => {
 async function refreshPlayers() {
   if (!char || ui.list !== 'players' || ui.tab !== 'explore' || char.battle) return;
   const key = locKey();
+  const g = gameGen;
   try {
     const list = await playersAt(char.loc, char.name);
-    if (!char || key !== locKey()) return;
+    if (!live(g) || !char || key !== locKey()) return;
     ui.players = list;
     ui.playersKey = key;
     render();
   } catch (err) {
-    toast(err.message, 'bad');
+    if (live(g)) toast(err.message, 'bad');
   }
 }
 
@@ -1594,11 +1617,16 @@ setInterval(() => {
 // Pick up zone edits now and then (the server moves heroes out of removed areas).
 setInterval(async () => {
   if (document.visibilityState !== 'visible' || !char) return;
+  const g = gameGen;
   await loadZoneDefs();
+  if (!live(g) || !char) return;
   if (!ZONES[char.loc.zone]) {
-    try { char = (await api('state')).char; } catch { /* next action will sort it out */ }
+    try {
+      const fresh = (await api('state')).char;
+      if (live(g)) char = fresh;
+    } catch { /* next action will sort it out */ }
   }
-  render();
+  if (live(g)) render();
 }, 120000);
 
 let zonesLoaded = null;
@@ -1614,27 +1642,33 @@ function zonesReady() {
 }
 
 async function loadWorldConfig() {
+  const g = gameGen;
   try {
     const { data } = await sb.from('world_config').select('data').eq('id', 1).maybeSingle();
+    if (!live(g)) return;
     setWorld(data?.data || null);
     render();
   } catch { /* keep defaults */ }
 }
 
 async function loadHunts() {
+  const g = gameGen;
   try {
     const { data } = await sb.from('hunts').select('id, zone, name, level, hp, max_hp, ends_at')
       .eq('status', 'active').gt('ends_at', new Date().toISOString()).limit(20);
+    if (!live(g)) return;
     ui.hunts = data || [];
     render();
   } catch { /* not important */ }
 }
 
 async function loadAnnouncement() {
+  const g = gameGen;
   try {
     const { data } = await sb.from('events').select('id, text, created_at').eq('kind', 'announce')
       .gt('created_at', new Date(Date.now() - 3 * 86400000).toISOString())
       .order('created_at', { ascending: false }).limit(1);
+    if (!live(g)) return;
     ui.announcement = data?.[0] || null;
     render();
   } catch { /* not important */ }
@@ -1644,17 +1678,19 @@ async function loadAnnouncement() {
 // an account that has since changed or signed out is abandoned when it returns (isCurrent).
 // Resolves true when the hero (or hero creation) is drawn; throws if the hero can't be loaded.
 export async function start(newSession, isCurrent = () => true) {
+  const g = ++gameGen;
+  const current = () => isCurrent() && live(g);
   session = newSession;
   ui.phase = 'idle';
   await zonesReady();
-  if (!isCurrent()) return false;
+  if (!current()) return false;
   const res = await api('state');
-  if (!isCurrent()) return false;
+  if (!current()) return false;
   char = res.char;
   ui.sanctions = res.sanctions || null;
   ui.phase = 'game';
   // Chat starts after the hero; by then the account may have changed or signed out.
-  if (char) chat.start().then(() => { if (isCurrent() && char) chat.setZone(char.loc.zone); });
+  if (char) chat.start().then(() => { if (current() && char) chat.setZone(char.loc.zone); });
   loadAnnouncement();
   loadWorldConfig();
   loadHunts();
@@ -1665,13 +1701,18 @@ export async function start(newSession, isCurrent = () => true) {
 
 // Signed out, the session ended, or another account is starting: drop everything that belongs to
 // this account. The regions are emptied; the entrance takes over.
+// Everything per-account is replaced, including a pending action's busy state, so the next
+// account starts clean; requests still on their way are dropped when they return (live()).
 export function stop() {
+  gameGen++;
+  cancelAsk(); // a question for this account (delete, attack…) closes, answered "no"
   chat.stop();
-  ui.errors = [];
+  clearTimeout(ui.deltaTimer);
   char = null;
   session = null;
-  ui.phase = 'idle';
-  ui.sheet = null;
+  for (const k of Object.keys(ui)) delete ui[k];
+  Object.assign(ui, freshUi());
+  lastView = null;
   render();
 }
 

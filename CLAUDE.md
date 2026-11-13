@@ -87,6 +87,7 @@ Read these first:
   - **Anonymous visitors download no game code.** supabase-js loads when they first focus or type in the form; `main.js`, its modules and `css/style.css` load only after sign-in, or at once when a saved session is found. There is no autofocus.
   - **`entry.js` is the page's only auth listener.** It starts the game (`start(session, isCurrent)` in `main.js`) for a new user and stops it (`stop()`) on sign-out or when the session ends. Refreshes and repeated sign-in events for the same user do nothing. Each start has a generation number, and a stale one is dropped.
   - **Failures stay separate.** If the library, Supabase, the game's code or the first `state` call fails, the entrance stays with a message. A module that failed to load stays failed for the page, so Try again reloads in that case.
+  - **Account isolation in `main.js`** (L-1 review, L1-01 and L1-02). Per-account UI state comes from `freshUi()`, and `stop()` replaces it. Every `start()` and `stop()` advances `gameGen`. Anything that awaits (an action in `runRemote()`, `loadBoard`, `refreshPlayers`, `loadHunts` and the other reads) records `gameGen` first and drops its result unless `live(g)`. New async game code must do the same.
   - **The entrance's CSS never reads `data-layout`.** Its colour tokens copy `style.css` `:root`, and `tests/entrance-files.test.mjs` checks they match.
 - **The Supabase client:** `net.js` owns the one client. `client()` loads `vendor/supabase-js@2.45.4/supabase.js` (Supabase's UMD build, byte-identical to the npm package; hashes and update steps in `public/vendor/README.md`) and creates the client once. `sb` is a live binding, and `signOut()` marks a player's own sign-out. Nothing else may call `createClient`. The admin console uses `await client()`.
 - **Game UI** is `public/js/main.js`:
@@ -123,7 +124,7 @@ Read these first:
 
 ```
 npm test                 # engine, plus the entrance file checks (28)
-npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (140)
+npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (146)
 npx playwright install chromium   # once
 ```
 
