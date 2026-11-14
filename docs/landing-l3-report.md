@@ -1,6 +1,6 @@
 # Landing page — phase L-3 report: publication
 
-**Status: in production. The production results (section 12) await review.** L-4 waits for that review.
+**Status: complete (2026-11-13).** The production results (section 12) were reviewed and approved, and their record merged as PR #30 (`eccbcc3`).
 - **Code:** the final independent review approved it at `736a524`.
 - **Production steps,** each authorized separately by the owner and carried out in the order of section 4:
   1. a read-only inspection;
@@ -8,7 +8,11 @@
   3. the `admin` function deploy;
   4. the merge, as PR #29 (`724807b`, identical to `736a524`);
   5. the public check, which passed 21 of 21.
-- **Not started:** L-4.
+- **Still open:**
+  - The test entries `testing2` (Published) and `this-is-a-test` (Draft) are in production. They are the owner's to remove in the console.
+  - The six earlier migrations are unrecorded in the production history. That is a separate decision, outside L-3.
+  - The pre-release checks are in `docs/backlog.md`.
+- **L-4:** not authorized, and not started.
 
 The contract is `docs/landing-scope.md`: section 7 ("Security of publishing", "Tests", and the local database), section 9 (L-3 and its order), Q4–Q9, and criteria LAC-13, LAC-14 and LAC-18 to LAC-20.
 
@@ -356,5 +360,5 @@ node tools/news-public-check.mjs --published testing2 --hidden this-is-a-test --
 - **The two test entries are the owner's** to unpublish and delete in the console when no longer needed. The scope allows a clearly marked test entry, removed afterwards.
 - **Once `testing2` is unpublished,** the entrance's news list (L-4) would show nothing until a real article is published.
 
-**L-4 does not start until this record has been reviewed and accepted** (section 4, step 6).
+**L-4 does not start until this record has been reviewed and accepted** (section 4, step 6). The owner approved this record (PR #30, merged as `eccbcc3`). L-4 still needs its own authorization.
 
