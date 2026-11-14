@@ -119,22 +119,44 @@ Entry measurements are in `l4-metrics-after.json`.
 
 The local Supabase suite (`npm run test:db`) wasn't rerun: L-4 changes no database object or function.
 
-## 8. Before and after the merge
+## 8. Checked on Netlify's deploy preview, against the live data
+
+Netlify built a deploy preview of this PR at `https://deploy-preview-32--clickmonsters.netlify.app` (commit `f3dc037`). Its edge function runs on Netlify's real runtime and reads the live project's public API. I checked it with plain reads, no sign-in and no writes:
+
+| Request | Result |
+|---|---|
+| `/news/testing2` (the owner's published test article) | **200**, `text/html; charset=utf-8`, `no-store`, the no-script policy. Title "testing2 · ClickMonster"; canonical and `og:url` `https://clickmonsters.netlify.app/news/testing2`, **not the preview's host**, so the request's host is ignored as intended. No `<script>` |
+| `/news/this-is-a-test` (the owner's draft) | **404**, "This update isn't available", the same page as for an unknown address |
+| `/news/no-such-thing` | 404, the same page |
+| `/news/Bad_Slug` | 404 |
+| `/news` | 200, the list, with canonical `https://clickmonsters.netlify.app/news` |
+| `HEAD /news/testing2` / `POST /news/testing2` | 200 / 405 |
+| `/js/entry-news.js`, `/css/entry-news.css`, `/css/news.css`, `/js/site.js` | all 200 |
+
+**In a real browser** (Chromium, at 390 and 1440, no test harness):
+- the preview's entrance showed "Latest news" with the one published article, linked to `/news/testing2`;
+- it loaded no game code and no supabase-js;
+- there were no console or policy errors;
+- the article page opened with status 200.
+
+Screens: `l4-preview-entrance-390x844.png` and `l4-preview-entrance-1440x900.png`.
+
+This confirms what the Node and harness tests could only stand in for: Netlify bundles the function and its relative imports, the Deno runtime runs it, and the live row-level security answers as the handler expects.
+
+## 9. After the merge
+
+**Netlify deploys the edge function from `main` when this PR merges.** Today the live site serves `/news` as Netlify's plain 404. If bundling failed, Netlify would keep the previous deploy live. The same plain reads are then repeated on the live site:
+1. `/news/testing2` returns 200.
+2. `/news/this-is-a-test` returns the 404 page.
+3. `/news` lists the articles.
+4. The entrance shows the news.
 
 **Netlify deploys the edge function from `main` when this PR merges.** Before that, nothing serves `/news` on the live site; today it is Netlify's plain 404. Netlify bundles the function and its relative imports (`public/js/config.js`, `data/news.js`, `site.js`) on deploy. If the bundle failed, Netlify would keep the previous deploy live; the site wouldn't break.
 
 **After the merge, checked by plain reads of the live site** (no sign-in, no writes):
-1. **`/news/testing2`** (the owner's published test article) returns 200, with the article, the metadata and `no-store`.
-2. **`/news/this-is-a-test`** (the owner's draft) returns the same 404 page as `/news/no-such-thing`.
-3. **`/news`** lists the published articles.
-4. **The entrance** shows the latest news after it loads.
-5. **The response headers** include the policy.
+## 10. Not verified
 
-Until then, those are not verified.
-
-## 9. Not verified
-
-- **The deployed edge function:** Netlify's bundling of it and its imports, and its Deno runtime. Everything here ran the same handler in Node against a fake API, with the network replaced. Section 8 lists the post-merge checks.
+- **The production deploy itself:** expected to match the preview (section 8), and checked after the merge (section 9).
 - **Real link previews** (Discord, Slack, iMessage and others) reading the metadata.
 - **Real devices, other browsers and screen readers.** For example, whether a screen reader announces the late-arriving news section; it appears silently, after the form, without moving focus.
 - **Dates on the entrance** use the visitor's own locale and time zone; the article pages use UTC. That was checked only in this browser's en-US locale.
