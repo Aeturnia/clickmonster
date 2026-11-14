@@ -51,7 +51,8 @@ Read these first:
   - **L-4 (public news) is implemented,** in its own PR, awaiting independent review. See `docs/landing-l4-report.md`.
     - It covers the entrance's news and maintenance line (`js/entry-news.js`, loaded after the first paint) and the article pages (`netlify/edge-functions/news.js`).
     - The edge function goes live when Netlify deploys `main` after the merge; it is checked on the live site then.
-    - **Review of `5953655`:** L4-01 (the maintenance notice expires while the page is open) and L4-02 (405 headers) are corrected. The 32 KB budget is decided. Awaiting re-review.
+    - **Review of `5953655`:** L4-01 (the maintenance notice expires while the page is open) and L4-02 (405 headers) are corrected. The 32 KB budget is decided.
+    - **Re-review of `8e4b3af`:** those were accepted. L4-03 (an open-ended notice under way comes before an upcoming one) is corrected. Awaiting re-review.
 - **Don't start anything beyond L-4, or make gameplay or server changes,** until the owner approves it.
 - **Before a release:** the pre-release verification in `docs/backlog.md` is still owed:
   - real devices and other browsers (including Firefox and Safari on desktop);
@@ -163,7 +164,7 @@ Read these first:
 
 ```
 npm test                 # engine, entrance file checks, news rules and the news page handler (47)
-npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (177)
+npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (178)
 npm run test:db          # database (pgTAP, 42) and API/function tests (9) on the LOCAL Supabase stack
 npx playwright install chromium   # once
 ```

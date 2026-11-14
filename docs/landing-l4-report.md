@@ -1,6 +1,6 @@
 # Landing page — phase L-4 report: public news
 
-**Status: review corrections made (L4-01, L4-02). LAC-2's revised target is recorded. Awaiting independent re-review.**
+**Status: review corrections made (L4-01, L4-02, and L4-03 from the re-review). LAC-2's revised target is recorded. Awaiting independent re-review.**
 - **Authorized:** on 2026-11-13, after L-3's production results were approved. On its own branch and PR.
 - **No database, migration or `admin` function change.**
 - **The new piece:** a Netlify Edge Function, which goes live only when Netlify deploys `main` after the merge.
@@ -49,7 +49,7 @@ The contract is `docs/landing-scope.md`: Q1 (decided), Q5, Q9, Q10, Q13, section
 
 | AC | Result | Evidence |
 |---|---|---|
-| LAC-15 | Met (maintenance lifecycle corrected in L4-01) | The latest three published articles appear after the sign-in panel, newest first, with no draft or future article, each linked, plus "All news". The email field is still the first stop. The news module starts only after the browser's first contentful paint and the load event (checked against Resource Timing in 5 of 5 runs). **News failing** (refused), **answering 500** or **never answering:** nothing is shown, and its styles aren't even loaded. Sign-in, and a returning player's saved session, reach the game regardless |
+| LAC-15 | Met (maintenance lifecycle corrected in L4-01, selection in L4-03) | The latest three published articles appear after the sign-in panel, newest first, with no draft or future article, each linked, plus "All news". The email field is still the first stop. The news module starts only after the browser's first contentful paint and the load event (checked against Resource Timing in 5 of 5 runs). **News failing** (refused), **answering 500** or **never answering:** nothing is shown, and its styles aren't even loaded. Sign-in, and a returning player's saved session, reach the game regardless |
 | LAC-16 | Met | **Articles:** 200 HTML with a title, description, canonical URL and Open Graph and Twitter tags, readable without script, in the entrance's design. **Unknown, draft and future addresses:** 404 with the same page. **`/news`:** every published article, newest first. **No caching:** `no-store`, and an article unpublished in the fake backend is a 404 on the next request. **Supabase down:** the 503 page. Handler and browser tests |
 | LAC-16a | Met | **Escaping:** hostile text (`"><script>…`, `</title>`, quotes, `&`, `<b>`) is escaped in the body, in `<title>` and in every metadata attribute; no markup survives. **Canonical address:** with `Host`, `X-Forwarded-Host` and `Forwarded` set to another host, the page still uses `https://clickmonsters.netlify.app`. **Slugs:** eight malformed ones give 404 with no query. **Failures:** refused, 500, 401, not JSON, not a list, a malformed row and a timeout each give 503. **Headers:** `text/html; charset=utf-8` and `no-store` on every response |
 | LAC-17 | Met | An article page requests itself and two stylesheets, plus the icon. No `/js/`, no supabase-js, no `<script>` element, and the policy forbids script. Measured at 390 and 1440 |
@@ -117,7 +117,7 @@ Entry measurements are in `l4-metrics-after.json`.
 | Suite | Tests | Result |
 |---|---|---|
 | Engine (`npm test`) | 47: 39 before, plus 8 page-handler tests (the 405 test extended in L4-02) | 47/47 in each of 3 runs |
-| Browser (`npm run test:ui`) | 177: 166 before, plus 8, plus 3 from the review corrections | 177/177 in each of 3 runs |
+| Browser (`npm run test:ui`) | 178: 166 before, plus 8, plus 3 from the review corrections, plus 1 from the re-review (L4-03) | 178/178 in each of 3 runs (engine 47/47 alongside) |
 
 **The local Supabase suite** (`npm run test:db`) was run for the L4-01 correction, because the entrance's maintenance read now uses an `or=` filter. It gained one REST test: the read works for the anonymous key on the real API, and leaves out ended notices. The result was 42 pgTAP tests plus 9 API and function tests, all passing. It ran with the stack alone; the stack was stopped before the browser runs.
 
@@ -221,4 +221,31 @@ Netlify rebuilt the preview from the corrected code. Plain reads against the liv
   - both public reads return 200 from the live API, including the maintenance read with its `or=(maintenance_ends_at.is.null,maintenance_ends_at.gt.<now>)` filter;
   - no maintenance line, as none is published;
   - no console errors.
+
+## 12. Re-review correction (re-review of `8e4b3af`)
+
+The re-review accepted L4-01, L4-02 and the revised LAC-2 target, and found one edge case in the corrected maintenance selection.
+
+### L4-03: an open-ended notice under way lost to an upcoming one (low)
+
+**Defect.** `pickMaintenance()` in `public/js/entry-news.js` put a notice under way first only when it had an end time. A notice that had started with no end time set could lose to an upcoming notice, so the entrance announced the later maintenance instead of the one in progress.
+
+**Correction** (`public/js/entry-news.js`, the selection only):
+- **Any notice under way comes first,** whether or not it has an end time. A notice is under way once its start has passed, or, with no start, while its end is still to come.
+- **An upcoming notice is chosen only when none is under way;** then the soonest to start, as before.
+- **A notice with no window at all** (no start and no end) is deliberately not counted as under way. It is still the last choice, as before, and its line never says "under way".
+- **Among several notices under way,** the newest published is shown. For example, when an upcoming notice starts while an open-ended one is still under way, the line switches to the newer one, and back to the other when the newer one ends.
+- **Unchanged:** the line's wording, the timers at each start and end, the public REST filter, and everything outside the entrance's maintenance line.
+
+**Test** (`tests/ui/news-public.test.mjs`): 1 new, with the browser's clock installed.
+- **Setup:** a notice that started 10 minutes ago with no end, and an upcoming one starting in 30 minutes. The upcoming one is published more recently, so it comes first in the read.
+- **Checks:** the line shows the open-ended notice and links to its article, and doesn't mention the upcoming one.
+- **Old code:** it fails with the reviewed `entry-news.js` (the upcoming notice was shown) and passes with the fix. The three L4-01 tests still pass on both.
+
+**Not changed:** the database, the admin function, the edge function, authentication and the byte budget.
+- **The first paint** wasn't re-measured. Its files (`index.html`, `css/entry.css`, `js/entry.js`) are byte-identical to `8e4b3af` (`git diff --stat 8e4b3af` on them is empty), and `entry-news.js` loads only after the paint. So it stays at the 31,112 bytes measured there.
+
+**Not re-run:**
+- **`npm run test:db`:** the REST filter and the database are untouched.
+- **The deploy preview:** not re-checked at the new head. Section 11's preview check describes `cb7cd18`.
 

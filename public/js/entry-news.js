@@ -36,12 +36,15 @@ const startOf = (m) => (m.maintenance_starts_at ? Date.parse(m.maintenance_start
 const endOf = (m) => (m.maintenance_ends_at ? Date.parse(m.maintenance_ends_at) : null);
 // Upcoming or under way: no end, or the end still to come.
 const relevant = (m, now) => endOf(m) == null || endOf(m) > now;
-const underWay = (m, now) => relevant(m, now) && (startOf(m) == null || startOf(m) <= now);
+// Under way: started (with or without an end), or with no start and an end still to come. A notice
+// with no window at all is neither under way nor upcoming.
+const underWay = (m, now) => relevant(m, now) && (startOf(m) != null ? startOf(m) <= now : endOf(m) != null);
 
-// The notice to show now: one under way first, then the soonest to start. Null when none is left.
+// The notice to show now: any one under way first, open-ended or not (L-4 review, L4-03), then the
+// soonest to start, then one with no window. Null when none is left.
 function pickMaintenance(list, now) {
   const live = list.filter((m) => relevant(m, now));
-  return live.find((m) => underWay(m, now) && endOf(m) != null)
+  return live.find((m) => underWay(m, now))
     || live.filter((m) => startOf(m) != null && startOf(m) > now).sort((a, b) => startOf(a) - startOf(b))[0]
     || live[0] || null;
 }

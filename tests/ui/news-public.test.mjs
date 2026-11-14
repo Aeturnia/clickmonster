@@ -171,6 +171,23 @@ test('L4-01 newer, already-ended notices never crowd out one that is still to co
   await done(ctx);
 });
 
+// ---------------------------------------------------------------- L-4 review: L4-03
+test('L4-03 a notice under way with no end time comes before an upcoming one', async () => {
+  // The upcoming notice is the newer one, so it comes first in the read; the open-ended one must still win.
+  const active = maintAt(-10, null, { id: 300, slug: 'open-ended-maintenance', title: 'Open-ended maintenance', published_at: iso(Date.now() - 3 * H) });
+  const upcoming = maintAt(30, 60, { id: 301, slug: 'later-maintenance', title: 'Later maintenance', published_at: iso(Date.now() - 1 * H) });
+  const ctx = await open({ news: [...NEWS, active, upcoming] });
+  const { page } = ctx;
+  await page.clock.install({ time: new Date() });
+  await page.goto(`${env.url}/`);
+  await page.waitForSelector('#maint:not([hidden])', { timeout: 10000 });
+  const text = await page.textContent('#maint');
+  assert.match(text, /Open-ended maintenance/, 'the notice under way is shown');
+  assert.doesNotMatch(text, /Later maintenance/, 'not the upcoming one');
+  assert.equal(await page.getAttribute('#maint a', 'href'), '/news/open-ended-maintenance');
+  await done(ctx);
+});
+
 test('LAC-15 / LAC-21 news failing or never answering: nothing shows, sign-in and the game go ahead', async () => {
   // Failing: the reads are refused.
   let ctx = await open();
