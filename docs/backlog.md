@@ -158,6 +158,35 @@ Raised by the owner on 2026-11-14. Most device and browser checks are done after
   - Should the game also record client errors automatically (uncaught exceptions, failed game loads)? That is useful for problems players don't notice or describe, but it is a separate privacy and volume decision.
 - **It touches** the database (a new table and its access rules), the `game` or a new function to accept reports, and the `admin` function and console. It needs its own scope, local tests, and the owner's authorization for each production step.
 
+## Continuous integration (GitHub Actions)
+
+Raised by the owner on 2026-11-14. Not yet scoped or scheduled. The repo has no CI today (no `.github/`). This is a development-only change: no game, server or database change.
+
+**1. The test suites on every PR** (the core):
+- **Jobs:** `npm test`, `npm run test:ui` (Chromium), and `npm run test:db` (the local Supabase stack in Docker), each on its own runner.
+- **The laptop's memory limit goes away.** The browser suite and the stack no longer compete for memory, as they did in L-3.
+- **Independent evidence for reviews.** The result is run by GitHub on the PR's exact head commit, not reported by Claude.
+- **The startup budget, measured exactly.** The runners check out LF line endings, so LAC-2 (32,000 decoded bytes) can be enforced as a failing check, with no Windows CRLF inflation.
+- **Optional:** require these checks before merging. This may need a paid GitHub plan for a private repo.
+
+**2. The browser suite in Firefox and WebKit** (Playwright's builds; WebKit is Safari's engine):
+- **When:** nightly or on demand, to keep PR runs fast and within the free minutes.
+- **What it covers:** part of the "after release" browser list. It isn't real devices or screen readers.
+- **Expect fixes first:** the suite has only ever run in Chromium.
+
+**3. Live-site checks after each merge to `main`, and daily.** These repeat, with reads only, the checks made by hand in the L-4 report's section 9:
+- the live files match `main`;
+- the news pages' statuses and headers (`no-store`, the no-script policy, 404 for unknown addresses, 405 for POST);
+- the `/vendor/*` cache header.
+
+Netlify posts no deploy status for `main`, so this confirms that a deploy landed. Run daily, it also serves as a simple uptime check.
+
+**Possible later, not by default: deploying the server functions** through a manual workflow that needs the owner's approval on every run. It would keep the "every production action is authorized" rule, but moves `SUPABASE_ACCESS_TOKEN` into a repo secret. That needs its own decision.
+
+**Not covered by CI:** real phones, screen readers, real input methods, and anything needing a person signed in.
+
+**Cost:** private repos get a monthly allowance of free Actions minutes. Part 1 in Chromium should fit; Firefox and WebKit on every PR would roughly triple the browser time.
+
 ## Password recovery
 
 Raised in the landing-page scope review (2026-11-13, Q14). It is tracked separately from that milestone, as a higher-priority account-reliability item, and is not yet scheduled.

@@ -34,7 +34,7 @@ Read these first:
   - **Still open:**
     - the backlog's release checks: before release, sign-in on the live site and unpublishing; after release, the live maintenance line and the rest;
     - `/news` pagination (a follow-up);
-    - maintenance mode (a server-enforced pause of play) and bug reports, newly in the backlog, not scoped;
+    - maintenance mode (a server-enforced pause of play), bug reports and CI (GitHub Actions), newly in the backlog, not scoped;
     - the rename, which is not approved.
 - **Development moved to the owner's Windows laptop.** `npm run deploy:functions` now runs from any shell (PR #15) and needs `SUPABASE_ACCESS_TOKEN` set in the environment.
 - **Don't start another milestone, or make gameplay or server changes,** until the owner approves it.
