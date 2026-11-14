@@ -1,6 +1,6 @@
 # Landing page — phase L-4 report: public news
 
-**Status: review corrections made (L4-01, L4-02, and L4-03 from the re-review). LAC-2's revised target is recorded. Awaiting independent re-review.**
+**Status: approved in the final review at `888434d` and merged as PR #32 (`d754dad`, 2026-11-14). The live checks passed (section 9). Awaiting the L-4 completion review.**
 - **Authorized:** on 2026-11-13, after L-3's production results were approved. On its own branch and PR.
 - **No database, migration or `admin` function change.**
 - **The new piece:** a Netlify Edge Function, which goes live only when Netlify deploys `main` after the merge.
@@ -157,6 +157,47 @@ This confirms what the Node and harness tests could only stand in for: Netlify b
 3. `/news` lists the published articles.
 4. A POST returns 405 with the same headers.
 5. The entrance shows the news after it loads, in a browser, with no errors.
+
+### Live results (2026-11-14, at `d754dad`)
+
+**Merge.** PR #32 was merged with a merge commit as `d754dad`, against the reviewed head `888434d` (`--match-head-commit`). `git diff 888434d d754dad` is empty, so the merged tree is the reviewed one.
+
+**Suites on the merged `main`:** engine 47/47 and browser 178/178, in each of 3 runs.
+
+**Deploy.** Netlify posts no commit status for `main`, so the deploy was confirmed from the live site:
+- **The edge function is live:** `/news/testing2` answered 200 at the first request after the merge, with the function's headers and page. (The live site had no `/news` route before; this wasn't re-checked just before the merge.)
+- **The site files match `main`:** the live `index.html`, `js/entry.js`, `js/entry-news.js` (with the L4-03 selection), `js/site.js`, `css/entry-news.css` and `css/news.css` have the same SHA-256 as `main`.
+
+**Read-only checks** on `https://clickmonsters.netlify.app`, with plain requests only: no sign-in, no writes, and no article touched.
+
+| Check | Result |
+|---|---|
+| `GET /news/testing2` (published) | 200. Title `testing2 · ClickMonster`, description, Open Graph (`og:type` article, site name, title, description, `og:url`, `article:published_time`) and Twitter card tags. No `<script>` |
+| `GET /news/this-is-a-test` (draft) | 404, "This update isn't available", `noindex` |
+| `GET /news/no-such-article-xyz` (unknown) | 404, byte-identical to the draft's page (966 bytes, same SHA-256) |
+| `GET /news/BAD%20slug` (invalid) | 404 |
+| `GET /news` | 200. Lists `testing2` only; the draft isn't listed. Canonical `https://clickmonsters.netlify.app/news` |
+| `POST /news/testing2` | 405, `Allow: GET, HEAD`, with the page "That isn't allowed here" |
+| `HEAD /news/testing2` | 200, `no-store` |
+| Headers, on every response above | `text/html; charset=utf-8`, `Cache-Control: no-store`, `default-src 'none'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`, `nosniff`, `Referrer-Policy: same-origin` |
+| Canonical with `X-Forwarded-Host: attacker.example` | still `https://clickmonsters.netlify.app/news/testing2`, in the canonical link and in `og:url` |
+
+**The entrance, in headless Chromium** (Playwright), at 390 by 844 and at 1440 by 900:
+- **News:** the list shows `testing2`, linked to `/news/testing2`, with the "All news" link. No maintenance line, as none is published.
+- **After the paint:** `entry-news.js` started after the first contentful paint in both, per Resource Timing.
+- **Reads:** both public news reads returned 200 from the live API, including the maintenance read with its `or=(maintenance_ends_at.is.null,maintenance_ends_at.gt.<now>)` filter.
+- **Sign-in unaffected:**
+  - the form is present, and the first Tab lands on the email field;
+  - before any interaction, no game module, `style.css` or supabase-js was loaded;
+  - focusing the email field loaded the vendored supabase-js (200);
+  - no auth request was made, as nothing was typed or sent.
+- **Errors:** no console errors, page errors or failed requests.
+
+**Not verified live:**
+- **Publishing and unpublishing on the real site** (scope section 9, "After L-4 is live") would need writes through the admin console, which this check didn't make. The owner can do this with the test entries before removing them.
+- **The maintenance line and its L4-01 and L4-03 behaviour:** no maintenance notice is published in production. They are covered by the browser tests only.
+- **Timing:** the first contentful paint in these runs isn't a throttled measurement, and isn't recorded against LAC-2.
+- **Real devices, other browsers and screen readers** remain in the pre-release checks in `docs/backlog.md`.
 
 ## 10. Not verified
 
