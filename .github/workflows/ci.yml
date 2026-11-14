@@ -5,6 +5,10 @@
 #   - For a pull_request the checkout is GitHub's temporary merge commit (the PR merged into
 #     main), kept on purpose; each job records the PR head SHA and the tested SHA (CI-S01).
 #   - Third-party actions are pinned to full commit SHAs, with the version in a comment (Q6).
+#   - Runners: engine and database on Ubuntu; browser on Windows. The layout tests' thresholds were
+#     set with Windows fonts (Segoe UI); on Ubuntu five of them failed in run 43638208611 (see
+#     docs/ci-a-report.md). That is a Windows Chromium baseline, not Linux browser compatibility;
+#     the Linux font investigation is in docs/backlog.md.
 name: CI
 
 on:
@@ -25,7 +29,8 @@ concurrency:
 
 defaults:
   run:
-    # An explicit bash adds -o pipefail, so `npm test | tee` fails when the tests fail.
+    # An explicit bash adds -o pipefail, so `npm test | tee` fails when the tests fail. On the
+    # Windows runner this is Git Bash, with the same flags.
     shell: bash
 
 env:
@@ -52,6 +57,7 @@ jobs:
             echo "- PR head: $HEAD_SHA"
             echo "- tested: $TESTED_SHA"
             echo "- node: $(node --version)"
+            echo "- runner: $RUNNER_OS, image $ImageOS $ImageVersion"
           } >> "$GITHUB_STEP_SUMMARY"
       - run: npm ci
       - name: npm test (engine, file checks, news rules and pages, the startup budget)
@@ -66,7 +72,8 @@ jobs:
 
   browser:
     name: browser
-    runs-on: ubuntu-latest
+    # Windows, by the owner's exception to the scope (CI-2): see the header comment.
+    runs-on: windows-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -82,10 +89,12 @@ jobs:
             echo "- PR head: $HEAD_SHA"
             echo "- tested: $TESTED_SHA"
             echo "- node: $(node --version)"
+            echo "- runner: $RUNNER_OS, image $ImageOS $ImageVersion"
           } >> "$GITHUB_STEP_SUMMARY"
       - run: npm ci
       - name: Install Chromium for Playwright
-        run: npx playwright install --with-deps chromium
+        # No --with-deps: it installs Linux system packages, and Windows needs none.
+        run: npx playwright install chromium
       - name: npm run test:ui (Playwright and axe, against the fake backend)
         run: mkdir -p ci-output && npm run test:ui 2>&1 | tee ci-output/browser.txt
       - name: Keep the output of a failed run
@@ -117,6 +126,7 @@ jobs:
             echo "- PR head: $HEAD_SHA"
             echo "- tested: $TESTED_SHA"
             echo "- node: $(node --version)"
+            echo "- runner: $RUNNER_OS, image $ImageOS $ImageVersion"
           } >> "$GITHUB_STEP_SUMMARY"
       - run: npm ci
       - name: Start the local Supabase stack (the same services as CLAUDE.md)

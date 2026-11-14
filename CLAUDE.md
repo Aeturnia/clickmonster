@@ -163,7 +163,11 @@ npx playwright install chromium   # once
 ```
 
 **CI** (GitHub Actions, `.github/workflows/ci.yml`; scope `docs/ci-scope.md`):
-- **Three checks,** each on its own runner, in parallel: `engine` (`npm test`), `browser` (`npm run test:ui`, Chromium) and `database` (`npm run test:db` on the local stack, which the job starts and always stops).
+- **Three checks,** each on its own runner, in parallel:
+  - `engine` (`npm test`), on Ubuntu;
+  - `browser` (`npm run test:ui`, Chromium), **on Windows**;
+  - `database` (`npm run test:db` on the local stack, which the job starts and always stops), on Ubuntu.
+- **Why the browser job runs on Windows:** on Ubuntu, five layout tests failed. This is an exception the owner approved (`docs/ci-scope.md`, section 10). It gives a Windows Chromium baseline, not Linux browser compatibility. The Linux font investigation is a backlog follow-up; don't change the tests' thresholds to make Linux pass.
 - **When it runs:**
   - on a PR into `main`, testing GitHub's merge commit (the PR merged into `main`);
   - on each push to `main`;

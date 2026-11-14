@@ -117,7 +117,7 @@ npx serve public   # or any static server, then open http://localhost:3000
 ```
 
 **CI:** GitHub Actions (`.github/workflows/ci.yml`, scoped in `docs/ci-scope.md`) runs the three
-suites as separate checks, `engine`, `browser` and `database`, on every PR into `main`, on each push to
+suites as separate checks, `engine` and `database` on Ubuntu and `browser` on Windows, on every PR into `main`, on each push to
 `main`, and by hand. A PR run tests GitHub's merge of the PR into `main`; each job's summary records
 the PR head and the tested commit. When a check fails, its log is on the PR's Checks tab, and the
 failed suite's output is kept as an artifact for 7 days.
