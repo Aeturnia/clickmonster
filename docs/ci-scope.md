@@ -32,7 +32,7 @@
 - **Minutes, a rough estimate to be replaced by measurement (CI-8):**
   - **Per run:** about 10 to 15 runner minutes. Jobs bill separately: engine about 1, browser about 8 to 10 with setup, database a few more for starting the stack.
   - **Per PR:** a run for each push, plus one for the merge to `main`.
-  - **The allowance:** GitHub Free includes 2,000 minutes a month for private repos, as of writing. The plan is still to be confirmed (Q1).
+  - **The allowance:** the owner's personal account is on GitHub Pro (Q1), which includes 3,000 minutes a month for private repos, as of writing. That is roughly 200 runs at the upper estimate.
 - **Lockfile:** `package-lock.json` is committed, so `npm ci` installs exactly the pinned versions.
 - **Node:** 22.16.0 locally. The repo has no `engines` field, `.nvmrc` or `.node-version`.
 - **The startup budget (LAC-2, 32,000 decoded bytes)** is not asserted by any test. `tools/entry-metrics.mjs` measures it, and the number in the reports (31,112) was counted from git's LF bytes by hand, because a Windows checkout turns LF into CRLF and inflates the measurement.
@@ -94,8 +94,8 @@ Nothing in this project has run on Linux yet. The first run may need test-only f
 
 | Q | Question | Recommendation |
 |---|---|---|
-| Q1 | **Your GitHub plan and Actions minutes.** The repo is private, under a personal account; the plan couldn't be read from here. The allowance is under Settings, Billing | Tell me the plan, so the report can compare measured minutes against it |
-| Q2 | **Require the checks before merging?** On a private repo, branch protection and rulesets may need a paid plan | Yes if the plan allows it; otherwise the checks are advisory and the reviewer reads them |
+| Q1 | **Your GitHub plan and Actions minutes** | **Answered (2026-11-14):** the personal account was upgraded to GitHub Pro, so the repo stays where it is. Checked read-only: branch protection on `main` now answers "not protected" rather than requiring an upgrade, and there are no rulesets. The report compares measured minutes against Pro's allowance |
+| Q2 | **Require the checks before merging?** Pro makes this available on this private repo | Yes, the three checks on `main`, set by the owner once CI-A has shown them passing (a rule naming a check that has never run blocks every merge) |
 | Q3 | **What goes in the first PR:** part 1 only, or part 3 (live-site checks) too? Part 3 is automated traffic to production on a schedule | Part 1 only. Part 3 as its own small PR later |
 | Q4 | **Node version:** pin Node 22 in the workflow and add `"engines"` to `package.json`? | Yes, 22, matching the laptop |
 | Q5 | **Run the database job on every PR,** or only when `supabase/`, `tests/db/` or the shared news rules change? | Every PR at first, so it is a stable check. Filter by path later if minutes are tight. A path filter and a required check don't mix well |
