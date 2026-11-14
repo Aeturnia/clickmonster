@@ -101,6 +101,34 @@ Raised by the owner on 2026-11-14, after publishing a real maintenance notice. N
   - Should the entrance's line say "Play is paused" while it is on?
 - **It touches** the database (where the switch lives), the `game` and `admin` functions, and the API contract. It needs its own scope, local tests, and the owner's authorization for each production step.
 
+## Bug reports
+
+Raised by the owner on 2026-11-14. Many pre-release device and browser checks will in practice be done after release, so players need a way to report what breaks. Not yet scoped or scheduled.
+
+- **Today:** players can report chat messages (`chat_reports`, reviewed in the admin console's moderation section). There is no way to report a bug.
+- **Wanted:**
+  - **The form:** a "Report a problem" form in the game, for example in Hero, Settings.
+  - **What the player writes:** what happened, and optionally what they were doing.
+  - **Context attached automatically,** shown to the player before sending:
+    - the screen they were on;
+    - the layout (`data-layout`) and interface choice;
+    - the browser and device as the user agent reports them;
+    - the window size;
+    - the time;
+    - the site version.
+  - **Staff review it** in a new admin console section, with a status (new, seen, fixed or won't fix), modelled on the moderation queue.
+- **Rules:**
+  - signed-in players only, at least at first, to avoid spam;
+  - a server-side rate limit;
+  - plain text with a length limit, escaped when shown, as with chat and news;
+  - no personal details collected beyond the account and what the player types;
+  - the confirmation tells the player it was received.
+- **Questions for the scope:**
+  - Should the entrance have a form too, for problems that stop sign-in, given the spam risk without an account?
+  - Should players see the status of their own reports?
+  - Should the game also record client errors automatically (uncaught exceptions, failed game loads)? That is useful for problems players don't notice or describe, but it is a separate privacy and volume decision.
+- **It touches** the database (a new table and its access rules), the `game` or a new function to accept reports, and the `admin` function and console. It needs its own scope, local tests, and the owner's authorization for each production step.
+
 ## Password recovery
 
 Raised in the landing-page scope review (2026-11-13, Q14). It is tracked separately from that milestone, as a higher-priority account-reliability item, and is not yet scheduled.
