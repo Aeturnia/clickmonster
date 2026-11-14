@@ -2,60 +2,89 @@
 
 Planned work that is not yet scheduled into a phase. Each item names what it builds on.
 
-## Pre-release verification (required before a release)
+## Release verification
 
-The UI modernization (Phases 1–4) was tested in Chromium only, against a fake backend. These checks were not done in any phase and must be done before release. They are verification, not new features. Each item comes from a phase report's "Not verified" section.
+The UI modernization (Phases 1–4), the desktop layout and the landing page were tested in Chromium only, against a fake backend. These checks are verification, not new features. Each comes from a phase report's "Not verified" section.
 
-**Real devices and other browsers** (iOS Safari, Android Chrome, desktop Firefox and Safari; Firefox was never run):
+**Split by the owner on 2026-11-14.** There aren't the resources to test every device and browser before release.
+- **Before release:** a short list, on the owner's laptop and own phone, covering what would break the game for everyone.
+- **After release:** the rest, as players report problems (see "Bug reports" below).
+
+### Before release
+
+**Sign-in on the live site, on the laptop.** The vendored supabase-js 2.45.4 (landing L-1) has never talked to the live project, only to the fake backend.
+- sign up with a real email address, and confirm it from the real email;
+- sign in, then reload: the session is restored without signing in again;
+- leave a tab open for over an hour, then act: the session refreshes by itself;
+- play a little, which exercises the `game` function;
+- send a chat message and see it arrive (Realtime);
+- sign out.
+
+**On the owner's own phone:**
+- the same sign-in;
+- one battle;
+- moving around the map;
+- typing in chat with the on-screen keyboard.
+
+**Admin:** one admin action writes exactly one `admin_log` entry. The fake backend models this from `supabase/functions/admin/index.ts`; it was never observed live.
+
+**Public news (landing L-3 and L-4):** unpublish an article on the live site and check that it's gone from `/news` and the entrance on the next request (`no-store`). Only after that is a cache considered (scope Q1).
+- **Already seen live** by the owner on 2026-11-14: publishing a real maintenance article, and its line showing on the entrance while under way.
+- **The test entries** `testing2` and `this-is-a-test` were removed by the owner on 2026-11-14.
+
+**Netlify:** `/vendor/supabase-js@2.45.4/` is served with its long `immutable` cache header. This is a read-only request that Claude can make.
+
+**Optional, about ten minutes, free:**
+- open the site in Firefox and Edge on the laptop (Firefox was never run);
+- paste a news link into Discord to see the link preview;
+- measure the owner's browser window (`innerWidth × innerHeight` and `devicePixelRatio`) and add it to the desktop measurements; 1920×1080 has stood in for it.
+
+### After release, as players report problems
+
+A separate staging Supabase project is dropped. The live sign-in session above covers the essentials, and the rest is checked on production as problems come in.
+
+**Real devices and other browsers** (iOS Safari, Android Chrome, desktop Safari, and Firefox if it wasn't done before release):
 - Native `<dialog>`: focus behaviour, `::backdrop` taps, and `dvh` sizing inside dialogs (Phase 1).
 - On-screen keyboards with `visualViewport`, `interactive-widget` on Android, safe-area insets on notched phones in landscape, and touch panning of the map frame (Phase 2).
 - Type-to-confirm with autocorrect on phone keyboards, and haptics on refused taps (Phase 3).
 - Admin console: the sticky zone save bar with the keyboard open, table cards and the phone navigation (Phase 4).
-
-**The owner's actual browser viewport** (`innerWidth × innerHeight` and `devicePixelRatio`, measured in their normal window). Add it to the desktop measurements and screenshots; 1920×1080 has stood in for it.
+- **The entrance (L-1):**
+  - time to the sign-in form on real phones on mobile networks (the harness's 0.67 s is an underestimate);
+  - password managers and autofill other than the owner's;
+  - the reload-on-retry after a failed game download, in browsers other than Chromium.
+- **The interface choice (L-2):**
+  - forced Desktop on a real touch tablet;
+  - browser zoom with Desktop forced (200% text size and resizing were tested);
+  - other browsers.
 
 **Input methods and keyboards:** the desktop shortcuts (D-3) with real input-method composition (Japanese, Chinese, Korean) and non-US keyboards such as AZERTY, on real hardware. Composition was only simulated with synthetic events.
 
 **Screen readers** (VoiceOver, TalkBack, NVDA). Names, roles and live regions were only checked in the DOM and with axe. Also check keyboard navigation with the desktop shortcuts: in browse mode, screen readers take single-letter keys for themselves, and `aria-keyshortcuts` was only checked in the DOM.
-- Game: the dialogs and `alertdialog` confirmations, `role="status"` toasts, the roving map and the shortened amounts (Phases 1–3).
-- Admin console:
+- **Game:** the dialogs and `alertdialog` confirmations, `role="status"` toasts, the roving map and the shortened amounts (Phases 1–3).
+- **Admin console:**
   - the group switcher, review panel and table cards;
   - the zone editor's live save note;
   - `aria-busy` on pending buttons, the "Still working" toast and the locked zone draft (Phase 4 and its corrections).
+- **The interface choice (L-2):** the radio group and the polite note.
+- **Public news (L-4):** the news section, which appears after the form without moving focus.
 
-**Live-backend staging:**
-- Run the admin and game flows against a staging Supabase project, not the fake backend.
-- In particular, check that a pending admin action sends one request and writes one `admin_log` entry. The fake backend models the server's audit behaviour, which was read from `supabase/functions/admin/index.ts`, not observed.
-- Check zone save, delete and restore with real players in the zone.
-- Check the moderation flow with real reports.
-- Check real staff data volumes, such as many reports or a long audit log.
+**The live backend, with real players and staff:**
+- zone save, delete and restore with real players in the zone;
+- the moderation flow with real reports;
+- real staff data volumes, such as many reports or a long audit log;
+- a revoked session (signed out elsewhere, or banned) on the live auth server.
 - **Desktop chat (D-2):** sign out and sign in as another account in the same page with live Realtime, and check that nothing carries over: drafts, whisper recipient, unread counts, late messages, open confirmations.
   - The tests use the fake backend. Late Realtime events were simulated by calling the old subscription's callbacks, because the harness could not deliver one during `removeChannel()`.
   - Also check a failed send while the window crosses 1280px.
 
-**The entrance (landing L-1)** was tested in Chromium against the fake backend only:
-- **The vendored supabase-js 2.45.4** has never talked to the live project. Check sign-in, sign-up with a real confirmation email, session restore, token refresh, a revoked session, edge functions and Realtime chat on the live site.
-- **Netlify:** check that `/vendor/supabase-js@2.45.4/` is served, with its long `immutable` cache header.
-- **Real phones on mobile networks:** time to the sign-in form. The harness timing (0.67 s) is an underestimate.
-- **Password managers and browser autofill** on the new form, and the reload-on-retry after a failed game download in browsers other than Chromium.
+**Public news (L-3 and L-4):**
+- **The maintenance line's changes, live:**
+  - an upcoming notice turns "under way" at its start, and disappears at its end;
+  - an open-ended notice under way comes first.
 
-**Public news (landing L-3 and L-4)** was checked live with reads only (`docs/landing-l4-report.md`, section 9):
-- **Publishing and unpublishing on the real site:** publish an article, check that it appears on `/news` and the entrance, then unpublish it and check that it's gone on the next request (`no-store`). Only after that is a cache considered (scope Q1). This is done by the owner through the admin console.
-  - **Publishing: seen live** by the owner on 2026-11-14. A real maintenance article was published and appears on the entrance.
-  - **Still owed:** unpublishing on the real site.
-- **The maintenance line on the live entrance:**
-  - **Seen live** by the owner on 2026-11-14: the line shows for a notice under way.
-  - **Still owed live:** an upcoming notice turning "under way" at its start, disappearing at its end, and an open-ended notice under way coming first. These are tested in the browser suite only.
-- **Real link previews** (Discord, Slack, iMessage) reading the article metadata.
-- **Screen readers** with the news section, which appears after the form without moving focus.
+  These are tested in the browser suite only; watch for them at the next scheduled maintenance.
+- **Link previews** in Slack and iMessage (and Discord, if it wasn't done before release).
 - **Dates** in other locales and time zones.
-- **The test entries** `testing2` and `this-is-a-test` were removed by the owner on 2026-11-14.
-
-**The interface choice (landing L-2)** was tested in Chromium only:
-- forced Desktop on a real touch tablet;
-- browser zoom with Desktop forced (200% text size and resizing were tested);
-- how screen readers announce the radio group and the polite note;
-- other browsers.
 
 ## Follow-ups (not blocking)
 
@@ -80,7 +109,7 @@ Built in phases D-1 to D-3 and merged on 2026-11-13. See `docs/desktop-scope.md`
 
 ## Layout choice: desktop or mobile (done)
 
-Built in landing phase L-2 and merged as PR #27 on 2026-11-13. See `docs/landing-l2-report.md`. Its checks still owed are in the pre-release list above.
+Built in landing phase L-2 and merged as PR #27 on 2026-11-13. See `docs/landing-l2-report.md`. Its checks still owed are in the release verification above.
 
 ## Maintenance mode
 
@@ -103,7 +132,7 @@ Raised by the owner on 2026-11-14, after publishing a real maintenance notice. N
 
 ## Bug reports
 
-Raised by the owner on 2026-11-14. Many pre-release device and browser checks will in practice be done after release, so players need a way to report what breaks. Not yet scoped or scheduled.
+Raised by the owner on 2026-11-14. Most device and browser checks are done after release (see "Release verification" above), so players need a way to report what breaks. Not yet scoped or scheduled.
 
 - **Today:** players can report chat messages (`chat_reports`, reviewed in the admin console's moderation section). There is no way to report a bug.
 - **Wanted:**
