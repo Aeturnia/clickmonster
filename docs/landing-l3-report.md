@@ -1,12 +1,13 @@
 # Landing page — phase L-3 report: publication
 
-**Status: review corrections made (L3-01, L3-02). Awaiting independent re-review.**
-- **Authorized:** on 2026-11-13. On its own branch and PR.
-- **Nothing has touched production:**
-  - The migration is **not applied** to the live project.
-  - The `admin` function is **not deployed**.
-  - Neither may happen until the owner explicitly authorizes it, separately from approving this PR (scope section 9).
-  - **This PR must not merge before that deploy,** because merging publishes the admin console, which would then call actions the live function doesn't have yet.
+**Status: in production. The production results (section 12) await review.** L-4 waits for that review.
+- **Code:** the final independent review approved it at `736a524`.
+- **Production steps,** each authorized separately by the owner and carried out in the order of section 4:
+  1. a read-only inspection;
+  2. the migration, with only its own history entry recorded;
+  3. the `admin` function deploy;
+  4. the merge, as PR #29 (`724807b`, identical to `736a524`);
+  5. the public check, which passed 21 of 21.
 - **Not started:** L-4.
 
 The contract is `docs/landing-scope.md`: section 7 ("Security of publishing", "Tests", and the local database), section 9 (L-3 and its order), Q4–Q9, and criteria LAC-13, LAC-14 and LAC-18 to LAC-20.
@@ -278,7 +279,82 @@ The `admin` function's `log()` helper reports a failed `admin_log` insert to the
 
 ## 11. Not verified
 
-- **Production.** Steps 2 to 5 of section 4 are the owner's to authorize, and none has happened. The production Postgres version, and whether the migration applies there, are unknown until then.
-- **The deployed function.** Deploying it bundles the files the deploy script uploads. The new import was checked against that rule, but the deploy itself wasn't run.
+- **The news actions on the live function, as an admin.** The deployed function was only checked to boot, with an unauthenticated call (section 12). Creating and publishing the two entries the owner made in the console exercised them; I didn't see those calls myself.
+- **The live site.** Netlify publishes `main` on merge. The repo has no site address and GitHub has no deploy status, so the console's new section going live was confirmed only by the owner's use of it.
+- **The six earlier migrations' history entries** are still unrecorded in production. That is deliberate (section 12, step 2).
+- **The best-effort audit log** (section 10). The live `admin_log` entries for the owner's two changes weren't read.
 - **Real devices, other browsers and screen readers** for the admin News section. Axe and the fake backend only.
 - **Concurrent editing by two admins.** The last save wins. There is no version check, which matches the existing admin sections. Publish, unpublish and delete re-check the state they started from (`eq('status', …)`), so they can't act on a state that changed in between.
+
+## 12. Production record (2026-11-13)
+
+Every step was authorized by the owner on its own, in the order of section 4. All production SQL went through the Supabase Management API query endpoint, the service the SQL editor uses, with the owner's access token. The CLI was linked only for history commands and unlinked straight after.
+
+### 1. Read-only inspection
+
+- **`supabase link`** worked with the access token alone; no database password was asked for. To read the history, the CLI created its usual short-lived login role.
+- **`npx supabase migration list --linked`:** nothing recorded remotely, for any of the seven migrations.
+- **`supabase/checks/news_precheck.sql`,** run in a read-only session:
+
+| Row | Check | Production |
+|---|---|---|
+| 1 | Postgres version | **17.11**, the same as the local stack |
+| 2 | `public.news` exists | false |
+| 3 | `public.news_guard()` exists | false |
+| 4 | Policies on `public.news` | none |
+| 5 | Migration history table exists | **false** |
+| 6 | Recorded migration versions | no history table |
+| 7 | Earlier migrations' tables missing | none (all 15 present) |
+
+- **Decision table:** there is no history table, so the manual route applies.
+
+### 2. Migration and history
+
+1. **The precheck was run again** just before applying. The result was unchanged.
+2. **The migration was applied:** `20261115090000_news.sql`, byte-identical to `736a524` (sha256 `401de5a696f6be57e7d983b850691320913348d7b1ffc29642e0907df47bb7f3`), as one transaction. The query endpoint returned 201.
+3. **Only that version was recorded:** `npx supabase migration repair 20261115090000 --status applied --linked` reported "Repaired migration history: [20261115090000] => applied". This also created the history table.
+4. **`migration list --linked`** shows `20261115090000` as remote. The six earlier versions are still unrecorded. They were deliberately left alone: marking them applied would need each one's objects checked in production first, and that is a separate decision for the owner.
+5. **`supabase/checks/news_verify.sql`,** read-only: **13 of 13 rows ok.** The table, row-level security, exactly the ten article columns for `anon` and for `authenticated`, no table-wide or write privileges, the one read policy, the trigger, the ten check constraints, the unique address, the index, no execute right on `news_guard()`, and the history entry.
+6. **Spot check with the public key** (reads only):
+   - the article columns gave 200 with an empty list, since nothing was published yet;
+   - `select *` and the `status` column gave 401 with code 42501.
+
+### 3. The `admin` function
+
+- **Deployed** with `npm run deploy:functions -- admin` from `736a524`, with a clean working tree.
+- **Version:** 7 became **8**, status ACTIVE, `verify_jwt` false as before. `game` was untouched and is still at version 12.
+- **Boot check:** an unauthenticated call (`news`) returned 401 "Please sign in." from the function's own code. So the new version boots, including `js/data/news.js`, which the deploy script uploads from `public/js/data/`.
+
+### 4. Merge
+
+- **PR #29** merged as `724807b`. `git diff 736a524 724807b` is empty, so `main` is exactly what was reviewed and deployed.
+- **Netlify** publishes `main` on merge; see section 11.
+
+### 5. The public check (step 5 of section 4)
+
+**The owner's confirmation in the admin console,** before the run, as given:
+- `/news/testing2`: Published;
+- `/news/this-is-a-test`: Draft.
+
+Both are test entries made for this check.
+
+**The run:**
+```
+node tools/news-public-check.mjs --published testing2 --hidden this-is-a-test --out docs/ui-audit/landing/l3-public-check.json
+```
+
+**Result: all checks passed, 21 of 21** (`docs/ui-audit/landing/l3-public-check.json`, 2026-11-14T01:52:07Z UTC):
+- **Published article:** read with exactly the article columns; one published article in the public list, its time in the past.
+- **Hidden entry:** the draft `this-is-a-test` is not visible.
+- **Hidden columns:** `select *`, the default select, `status`, `created_by`, `updated_by`, `created_at` and `updated_at`, filtering on `status`, and ordering on `updated_at` were all refused (401, 42501).
+- **Writes:** insert, upsert, update and delete were all refused (401), aimed only at the probe address `rls-check-1794621125007`.
+- **Afterwards:** the published article still existed and was unchanged, and no probe row was created.
+- No write got through, and there is nothing to remove.
+
+### 6. Afterwards
+
+- **The two test entries are the owner's** to unpublish and delete in the console when no longer needed. The scope allows a clearly marked test entry, removed afterwards.
+- **Once `testing2` is unpublished,** the entrance's news list (L-4) would show nothing until a real article is published.
+
+**L-4 does not start until this record has been reviewed and accepted** (section 4, step 6).
+
