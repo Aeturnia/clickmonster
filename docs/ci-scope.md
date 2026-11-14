@@ -1,6 +1,6 @@
 # Continuous integration: scope
 
-**Status: draft for review (2026-11-14). Not authorized for implementation.**
+**Status: every question in section 6 is decided (2026-11-14). Awaiting scope review. Not authorized for implementation.**
 - **Backlog item:** "Continuous integration (GitHub Actions)" in `docs/backlog.md`.
 - **This scope covers part 1:** the test suites on every PR. Parts 2 and 3 are described in section 7 and left for later.
 - **No workflow file is added by this PR.** A workflow with `pull_request` or `push` triggers runs, and spends Actions minutes, as soon as it's pushed. It arrives only in the implementation PR, once authorized.
@@ -96,11 +96,11 @@ Nothing in this project has run on Linux yet. The first run may need test-only f
 |---|---|---|
 | Q1 | **Your GitHub plan and Actions minutes** | **Answered (2026-11-14):** the personal account was upgraded to GitHub Pro, so the repo stays where it is. Checked read-only: branch protection on `main` now answers "not protected" rather than requiring an upgrade, and there are no rulesets. The report compares measured minutes against Pro's allowance |
 | Q2 | **Require the checks before merging?** Pro makes this available on this private repo | Yes, the three checks on `main`, set by the owner once CI-A has shown them passing (a rule naming a check that has never run blocks every merge) |
-| Q3 | **What goes in the first PR:** part 1 only, or part 3 (live-site checks) too? Part 3 is automated traffic to production on a schedule | Part 1 only. Part 3 as its own small PR later |
-| Q4 | **Node version:** pin Node 22 in the workflow and add `"engines"` to `package.json`? | Yes, 22, matching the laptop |
-| Q5 | **Run the database job on every PR,** or only when `supabase/`, `tests/db/` or the shared news rules change? | Every PR at first, so it is a stable check. Filter by path later if minutes are tight. A path filter and a required check don't mix well |
-| Q6 | **Pin actions by commit SHA,** or by major version tag (`@v4`)? | SHA, with the version in a comment. A tag can be moved; a SHA can't |
-| Q7 | **Local runs as evidence:** keep running the suites three times locally for each phase, or let one green CI run plus one local run stand in? | Keep both for the first phase after CI lands; decide after that |
+| Q3 | **What goes in the first PR:** part 1 only, or part 3 (live-site checks) too? Part 3 is automated traffic to production on a schedule | Part 1 only. Part 3 as its own small PR later. **Accepted by the owner (2026-11-14).** |
+| Q4 | **Node version:** pin Node 22 in the workflow and add `"engines"` to `package.json`? | Yes, 22, matching the laptop. **Accepted by the owner (2026-11-14).** |
+| Q5 | **Run the database job on every PR,** or only when `supabase/`, `tests/db/` or the shared news rules change? | Every PR at first, so it is a stable check. Filter by path later if minutes are tight. A path filter and a required check don't mix well: a skipped job can leave a required check waiting. **Accepted by the owner (2026-11-14).** |
+| Q6 | **Pin actions by commit SHA,** or by major version tag (`@v4`)? | SHA, with the version in a comment. A tag can be moved; a SHA can't. **Accepted by the owner (2026-11-14).** |
+| Q7 | **Local runs as evidence:** keep running the suites three times locally for each phase, or let one green CI run plus one local run stand in? | Keep both for the first phase after CI lands; decide after that. **Accepted by the owner (2026-11-14).** |
 
 ## 7. Later parts (not in this scope)
 
