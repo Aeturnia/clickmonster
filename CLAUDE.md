@@ -11,7 +11,7 @@ Read these first:
 - `docs/ui-phase-1-report.md` … `docs/ui-phase-4-report.md`: what each phase changed, its acceptance criteria, deviations and the review corrections.
 - `docs/backlog.md`: agreed but unscheduled work (sign-in news, password recovery, follow-ups), and the pre-release verification still owed (real devices, screen readers, live-backend staging, the live site).
 
-## Where things stand (2026-11-13)
+## Where things stand (2026-11-14)
 
 - **UI modernization Phases 1–4 are complete and merged into `main`.** Phase 4 (the admin console) was approved in its final independent review at `a8d9dc6` and merged as PR #13 (`baa75d9`). All four review findings, P4-01 to P4-04, are closed.
 - **The desktop layout milestone is complete and merged into `main`** (2026-11-13). It was scoped in `docs/desktop-scope.md` (PR #17), with the owner's decisions in its section 4.
@@ -19,42 +19,25 @@ Read these first:
   - **D-2, the persistent chat panel:** merged as PR #19 (`672a81a`). Findings D2-01 to D2-03 are closed. See `docs/desktop-d2-report.md`.
   - **D-3, keyboard shortcuts:** merged as PR #21 (`d567be2`), approved with no corrections. See `docs/desktop-d3-report.md`.
   - **Separate:** the layout picker was built as landing phase L-2 (below). Wider desktop sheets and the possible rename to "Monstra Regna", a working title only, are not approved.
-- **Landing page: the scope is approved and merged** (PR #23, `e385e38`, 2026-11-13). `docs/landing-scope.md` is the implementation contract for L-1 to L-4, covering the entrance, the interface picker and public news.
-  - **L-1, the entrance: complete.**
-    - Merged as PR #25 (`b911a79`) after its final review at `c97f9fc`. Findings L1-01 and L1-02 (account isolation) are closed. See `docs/landing-l1-report.md`.
-    - Its gate, the vendored Supabase UMD build, was verified against the fake backend only.
-  - **L-2, the interface picker: complete.**
-    - Merged as PR #27 (`4c9d049`) after review with no corrections. See `docs/landing-l2-report.md`.
-    - It covers Automatic, Desktop and Mobile, on the entrance and in Hero, Settings, saved locally. Desktop falls back without changing the choice, and Automatic is exactly as before.
-  - **Regression baseline** on `main` at `4c9d049`: engine 29/29 and browser 156/156, in each of 3 runs.
-  - **Not authorized:** L-3 and L-4, database changes, function deploys, and the rename.
-    - L-3 (migrations, access policies, admin publishing) needs the owner's separate authorization.
-    - It also needs the scope's gates: the local Supabase stack, database and REST tests before any production change, and explicit authorization for the migration and the deploy.
+- **The landing page milestone is complete** (2026-11-14). All four phases passed independent review, and Stages 1 (L-1, L-2) and 2 (L-3, L-4) are formally closed. `docs/landing-scope.md` was the contract (PR #23, `e385e38`); its section 5 holds the owner's decisions and section 12 the scope review's corrections.
+  - **L-1, the entrance:** merged as PR #25 (`b911a79`). L1-01 and L1-02 (account isolation) are closed. See `docs/landing-l1-report.md`.
+  - **L-2, the interface picker:** merged as PR #27 (`4c9d049`), with no corrections. See `docs/landing-l2-report.md`.
+  - **L-3, publication:** merged as PR #29 (`724807b`) and in production. See `docs/landing-l3-report.md`, section 12.
+    - **Database:** the news migration was applied by hand, because production has no history for the earlier migrations. Only `20261115090000` is recorded in the history; the six earlier versions are deliberately unrecorded.
+    - **Function:** `admin` version 8.
+    - **Public check:** 21 of 21.
+  - **L-4, public news:** merged as PR #32 (`d754dad`) after its final review at `888434d`, and live. The read-only live checks passed; their record is PR #33 (`8018bbb`). See `docs/landing-l4-report.md`.
+    - **What it covers:** the entrance's news and maintenance line (`js/entry-news.js`, loaded after the first paint) and the article pages (`netlify/edge-functions/news.js`).
+    - **Findings:** L4-01 (the maintenance notice expires while the page is open), L4-02 (405 headers) and L4-03 (an open-ended notice under way comes first) are closed.
+  - **Final baseline** on `main` at `d754dad`: engine 47/47 and browser 178/178, in each of 3 runs.
   - **The entrance's startup budget** (LAC-2) is 32,000 decoded bytes, revised in the L-4 review. It is 31,112 after L-4. Don't strip comments to meet it.
-  - **Implementation gate still open:** L-3 needs the local Supabase stack running before any production change.
-  - **Every question in section 5 is decided.** The main ones:
-    - a Netlify Edge Function for article pages, uncached at first;
-    - Supabase's UMD build vendored into `public/vendor/`;
-    - four PRs, L-1 to L-4;
-    - article bodies of paragraphs and bullet lists.
-  - **Review corrections** are recorded in section 12:
-    - no gameplay download for anonymous visitors;
-    - one Supabase client owned by `net.js`;
-    - the local RLS tests and production gate in L-3.
+  - **Still open:**
+    - the backlog's pre-release checks, including publishing and unpublishing on the real site and the live maintenance line;
+    - `/news` pagination (a follow-up);
+    - the test entries `testing2` and `this-is-a-test` in production, for the owner to remove;
+    - the rename, which is not approved.
 - **Development moved to the owner's Windows laptop.** `npm run deploy:functions` now runs from any shell (PR #15) and needs `SUPABASE_ACCESS_TOKEN` set in the environment.
-- **Landing L-3 (publication) is complete and in production.** Its production results were approved, and their record merged as PR #30 (`eccbcc3`). See `docs/landing-l3-report.md`, section 12.
-  - **Code:** approved at `736a524`, merged as PR #29 (`724807b`).
-  - **Database:** the news migration was applied by hand, because production has no history for the earlier migrations. Only `20261115090000` is recorded in the history; the six earlier versions are deliberately unrecorded.
-  - **Function:** `admin` version 8.
-  - **Public check:** 21 of 21.
-  - **Test entries:** `testing2` (Published) and `this-is-a-test` (Draft) are still in production, for the owner to remove.
-  - **L-4 (public news) is merged and live,** awaiting its completion review. See `docs/landing-l4-report.md`.
-    - It covers the entrance's news and maintenance line (`js/entry-news.js`, loaded after the first paint) and the article pages (`netlify/edge-functions/news.js`).
-    - **Merged** as PR #32 (`d754dad`, 2026-11-14) after its final review at `888434d`. Netlify deployed the edge function, and the read-only live checks passed (report section 9).
-    - **Review of `5953655`:** L4-01 (the maintenance notice expires while the page is open) and L4-02 (405 headers) are corrected. The 32 KB budget is decided.
-    - **Re-review of `8e4b3af`:** those were accepted. L4-03 (an open-ended notice under way comes before an upcoming one) was corrected and accepted.
-    - **Still open:** the backlog's pre-release checks and `/news` pagination; publishing and unpublishing on the real site; the test entries, for the owner to remove.
-- **Don't start anything beyond L-4, or make gameplay or server changes,** until the owner approves it.
+- **Don't start another milestone, or make gameplay or server changes,** until the owner approves it.
 - **Before a release:** the pre-release verification in `docs/backlog.md` is still owed:
   - real devices and other browsers (including Firefox and Safari on desktop);
   - screen readers, including keyboard navigation with the shortcuts;
@@ -62,7 +45,8 @@ Read these first:
   - the owner's actual browser viewport;
   - live-backend staging, including chat session changes and Realtime;
   - the interface choice (L-2) on real tablets and phones, with browser zoom, and with screen readers;
-  - the entrance (L-1) on the live site: the vendored supabase-js against the live auth server, edge functions and Realtime; Netlify serving `/vendor/*` with its cache header; a real confirmation email; password managers and autofill; real-phone timing.
+  - the entrance (L-1) on the live site: the vendored supabase-js against the live auth server, edge functions and Realtime; Netlify serving `/vendor/*` with its cache header; a real confirmation email; password managers and autofill; real-phone timing;
+  - public news (L-3, L-4) on the live site: publishing and unpublishing, the maintenance line, real link previews.
 
   The test suites run in Chromium against a fake backend only.
 

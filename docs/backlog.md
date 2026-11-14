@@ -39,6 +39,14 @@ The UI modernization (Phases 1–4) was tested in Chromium only, against a fake 
 - **Real phones on mobile networks:** time to the sign-in form. The harness timing (0.67 s) is an underestimate.
 - **Password managers and browser autofill** on the new form, and the reload-on-retry after a failed game download in browsers other than Chromium.
 
+**Public news (landing L-3 and L-4)** was checked live with reads only (`docs/landing-l4-report.md`, section 9):
+- **Publishing and unpublishing on the real site:** publish an article, check that it appears on `/news` and the entrance, then unpublish it and check that it's gone on the next request (`no-store`). Only after that is a cache considered (scope Q1). This is done by the owner through the admin console.
+- **The maintenance line on the live entrance:** an upcoming notice turns "under way" at its start and disappears at its end, and an open-ended notice under way comes first. These are tested in the browser suite only.
+- **Real link previews** (Discord, Slack, iMessage) reading the article metadata.
+- **Screen readers** with the news section, which appears after the form without moving focus.
+- **Dates** in other locales and time zones.
+- **The test entries** `testing2` (Published) and `this-is-a-test` (Draft) are still in production, for the owner to remove.
+
 **The interface choice (landing L-2)** was tested in Chromium only:
 - forced Desktop on a real touch tablet;
 - browser zoom with Desktop forced (200% text size and resizing were tested);
@@ -84,7 +92,7 @@ Raised in the landing-page scope review (2026-11-13, Q14). It is tracked separat
 
 ## News and updates on the sign-in page
 
-Now scoped as phases L-3 and L-4 of the landing page: see `docs/landing-scope.md` (not yet authorized). The notes below are the original backlog entry.
+Done: built as landing phases L-3 and L-4 (`docs/landing-scope.md`), complete on 2026-11-14. The notes below are the original backlog entry.
 
 - The sign-in page (`viewAuth`) shows recent news and game updates before signing in.
 - Today's announcements (`world_config`) and world events (`events`) are readable only by signed-in players (row-level security `to authenticated`). Options:
