@@ -41,11 +41,15 @@ The UI modernization (Phases 1–4) was tested in Chromium only, against a fake 
 
 **Public news (landing L-3 and L-4)** was checked live with reads only (`docs/landing-l4-report.md`, section 9):
 - **Publishing and unpublishing on the real site:** publish an article, check that it appears on `/news` and the entrance, then unpublish it and check that it's gone on the next request (`no-store`). Only after that is a cache considered (scope Q1). This is done by the owner through the admin console.
-- **The maintenance line on the live entrance:** an upcoming notice turns "under way" at its start and disappears at its end, and an open-ended notice under way comes first. These are tested in the browser suite only.
+  - **Publishing: seen live** by the owner on 2026-11-14. A real maintenance article was published and appears on the entrance.
+  - **Still owed:** unpublishing on the real site.
+- **The maintenance line on the live entrance:**
+  - **Seen live** by the owner on 2026-11-14: the line shows for a notice under way.
+  - **Still owed live:** an upcoming notice turning "under way" at its start, disappearing at its end, and an open-ended notice under way coming first. These are tested in the browser suite only.
 - **Real link previews** (Discord, Slack, iMessage) reading the article metadata.
 - **Screen readers** with the news section, which appears after the form without moving focus.
 - **Dates** in other locales and time zones.
-- **The test entries** `testing2` (Published) and `this-is-a-test` (Draft) are still in production, for the owner to remove.
+- **The test entries** `testing2` and `this-is-a-test` were removed by the owner on 2026-11-14.
 
 **The interface choice (landing L-2)** was tested in Chromium only:
 - forced Desktop on a real touch tablet;
@@ -77,6 +81,25 @@ Built in phases D-1 to D-3 and merged on 2026-11-13. See `docs/desktop-scope.md`
 ## Layout choice: desktop or mobile (done)
 
 Built in landing phase L-2 and merged as PR #27 on 2026-11-13. See `docs/landing-l2-report.md`. Its checks still owed are in the pre-release list above.
+
+## Maintenance mode
+
+Raised by the owner on 2026-11-14, after publishing a real maintenance notice. Not yet scoped or scheduled.
+
+- **Today:** a maintenance notice is information only. It is a news article of kind `maintenance`, shown as a line on the entrance (landing L-4). Nothing enforces it: players can still sign in and play while it is under way, as the owner saw on 2026-11-14.
+- **Wanted:** a real maintenance mode that stops play while it is on.
+- **The server must enforce it,** because the server is authoritative:
+  - the `game` function refuses actions with a clear maintenance message, with the reads that need it too;
+  - hiding the sign-in form alone is not enough.
+- **Sign-in itself** is Supabase Auth, which the game doesn't control. In practice "no logins" would mean that sign-in succeeds, but the game doesn't start and the entrance shows the maintenance message.
+- **Staff keep access.** Admins can still sign in and use the console, at least to turn the mode off.
+- **Players already in the game:** a message, then back to the entrance. For example on the next `state` call or action, or pushed through Realtime. Decide what happens to a battle or hunt in progress, and to chat.
+- **Questions for the scope:**
+  - Is it a separate switch, or tied to a maintenance article's window?
+  - Manual, or scheduled to turn on and off by itself?
+  - Who can turn it on: admins only?
+  - Should the entrance's line say "Play is paused" while it is on?
+- **It touches** the database (where the switch lives), the `game` and `admin` functions, and the API contract. It needs its own scope, local tests, and the owner's authorization for each production step.
 
 ## Password recovery
 
