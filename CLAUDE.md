@@ -44,7 +44,7 @@ Read these first:
     - the same on the phone, with a battle and the map;
     - one admin action writing one audit entry;
     - unpublishing a news article live;
-    - the `/vendor/*` cache header;
+    - the `/vendor/*` cache header (done, 2026-11-14);
     - optionally, Firefox and Edge, a Discord link preview, and the owner's window size.
   - **After release, as players report problems:**
     - other devices and browsers;
