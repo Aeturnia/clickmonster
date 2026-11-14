@@ -6,10 +6,12 @@
     "test": "node --test tests/*.test.mjs",
     "sim": "node tools/sim.mjs",
     "deploy:functions": "node tools/deploy-functions.mjs",
-    "test:ui": "node --test --test-concurrency=1 tests/ui/*.test.mjs"
+    "test:ui": "node --test --test-concurrency=1 tests/ui/*.test.mjs",
+    "test:db": "supabase test db && node --test --test-concurrency=1 tests/db/*.test.mjs"
   },
   "devDependencies": {
     "axe-core": "4.10.2",
-    "playwright": "1.63.0"
+    "playwright": "1.63.0",
+    "supabase": "2.122.0"
   }
 }

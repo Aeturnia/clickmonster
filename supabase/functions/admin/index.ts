@@ -1,6 +1,7 @@
 // ClickMonster admin API. Every request is checked against the `staff` table.
 //   moderator: stats, search/view players, sanctions (up to 7 days), announcements, audit log
-//   admin:     everything, plus hero editing, permanent bans, player emails and staff management
+//   admin:     everything, plus hero editing, permanent bans, player emails and staff management,
+//              and public news (draft, publish, unpublish, delete; landing L-3)
 // Every write is recorded in admin_log.
 import { createClient } from 'npm:@supabase/supabase-js@2.45.4';
 import { ensureCharacter, maxHp, addItem } from './js/engine/character.js';
@@ -12,6 +13,7 @@ import { MASTERIES, masteryCap } from './js/data/masteries.js';
 import { parseGem } from './js/data/gems.js';
 import { MULT_KEYS, MULT_MAX } from './js/engine/world-config.js';
 import { suggestedHuntHp } from './js/engine/hunt.js';
+import { checkNews, canDeleteNews } from './js/data/news.js';
 
 const db = createClient(
   Deno.env.get('SUPABASE_URL')!,
@@ -494,6 +496,83 @@ async function resolveReport(staff: Staff, id: number, note: string) {
   return { ok: true };
 }
 
+// ---------------------------------------------------------------- public news (landing L-3)
+// Admins only. Drafts are read here, never through the public API. The table's trigger enforces
+// the publication rules too (supabase/migrations/20261115090000_news.sql); the checks below give
+// the clear message first. A repeat (publishing what is already published, deleting what is gone)
+// is refused, so a double press can't write a second audit entry.
+const NEWS_COLS = 'id, slug, kind, title, summary, body, status, published_at, revised_at, maintenance_starts_at, maintenance_ends_at, created_at, updated_at';
+
+async function listNews() {
+  const { data, error } = await db.from('news').select(NEWS_COLS).order('updated_at', { ascending: false }).limit(200);
+  if (error) throw error;
+  return data;
+}
+
+async function loadNews(id: number) {
+  if (!Number.isInteger(id) || id <= 0) throw new AdminError('No such news entry.', 404);
+  const { data, error } = await db.from('news').select(NEWS_COLS).eq('id', id).maybeSingle();
+  if (error) throw error;
+  if (!data) throw new AdminError('That news entry no longer exists.', 404);
+  return data;
+}
+
+function newsWriteError(error: any): never {
+  if (error?.code === '23505') throw new AdminError('That address is already used by another news entry.', 409);
+  if (error?.code === '23514') throw new AdminError(String(error.message || 'That change is not allowed.'), 409);
+  throw error;
+}
+
+async function saveNews(staff: Staff, id: number | null, entry: any) {
+  const { value, errors } = checkNews(entry || {});
+  const first = Object.values(errors)[0];
+  if (first) throw new AdminError(String(first));
+  const row: Record<string, unknown> = {
+    slug: value.slug, kind: value.kind, title: value.title, summary: value.summary, body: value.body,
+    maintenance_starts_at: value.startsAt, maintenance_ends_at: value.endsAt, updated_by: staff.id,
+  };
+  if (id == null) {
+    const { data, error } = await db.from('news').insert({ ...row, created_by: staff.id }).select(NEWS_COLS).single();
+    if (error) newsWriteError(error);
+    await log(staff, 'news:create', { name: value.title }, { id: data.id, slug: value.slug, kind: value.kind });
+    return { entry: data, news: await listNews() };
+  }
+  const old = await loadNews(id);
+  if (old.published_at && value.slug !== old.slug) throw new AdminError("The address can't change once the entry has been published.", 409);
+  const same = (a: unknown, b: unknown) => (a == null && b == null) || (a != null && b != null && new Date(String(a)).getTime() === new Date(String(b)).getTime());
+  const textChanged = old.title !== value.title || old.summary !== value.summary || old.body !== value.body || old.kind !== value.kind
+    || !same(old.maintenance_starts_at, value.startsAt) || !same(old.maintenance_ends_at, value.endsAt);
+  if (!textChanged && old.slug === value.slug) throw new AdminError('Nothing has changed.');
+  if (old.published_at && textChanged) row.revised_at = new Date().toISOString();
+  const { data, error } = await db.from('news').update(row).eq('id', id).select(NEWS_COLS).single();
+  if (error) newsWriteError(error);
+  await log(staff, 'news:edit', { name: value.title }, { id, slug: value.slug, revised: !!row.revised_at });
+  return { entry: data, news: await listNews() };
+}
+
+async function setNewsStatus(staff: Staff, id: number, to: 'published' | 'unpublished') {
+  const old = await loadNews(id);
+  if (to === 'published' && old.status === 'published') throw new AdminError('That entry is already published.', 409);
+  if (to === 'unpublished' && old.status !== 'published') throw new AdminError('Only a published entry can be unpublished.', 409);
+  const patch: Record<string, unknown> = { status: to, updated_by: staff.id };
+  if (to === 'published' && !old.published_at) patch.published_at = new Date().toISOString();
+  const { data, error } = await db.from('news').update(patch).eq('id', id).eq('status', old.status).select(NEWS_COLS).maybeSingle();
+  if (error) newsWriteError(error);
+  if (!data) throw new AdminError('That entry just changed. Reload and try again.', 409);
+  await log(staff, to === 'published' ? 'news:publish' : 'news:unpublish', { name: old.title }, { id, slug: old.slug, republished: to === 'published' && !!old.published_at });
+  return { entry: data, news: await listNews() };
+}
+
+async function deleteNews(staff: Staff, id: number) {
+  const old = await loadNews(id);
+  if (!canDeleteNews(old.status)) throw new AdminError("A published entry can't be deleted. Unpublish it first.", 409);
+  const { data, error } = await db.from('news').delete().eq('id', id).eq('status', old.status).select('id');
+  if (error) newsWriteError(error);
+  if (!data?.length) throw new AdminError('That entry just changed. Reload and try again.', 409);
+  await log(staff, 'news:delete', { name: old.title }, { id, slug: old.slug, status: old.status });
+  return { news: await listNews() };
+}
+
 // ---------------------------------------------------------------- dispatch
 async function handle(staff: Staff, action: string, a: any) {
   switch (action) {
@@ -573,6 +652,11 @@ async function handle(staff: Staff, action: string, a: any) {
     case 'deleteZone': return await deleteZone(staff, String(a.id));
     case 'resetZone': return await resetZone(staff, String(a.id));
     case 'setStaff': return await setStaff(staff, a.email, a.role ?? null);
+    case 'news': requireAdmin(staff); return { news: await listNews() };
+    case 'newsSave': requireAdmin(staff); return await saveNews(staff, a.id == null ? null : Number(a.id), a.entry);
+    case 'newsPublish': requireAdmin(staff); return await setNewsStatus(staff, Number(a.id), 'published');
+    case 'newsUnpublish': requireAdmin(staff); return await setNewsStatus(staff, Number(a.id), 'unpublished');
+    case 'newsDelete': requireAdmin(staff); return await deleteNews(staff, Number(a.id));
     case 'meta': return {
       zones: Object.values(ZONES).map((z: any) => ({ id: z.id, name: z.name, size: z.size })),
       items: Object.values(ITEMS).map((i: any) => ({ id: i.id, name: i.name, tier: i.tier, slot: i.slot })),

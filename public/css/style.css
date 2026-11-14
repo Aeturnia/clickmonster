@@ -906,3 +906,18 @@ fieldset.f-set legend { padding: 0; margin-bottom: 4px; font-size: var(--fs-xs);
 .iface-choice input:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
 #layout-note { margin: 8px 0 0; }
 
+
+/* ---------------------------------------------------------------- admin: public news (landing L-3) */
+.pill.ok { background: #1e3a20; color: #bfe6c1; }
+.pill:not(.ok):not(.ban):not(.jail):not(.mute) { background: var(--surface-2); color: var(--text); }
+.news-fields { border: 0; margin: 0; padding: 0; min-width: 0; }
+.news-fields[disabled] { opacity: .7; }
+.news-preview { margin-top: var(--space-4); }
+.news-article { border-top: 1px solid var(--line); margin-top: var(--space-3); padding-top: var(--space-3); max-width: 42rem; }
+.news-article h4 { font-family: Georgia, "Times New Roman", serif; font-size: 1.5rem; line-height: 1.2; margin: 4px 0 8px; color: var(--gold-soft); }
+.news-kind { margin: 0; font-size: var(--fs-xs); font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.news-summary { color: var(--muted); font-size: var(--fs-lg); }
+.news-window { font-weight: 600; }
+.news-body p { margin: 0 0 12px; }
+.news-body ul { margin: 0 0 12px; padding-left: 1.25rem; }
+.news-body li { margin-bottom: 4px; }
