@@ -7,6 +7,7 @@
 //     older code that loads it from the CDN) is the pinned CDN module allowed, cached on disk
 //     after the first download so later runs are offline.
 import http from 'node:http';
+import { track } from './diagnostics.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -671,6 +672,8 @@ export async function setup() {
       const page = await context.newPage();
       page.errors = [];
       page.on('pageerror', (e) => page.errors.push(e.message));
+      // Failure diagnostics (CI-A-01, diagnostics.mjs): only with UI_DIAGNOSTICS=1, before any navigation.
+      await track(context, page, backend);
       // Native confirm()/prompt()/alert() are recorded (Phase 3 replaces them; tests assert none appear).
       page.nativeDialogs = [];
       page.on('dialog', (d) => { page.nativeDialogs.push({ type: d.type(), message: d.message() }); d.accept(); });

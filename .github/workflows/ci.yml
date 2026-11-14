@@ -96,6 +96,10 @@ jobs:
         # No --with-deps: it installs Linux system packages, and Windows needs none.
         run: npx playwright install chromium
       - name: npm run test:ui (Playwright and axe, against the fake backend)
+        # Failure diagnostics (tests/ui/diagnostics.mjs, CI-A review CI-A-01): a trace, screenshot, DOM
+        # and page state for each failed test, under tests/ui/artifacts/failures/. Records only.
+        env:
+          UI_DIAGNOSTICS: '1'
         run: mkdir -p ci-output && npm run test:ui 2>&1 | tee ci-output/browser.txt
       - name: Keep the output of a failed run
         if: failure()
