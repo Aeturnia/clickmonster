@@ -1,0 +1,123 @@
+# Continuous integration: scope
+
+**Status: draft for review (2026-11-14). Not authorized for implementation.**
+- **Backlog item:** "Continuous integration (GitHub Actions)" in `docs/backlog.md`.
+- **This scope covers part 1:** the test suites on every PR. Parts 2 and 3 are described in section 7 and left for later.
+- **No workflow file is added by this PR.** A workflow with `pull_request` or `push` triggers runs, and spends Actions minutes, as soon as it's pushed. It arrives only in the implementation PR, once authorized.
+- **No game, server, database or deploy change.**
+
+## 1. Why now
+
+- **Independent evidence.** In the L-4 reviews, the reviewer noted that they hadn't run the suites themselves, and that the live results were Claude's recorded observations. A check run by GitHub on the PR's exact head commit closes the first gap for every later phase.
+- **The laptop's memory limit.** In L-3, the local Supabase stack and the browser suite together starved the browsers, and the runs have been split by hand since. On CI each suite gets its own runner.
+- **The next backlog items all need the database suite:** password recovery, bug reports and maintenance mode. CI makes each of those cheaper to review.
+- **No production authorization needed.** It touches no database, function, deploy or live site, unlike the other candidates. Password recovery, for example, needs production Supabase Auth settings (the redirect URL and the email template) changed by the owner.
+
+## 2. What exists
+
+- **No CI:** there is no `.github/` directory.
+- **The suites** (`package.json`):
+  - `npm test`: engine, entrance file checks, news rules and the news page handler (47);
+  - `npm run test:ui`: Playwright 1.63.0 and axe-core 4.10.2 in Chromium, against the fake backend (178);
+  - `npm run test:db`: pgTAP (42), then the API and function tests (9), on the local Supabase stack (CLI 2.122.0, Postgres 17).
+- **They are already safe to run unattended:**
+  - `tests/ui/harness.mjs` fails a test on any request to a host other than the fake backend;
+  - the database tests refuse anything not on 127.0.0.1;
+  - none needs a secret: the local stack uses the CLI's built-in development keys.
+- **Timing, measured once on the owner's laptop** (2026-11-14, a rough guide only, not runner time):
+  - engine: about 1 second;
+  - browser: 7 minutes 12 seconds (432 s for 178 tests).
+
+  The database suite wasn't timed: it needs the stack, and the stack is stopped.
+- **Minutes, a rough estimate to be replaced by measurement (CI-8):**
+  - **Per run:** about 10 to 15 runner minutes. Jobs bill separately: engine about 1, browser about 8 to 10 with setup, database a few more for starting the stack.
+  - **Per PR:** a run for each push, plus one for the merge to `main`.
+  - **The allowance:** GitHub Free includes 2,000 minutes a month for private repos, as of writing. The plan is still to be confirmed (Q1).
+- **Lockfile:** `package-lock.json` is committed, so `npm ci` installs exactly the pinned versions.
+- **Node:** 22.16.0 locally. The repo has no `engines` field, `.nvmrc` or `.node-version`.
+- **The startup budget (LAC-2, 32,000 decoded bytes)** is not asserted by any test. `tools/entry-metrics.mjs` measures it, and the number in the reports (31,112) was counted from git's LF bytes by hand, because a Windows checkout turns LF into CRLF and inflates the measurement.
+- **Symlinks:** `supabase/functions/game/js` and `supabase/functions/admin/js` are git symlinks to `public/js`. On Linux they check out as real symlinks; on the owner's Windows checkout they are small text files.
+- **Line endings:** `.gitattributes` keeps `public/vendor/**` byte-identical (`-text`). Everything else follows `core.autocrlf` locally; a Linux runner checks out LF.
+
+## 3. Proposed design
+
+**One workflow, `.github/workflows/ci.yml`:**
+- **Triggers:** `pull_request` into `main`, `push` to `main` (the merged result), and `workflow_dispatch` (run by hand).
+- **Concurrency:** a newer push to the same branch cancels the run still going, to save minutes.
+- **Permissions:** `contents: read` only. No secrets, and no access to the live project, Netlify or the Supabase access token.
+- **Runner:** `ubuntu-latest`, Node 22, `npm ci`.
+
+**Three jobs, in parallel, each its own check on the PR:**
+
+| Job | Steps | Notes |
+|---|---|---|
+| `engine` | `npm test` | Also runs the new budget check (below) |
+| `browser` | `npx playwright install --with-deps chromium`, then `npm run test:ui` | Chromium only. The browser download is cached between runs |
+| `database` | `npx supabase start -x studio,imgproxy,storage-api,logflare,vector,supavisor,mailpit,realtime,postgres-meta`, then `npm run test:db`, then `npx supabase stop` | The same command as `CLAUDE.md`. Docker is preinstalled on the runner |
+
+**A new budget check, in `npm test`** (a file test, so it also runs locally):
+- It counts the bytes of the files the first paint loads, with CRLF normalized to LF, so it gives the same number on Windows and Linux.
+- It fails above 32,000.
+- **Which files:** the ones LAC-2 counts (the document, the entry CSS and the entry JS). During implementation the test's total is reconciled against the 31,112 recorded in the L-4 report, and any difference is explained before the limit is set.
+
+**On failure:** the job uploads its test output as an artifact, so a reviewer can read it without rerunning.
+
+**Pinned actions:** each third-party action (`actions/checkout`, `actions/setup-node`, `actions/cache`) is pinned to a full commit SHA, with its version in a comment. This matches the project's exact pinning of Playwright, axe-core and the CLI (Q6).
+
+## 4. Acceptance criteria
+
+| ID | Criterion | How it's shown |
+|---|---|---|
+| CI-1 | The workflow runs on a PR into `main`, on a push to `main` and by hand, with three separate checks | The implementation PR's own checks page |
+| CI-2 | All three suites pass on Linux with the same counts as locally: engine 47 plus the budget check, browser 178, database 42 + 9 | The run's logs |
+| CI-3 | **A failing test fails the check.** Shown once per job, on a throwaway commit (for example an `assert.fail()`), then reverted | Linked runs in the report |
+| CI-4 | The budget check fails above 32,000, passes at today's size, and counts the same on Windows (CRLF) and Linux (LF) | Run on both; a padded `index.html` makes it fail, then reverted |
+| CI-5 | Least privilege: `contents: read`, no secrets, no request leaves the runner except package and image downloads | The workflow file; the harness's host check |
+| CI-6 | No game, server, database or deploy change. Any test-only fix needed for Linux is listed in the report, each with its reason | The diff |
+| CI-7 | `CLAUDE.md` and `README.md` say how CI runs and how to read a failure | The diff |
+| CI-8 | Measured minutes per run, per job, recorded in the report against the plan's allowance | The run's timings |
+
+**Evidence, as for every phase:** the suites still run locally three times as well, so CI is in addition to, not instead of, the local runs, until the owner decides otherwise.
+
+## 5. Risks, not yet verified
+
+Nothing in this project has run on Linux yet. The first run may need test-only fixes.
+- **Rendering on Linux.** Chromium on Linux has different fonts and font metrics. Things that could behave differently:
+  - layout and geometry assertions (the desktop and chat-panel breakpoints in rem, the metric thresholds);
+  - axe colour contrast.
+- **Timing on a slower runner.** A standard runner may be slower than the laptop. The tests with timing in them could be flaky: the 250 ms double-tap guard (tests wait about 270 ms) and the after-paint news loading.
+- **Symlinks in `test:db`.** On Linux the function folders' `js` links are real symlinks. The CLI's mounts of imported files (which on Windows needed a stop and start after a file moved) may behave differently. To verify, not assume.
+- **Image pulls.** `supabase start` pulls several Docker images on every run, which takes time and can hit registry rate limits. Caching the images may be worth it if it is slow.
+- **The budget check's number.** If the reconciled total differs from 31,112 (for example by what counts as the first paint), the difference is explained before the limit is set, never fudged to pass.
+
+## 6. Questions for the owner
+
+| Q | Question | Recommendation |
+|---|---|---|
+| Q1 | **Your GitHub plan and Actions minutes.** The repo is private, under a personal account; the plan couldn't be read from here. The allowance is under Settings, Billing | Tell me the plan, so the report can compare measured minutes against it |
+| Q2 | **Require the checks before merging?** On a private repo, branch protection and rulesets may need a paid plan | Yes if the plan allows it; otherwise the checks are advisory and the reviewer reads them |
+| Q3 | **What goes in the first PR:** part 1 only, or part 3 (live-site checks) too? Part 3 is automated traffic to production on a schedule | Part 1 only. Part 3 as its own small PR later |
+| Q4 | **Node version:** pin Node 22 in the workflow and add `"engines"` to `package.json`? | Yes, 22, matching the laptop |
+| Q5 | **Run the database job on every PR,** or only when `supabase/`, `tests/db/` or the shared news rules change? | Every PR at first, so it is a stable check. Filter by path later if minutes are tight. A path filter and a required check don't mix well |
+| Q6 | **Pin actions by commit SHA,** or by major version tag (`@v4`)? | SHA, with the version in a comment. A tag can be moved; a SHA can't |
+| Q7 | **Local runs as evidence:** keep running the suites three times locally for each phase, or let one green CI run plus one local run stand in? | Keep both for the first phase after CI lands; decide after that |
+
+## 7. Later parts (not in this scope)
+
+- **Part 2: Firefox and WebKit** (Playwright's builds; WebKit is Safari's engine), nightly or by hand. The suite has only ever run in Chromium, so expect fixes first.
+- **Part 3: live-site checks** after each merge to `main` and daily, reads only:
+  - the live files match `main`;
+  - the news pages' statuses and headers;
+  - the `/vendor/*` cache header.
+
+  It confirms a Netlify deploy landed, since Netlify posts no deploy status for `main`.
+- **Possible later: deploying the server functions** through a manual workflow that needs the owner's approval on each run. It needs its own decision, because it moves `SUPABASE_ACCESS_TOKEN` into a repo secret.
+
+## 8. Phasing
+
+**One implementation PR, CI-A,** after this scope is approved and the owner authorizes it:
+1. Add the workflow and the budget check.
+2. Make any test-only Linux fixes.
+3. Show CI-3 and CI-4 failing on throwaway commits, then revert them.
+4. Write `docs/ci-a-report.md`, with the run links, the timings, any fixes, and what wasn't verified.
+5. Stop at the review gate.
