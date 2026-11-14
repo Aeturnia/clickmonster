@@ -1,6 +1,6 @@
 # Landing page — phase L-4 report: public news
 
-**Status: implemented. Awaiting independent review.**
+**Status: review corrections made (L4-01, L4-02). LAC-2's revised target is recorded. Awaiting independent re-review.**
 - **Authorized:** on 2026-11-13, after L-3's production results were approved. On its own branch and PR.
 - **No database, migration or `admin` function change.**
 - **The new piece:** a Netlify Edge Function, which goes live only when Netlify deploys `main` after the merge.
@@ -49,7 +49,7 @@ The contract is `docs/landing-scope.md`: Q1 (decided), Q5, Q9, Q10, Q13, section
 
 | AC | Result | Evidence |
 |---|---|---|
-| LAC-15 | Met | The latest three published articles appear after the sign-in panel, newest first, with no draft or future article, each linked, plus "All news". The email field is still the first stop. The news module starts only after the browser's first contentful paint and the load event (checked against Resource Timing in 5 of 5 runs). **News failing** (refused), **answering 500** or **never answering:** nothing is shown, and its styles aren't even loaded. Sign-in, and a returning player's saved session, reach the game regardless |
+| LAC-15 | Met (maintenance lifecycle corrected in L4-01) | The latest three published articles appear after the sign-in panel, newest first, with no draft or future article, each linked, plus "All news". The email field is still the first stop. The news module starts only after the browser's first contentful paint and the load event (checked against Resource Timing in 5 of 5 runs). **News failing** (refused), **answering 500** or **never answering:** nothing is shown, and its styles aren't even loaded. Sign-in, and a returning player's saved session, reach the game regardless |
 | LAC-16 | Met | **Articles:** 200 HTML with a title, description, canonical URL and Open Graph and Twitter tags, readable without script, in the entrance's design. **Unknown, draft and future addresses:** 404 with the same page. **`/news`:** every published article, newest first. **No caching:** `no-store`, and an article unpublished in the fake backend is a 404 on the next request. **Supabase down:** the 503 page. Handler and browser tests |
 | LAC-16a | Met | **Escaping:** hostile text (`"><script>…`, `</title>`, quotes, `&`, `<b>`) is escaped in the body, in `<title>` and in every metadata attribute; no markup survives. **Canonical address:** with `Host`, `X-Forwarded-Host` and `Forwarded` set to another host, the page still uses `https://clickmonsters.netlify.app`. **Slugs:** eight malformed ones give 404 with no query. **Failures:** refused, 500, 401, not JSON, not a list, a malformed row and a timeout each give 503. **Headers:** `text/html; charset=utf-8` and `no-store` on every response |
 | LAC-17 | Met | An article page requests itself and two stylesheets, plus the icon. No `/js/`, no supabase-js, no `<script>` element, and the policy forbids script. Measured at 390 and 1440 |
@@ -75,9 +75,11 @@ The news itself adds nothing before the first paint; it loads afterwards, as the
 - **The throttled time to the form is 0.74 s** (target at most 0.8 s, same method). It was 0.70 s after L-2.
 - **The tool's 300 ms window** now catches the news loading right after the paint: 7 requests, including the news module and the two reads, but still no game module and no supabase-js.
 
-**This is a decision for the owner, not something I trimmed to fit.** On the L-2 record you asked me not to remove comments to meet the budget, and to keep news loading independently after the entrance renders. Both are done; the remaining options are:
-- **Raise the target to about 32 KB decoded,** or state it as compressed bytes (about 10.7 KB today).
-- **Keep 30 KB,** and move the news markup from `index.html` into `entry-news.js`. That saves 310 bytes, but is still about 800 over, so code or comments would also have to go.
+**Decided in the L-4 review: LAC-2's byte target is revised to 32,000 decoded bytes** for the completed entrance. This is a scoped exception, recorded in the scope, not a claim that the original 30 KB was met.
+- **Met:** 31,112 bytes as served is within 32,000. The decoded-byte metric and its method are unchanged; compressed size was not adopted.
+- **Unchanged and met:** three requests before the first paint; no game code or supabase-js for an anonymous visitor; news loaded independently, after the paint; a throttled time to the form of 0.74 s, against at most 0.8 s.
+- **No comments were removed** to meet a threshold.
+- **The L-4 corrections:** they add nothing to the first paint. `entry-news.js` is loaded after it, and the 405 page is server-side only.
 
 ## 4. Changed existing tests
 
@@ -114,10 +116,10 @@ Entry measurements are in `l4-metrics-after.json`.
 
 | Suite | Tests | Result |
 |---|---|---|
-| Engine (`npm test`) | 47: 39 before, plus 8 page-handler tests | 47/47 in each of 3 runs |
-| Browser (`npm run test:ui`) | 174: 166 before, plus 8 | 174/174 in each of 3 runs |
+| Engine (`npm test`) | 47: 39 before, plus 8 page-handler tests (the 405 test extended in L4-02) | 47/47 in each of 3 runs |
+| Browser (`npm run test:ui`) | 177: 166 before, plus 8, plus 3 from the review corrections | 177/177 in each of 3 runs |
 
-The local Supabase suite (`npm run test:db`) wasn't rerun: L-4 changes no database object or function.
+**The local Supabase suite** (`npm run test:db`) was run for the L4-01 correction, because the entrance's maintenance read now uses an `or=` filter. It gained one REST test: the read works for the anonymous key on the real API, and leaves out ended notices. The result was 42 pgTAP tests plus 9 API and function tests, all passing. It ran with the stack alone; the stack was stopped before the browser runs.
 
 ## 8. Checked on Netlify's deploy preview, against the live data
 
@@ -145,18 +147,67 @@ This confirms what the Node and harness tests could only stand in for: Netlify b
 
 ## 9. After the merge
 
-**Netlify deploys the edge function from `main` when this PR merges.** Today the live site serves `/news` as Netlify's plain 404. If bundling failed, Netlify would keep the previous deploy live. The same plain reads are then repeated on the live site:
-1. `/news/testing2` returns 200.
-2. `/news/this-is-a-test` returns the 404 page.
-3. `/news` lists the articles.
-4. The entrance shows the news.
+**Netlify deploys the edge function from `main` when this PR merges.** Before that, the live site answers `/news` with Netlify's plain 404.
+- **On deploy,** Netlify bundles the function with its relative imports (`public/js/config.js`, `data/news.js` and `site.js`), as it did for the preview (section 8).
+- **If bundling failed,** Netlify would keep the previous deploy live; the site wouldn't break.
 
-**Netlify deploys the edge function from `main` when this PR merges.** Before that, nothing serves `/news` on the live site; today it is Netlify's plain 404. Netlify bundles the function and its relative imports (`public/js/config.js`, `data/news.js`, `site.js`) on deploy. If the bundle failed, Netlify would keep the previous deploy live; the site wouldn't break.
+**After the merge,** the preview's checks are repeated on the live site at `https://clickmonsters.netlify.app`, with plain reads only (no sign-in, no writes), and the results recorded:
+1. `/news/testing2` returns 200, with the metadata, `no-store` and the policy, while that test article is still published.
+2. `/news/this-is-a-test` returns the same 404 page as an unknown address, while that draft still exists.
+3. `/news` lists the published articles.
+4. A POST returns 405 with the same headers.
+5. The entrance shows the news after it loads, in a browser, with no errors.
 
-**After the merge, checked by plain reads of the live site** (no sign-in, no writes):
 ## 10. Not verified
 
 - **The production deploy itself:** expected to match the preview (section 8), and checked after the merge (section 9).
 - **Real link previews** (Discord, Slack, iMessage and others) reading the metadata.
 - **Real devices, other browsers and screen readers.** For example, whether a screen reader announces the late-arriving news section; it appears silently, after the form, without moving focus.
 - **Dates on the entrance** use the visitor's own locale and time zone; the article pages use UTC. That was checked only in this browser's en-US locale.
+
+## 11. Review corrections (review of `5953655`)
+
+The review accepted the architecture, the edge function, escaping, canonical addresses, the RLS-backed reads, the entrance integration, failure independence and the evidence, including the Netlify preview. It found two issues and decided the budget (section 3).
+
+### L4-01: a maintenance notice didn't expire while the entrance stayed open (medium)
+
+**Defect.** `entry-news.js` decided whether a notice had ended only when the news arrived. A notice shown while maintenance was under way stayed after its end time until a reload.
+
+There was also a second gap: the maintenance read took the five newest notices, so five newer, already-ended ones could crowd out an older one still to come.
+
+**Correction** (`public/js/entry-news.js`):
+- **Only notices that haven't ended are asked for.** The read now uses `or=(maintenance_ends_at.is.null,maintenance_ends_at.gt.<now>)`, so ended notices can't use up the five places. A local-stack test confirms the real API accepts this filter from the anonymous key and leaves ended notices out.
+- **The notice is re-checked at the next start or end** among the notices already loaded:
+  - at its start, an upcoming notice changes to "under way until …";
+  - at its end, it hides itself and empties;
+  - if another notice is still relevant, that one is shown.
+- **No reload and no new request.** Waits longer than `setTimeout` allows (about 24 days) are re-armed in steps.
+- **Which notice:** one under way comes first, then the soonest to start, then one with no window.
+- **Loading is unchanged:** still anonymous, after the first paint, independent of sign-in, and failure-tolerant.
+
+**Tests** (`tests/ui/news-public.test.mjs`): 3 new, with the browser's clock controlled through Playwright's clock API.
+- **Under way, then ended while open:** hidden and emptied, with no reload (a page marker survives) and no new news request, and the news list stays.
+- **Upcoming, then under way, then ended:** the text changes at the start, and the notice is hidden at the end.
+- **Six newer ended notices and one older upcoming one:** the upcoming one is shown, and the read asks only for notices that haven't ended.
+
+All 3 fail with the reviewed `entry-news.js`, and pass with the fix.
+
+The fake backend's public read now understands this `or=` form on public columns, as the real API does.
+
+### L4-02: the 405 answer lacked the agreed headers (low)
+
+**Defect.** The edge function answered unsupported methods with a plain-text 405 that had only `Allow` and `no-store`.
+
+**Correction** (`netlify/edge-functions/news.js`):
+- the 405 keeps `Allow: GET, HEAD`;
+- it now carries every page header: `text/html; charset=utf-8`, `no-store`, the no-script policy, `nosniff` and the referrer policy;
+- it has a short page in the same design.
+
+**Tests** (`tests/news-pages.test.mjs`): the method test now checks POST, PUT, DELETE, PATCH and OPTIONS each get 405 with those headers, and that nothing is asked of Supabase. It fails with the reviewed handler.
+
+### Recorded
+
+- **The revised LAC-2 target** of 32,000 decoded bytes, with its rationale, in the scope and section 3.
+- **Pagination of `/news`:** the list shows at most 100 articles, and older ones stay reachable by address. This is in `docs/backlog.md` as a follow-up.
+- **Section 9** is consolidated into one post-merge procedure.
+

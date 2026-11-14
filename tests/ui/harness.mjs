@@ -487,11 +487,21 @@ export class FakeBackend {
     const denied = { __status: 401, body: { code: '42501', details: null, hint: null, message: 'permission denied for table news' } };
     const cols = (params.get('select') || '*').split(',').map((c) => c.trim());
     if (cols.some((c) => !PUBLIC.includes(c))) return denied;
-    for (const k of params.keys()) if (!['select', 'order', 'limit', 'offset'].includes(k) && !PUBLIC.includes(k)) return denied;
+    for (const k of params.keys()) if (!['select', 'order', 'limit', 'offset', 'or'].includes(k) && !PUBLIC.includes(k)) return denied;
+    // or=(col.op.value,...), as the entrance's maintenance read uses it; public columns only.
+    let anyOf = null;
+    if (params.has('or')) {
+      const parts = params.get('or').replace(/^\(|\)$/g, '').split(',').map((p) => p.match(/^(\w+)\.(is|gt|lt|eq)\.(.+)$/));
+      if (parts.some((m) => !m || !PUBLIC.includes(m[1]))) return denied;
+      anyOf = (n) => parts.some(([, col, op, v]) => (op === 'is' ? v === 'null' && n[col] == null
+        : op === 'eq' ? String(n[col]) === v
+          : n[col] != null && (op === 'gt' ? Date.parse(n[col]) > Date.parse(v) : Date.parse(n[col]) < Date.parse(v))));
+    }
     const order = params.get('order');
     if (order && !PUBLIC.includes(order.split('.')[0])) return denied;
     let rows = this.news.filter((n) => n.status === 'published' && n.published_at && new Date(n.published_at).getTime() <= Date.now());
     for (const [k, v] of params) if (PUBLIC.includes(k)) rows = rows.filter((n) => String(n[k]) === v.replace(/^eq\./, ''));
+    if (anyOf) rows = rows.filter(anyOf);
     rows.sort((x, y) => new Date(y.published_at) - new Date(x.published_at));
     if (order && order.endsWith('.asc')) rows.reverse();
     const from = Number(params.get('offset')) || 0;

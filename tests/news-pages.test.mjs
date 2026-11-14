@@ -142,7 +142,17 @@ test('HEAD is answered without a body; other methods are refused', async () => {
   const head = await get('/news/patch-notes-1-2', api([ARTICLE]), { method: 'HEAD' });
   assert.equal(head.status, 200);
   assert.equal(await head.text(), '');
-  const post = await get('/news/patch-notes-1-2', api([ARTICLE]), { method: 'POST', body: 'x' });
-  assert.equal(post.status, 405);
-  assert.equal(post.headers.get('allow'), 'GET, HEAD');
+  for (const method of ['POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS']) {
+    const { fetchImpl, calls } = api([ARTICLE]);
+    const res = await get('/news/patch-notes-1-2', { fetchImpl }, { method, ...(method === 'POST' || method === 'PUT' || method === 'PATCH' ? { body: 'x' } : {}) });
+    assert.equal(res.status, 405, method);
+    assert.equal(res.headers.get('allow'), 'GET, HEAD', method);
+    // The same headers as every page (L-4 review, L4-02).
+    assert.equal(res.headers.get('content-type'), 'text/html; charset=utf-8', method);
+    assert.equal(res.headers.get('cache-control'), 'no-store', method);
+    assert.match(res.headers.get('content-security-policy'), /default-src 'none'/, method);
+    assert.equal(res.headers.get('x-content-type-options'), 'nosniff', method);
+    assert.match(await res.text(), /That isn't allowed here/, method);
+    assert.equal(calls.length, 0, `${method}: nothing asked`);
+  }
 });

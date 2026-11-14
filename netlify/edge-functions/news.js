@@ -160,7 +160,17 @@ ${rows.length ? `<ul class="n-list">\n${items}\n</ul>` : '<p class="n-empty">No 
 // The whole request, with the network passed in so tests can replace it.
 export async function newsResponse(request, { fetchImpl = fetch, timeoutMs = TIMEOUT_MS } = {}) {
   const method = request.method;
-  if (method !== 'GET' && method !== 'HEAD') return new Response('Method not allowed', { status: 405, headers: { allow: 'GET, HEAD', 'cache-control': 'no-store' } });
+  if (method !== 'GET' && method !== 'HEAD') {
+    // The same headers as every other answer, plus Allow (L-4 review, L4-02).
+    return new Response(layout({
+      title: `Not allowed · ${SITE_NAME}`, robots: 'noindex',
+      body: `<section class="n-message" aria-labelledby="n-h">
+<h1 id="n-h">That isn't allowed here</h1>
+<p>These pages can only be read.</p>
+<p class="n-links"><a href="/news">All news</a><a href="/">Enter the realm</a></p>
+</section>`,
+    }), { status: 405, headers: { ...HEADERS, allow: 'GET, HEAD' } });
+  }
   const path = new URL(request.url).pathname.replace(/\/+$/, '');
   try {
     if (path === '/news') return list(await read(`select=${LIST_COLS}&order=published_at.desc&limit=${LIST_LIMIT}`, fetchImpl, timeoutMs), method);

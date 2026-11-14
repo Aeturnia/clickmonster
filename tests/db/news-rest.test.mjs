@@ -122,3 +122,21 @@ test('a signed-in player has the same view as the public', async () => {
   const del = await fetch(`${API}/auth/v1/admin/users/${session.user.id}`, { method: 'DELETE', headers: headers(SERVICE) });
   assert.ok(del.ok, 'clean-up of the test user');
 });
+
+// The entrance's maintenance read (landing L-4, L4-01): an or= filter on public columns, which the
+// public role may use. Only notices that haven't ended come back.
+test("the entrance's maintenance read works for anon and leaves out ended notices", async () => {
+  const at = (h) => new Date(Date.now() + h * 3600000).toISOString();
+  const rowsIn = [
+    { slug: slug('m-ended'), kind: 'maintenance', title: 'Ended maintenance', summary: 'A maintenance window already over.', body: 'x', status: 'published', published_at: at(-1), maintenance_starts_at: at(-5), maintenance_ends_at: at(-3) },
+    { slug: slug('m-next'), kind: 'maintenance', title: 'Next maintenance', summary: 'A maintenance window still to come.', body: 'x', status: 'published', published_at: at(-48), maintenance_starts_at: at(2), maintenance_ends_at: at(4) },
+    { slug: slug('m-open'), kind: 'maintenance', title: 'Open-ended maintenance', summary: 'A maintenance notice with no end.', body: 'x', status: 'published', published_at: at(-24), maintenance_starts_at: null, maintenance_ends_at: null },
+  ];
+  const seed = await rest('news', { key: SERVICE, method: 'POST', body: rowsIn, prefer: 'return=minimal' });
+  assert.equal(seed.status, 201, await seed.text());
+  const now = new Date().toISOString();
+  const res = await rest(`news?select=slug,kind,title,summary,published_at,maintenance_starts_at,maintenance_ends_at&kind=eq.maintenance&or=(maintenance_ends_at.is.null,maintenance_ends_at.gt.${now})&order=published_at.desc&limit=5`);
+  assert.equal(res.status, 200);
+  assert.deepEqual(mine(await res.json()), [slug('m-next'), slug('m-open')].sort(), 'the ended notice is left out');
+});
+

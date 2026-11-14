@@ -117,6 +117,60 @@ test('Q5 maintenance: one line near the form while upcoming or under way; gone o
   }
 });
 
+// ---------------------------------------------------------------- L-4 review: L4-01
+// The browser's clock is controlled, so time can pass while the entrance stays open.
+const MIN = 60000;
+const maintAt = (startMin, endMin, over = {}) => MAINT(null, null, {
+  maintenance_starts_at: startMin == null ? null : iso(Date.now() + startMin * MIN),
+  maintenance_ends_at: endMin == null ? null : iso(Date.now() + endMin * MIN), ...over,
+});
+
+test('L4-01 a notice under way disappears when it ends, without a reload or another request', async () => {
+  const ctx = await open({ news: [...NEWS, maintAt(-10, 2)] });
+  const { page } = ctx;
+  await page.clock.install({ time: new Date() });
+  await page.goto(`${env.url}/`);
+  await page.waitForSelector('#maint:not([hidden])', { timeout: 10000 });
+  assert.match(await page.textContent('#maint'), /under way until/);
+  await page.evaluate(() => { window.__samePage = true; });
+  const reads = newsReads(ctx).length;
+  await page.clock.fastForward(3 * MIN);
+  await page.waitForSelector('#maint', { state: 'hidden', timeout: 5000 });
+  assert.equal(await page.textContent('#maint'), '', 'emptied');
+  assert.equal(await page.evaluate(() => window.__samePage), true, 'no reload');
+  assert.equal(newsReads(ctx).length, reads, 'no new request');
+  assert.ok(await page.isVisible('#news'), 'the news list stays');
+  await done(ctx);
+});
+
+test('L4-01 an upcoming notice turns into "under way" at its start, then disappears at its end', async () => {
+  const ctx = await open({ news: [...NEWS, maintAt(1, 3)] });
+  const { page } = ctx;
+  await page.clock.install({ time: new Date() });
+  await page.goto(`${env.url}/`);
+  await page.waitForSelector('#maint:not([hidden])', { timeout: 10000 });
+  assert.match(await page.textContent('#maint'), / to /, 'upcoming: from and to');
+  assert.doesNotMatch(await page.textContent('#maint'), /under way/);
+  await page.clock.fastForward(1.5 * MIN);
+  await page.waitForFunction(() => /under way until/.test(document.getElementById('maint').textContent), null, { timeout: 5000 });
+  await page.clock.fastForward(2 * MIN);
+  await page.waitForSelector('#maint', { state: 'hidden', timeout: 5000 });
+  await done(ctx);
+});
+
+test('L4-01 newer, already-ended notices never crowd out one that is still to come', async () => {
+  const ended = [1, 2, 3, 4, 5, 6].map((i) => maintAt(-300 - i * 10, -200 - i * 10, { id: 100 + i, slug: `old-maintenance-${i}`, title: `Old maintenance ${i}`, published_at: iso(Date.now() - i * 60000) }));
+  const upcoming = maintAt(60, 120, { id: 200, slug: 'next-maintenance', title: 'Next maintenance', published_at: iso(Date.now() - 50 * H) });
+  const ctx = await open({ news: [...NEWS, ...ended, upcoming] });
+  const { page } = ctx;
+  await page.goto(`${env.url}/`);
+  await page.waitForSelector('#maint:not([hidden])', { timeout: 10000 });
+  assert.match(await page.textContent('#maint'), /Next maintenance/);
+  const q = newsReads(ctx).map((u) => new URL(u).searchParams).find((p) => p.get('kind') === 'eq.maintenance');
+  assert.match(q.get('or'), /^\(maintenance_ends_at\.is\.null,maintenance_ends_at\.gt\.\d{4}-/, 'only notices that have not ended are asked for');
+  await done(ctx);
+});
+
 test('LAC-15 / LAC-21 news failing or never answering: nothing shows, sign-in and the game go ahead', async () => {
   // Failing: the reads are refused.
   let ctx = await open();

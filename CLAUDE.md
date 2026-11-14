@@ -30,7 +30,7 @@ Read these first:
   - **Not authorized:** L-3 and L-4, database changes, function deploys, and the rename.
     - L-3 (migrations, access policies, admin publishing) needs the owner's separate authorization.
     - It also needs the scope's gates: the local Supabase stack, database and REST tests before any production change, and explicit authorization for the migration and the deploy.
-  - **For L-4:** the entrance is at 29.8 KB of its 30 KB startup budget (LAC-2).
+  - **The entrance's startup budget** (LAC-2) is 32,000 decoded bytes, revised in the L-4 review. It is 31,112 after L-4. Don't strip comments to meet it.
   - **Implementation gate still open:** L-3 needs the local Supabase stack running before any production change.
   - **Every question in section 5 is decided.** The main ones:
     - a Netlify Edge Function for article pages, uncached at first;
@@ -51,7 +51,7 @@ Read these first:
   - **L-4 (public news) is implemented,** in its own PR, awaiting independent review. See `docs/landing-l4-report.md`.
     - It covers the entrance's news and maintenance line (`js/entry-news.js`, loaded after the first paint) and the article pages (`netlify/edge-functions/news.js`).
     - The edge function goes live when Netlify deploys `main` after the merge; it is checked on the live site then.
-    - **The entrance's first paint is 31.1 KB, over the 30 KB target.** The owner decides the budget.
+    - **Review of `5953655`:** L4-01 (the maintenance notice expires while the page is open) and L4-02 (405 headers) are corrected. The 32 KB budget is decided. Awaiting re-review.
 - **Don't start anything beyond L-4, or make gameplay or server changes,** until the owner approves it.
 - **Before a release:** the pre-release verification in `docs/backlog.md` is still owed:
   - real devices and other browsers (including Firefox and Safari on desktop);
@@ -163,8 +163,8 @@ Read these first:
 
 ```
 npm test                 # engine, entrance file checks, news rules and the news page handler (47)
-npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (174)
-npm run test:db          # database (pgTAP, 42) and API/function tests (8) on the LOCAL Supabase stack
+npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (177)
+npm run test:db          # database (pgTAP, 42) and API/function tests (9) on the LOCAL Supabase stack
 npx playwright install chromium   # once
 ```
 

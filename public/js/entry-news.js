@@ -3,7 +3,10 @@
 // whether news arrives, arrives late, or never does. It reads published articles through the
 // public API with the publishable key (no supabase-js) and shows:
 //   - the latest three, with title, date and summary, and a link to all news (Q10);
-//   - one line near the form for scheduled maintenance that is upcoming or under way (Q5).
+//   - one line near the form for scheduled maintenance that is upcoming or under way (Q5). It is
+//     checked again at the notice's start and end, from the data already loaded: it says "under
+//     way" once it starts and disappears once it ends, without a reload or another request
+//     (L-4 review, L4-01).
 // If anything goes wrong, nothing is shown: no error, no empty box.
 import { SUPABASE_URL, SUPABASE_KEY } from './config.js';
 
@@ -29,15 +32,44 @@ async function read(query) {
 const dayText = (t) => new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' });
 const timeText = (t) => new Date(t).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 
-// Upcoming or under way: no end yet, or the end still to come. Ended notices disappear by themselves.
-function maintenanceLine(m, now = Date.now()) {
-  const start = m.maintenance_starts_at ? Date.parse(m.maintenance_starts_at) : null;
-  const end = m.maintenance_ends_at ? Date.parse(m.maintenance_ends_at) : null;
-  if (end != null && end <= now) return null;
+const startOf = (m) => (m.maintenance_starts_at ? Date.parse(m.maintenance_starts_at) : null);
+const endOf = (m) => (m.maintenance_ends_at ? Date.parse(m.maintenance_ends_at) : null);
+// Upcoming or under way: no end, or the end still to come.
+const relevant = (m, now) => endOf(m) == null || endOf(m) > now;
+const underWay = (m, now) => relevant(m, now) && (startOf(m) == null || startOf(m) <= now);
+
+// The notice to show now: one under way first, then the soonest to start. Null when none is left.
+function pickMaintenance(list, now) {
+  const live = list.filter((m) => relevant(m, now));
+  return live.find((m) => underWay(m, now) && endOf(m) != null)
+    || live.filter((m) => startOf(m) != null && startOf(m) > now).sort((a, b) => startOf(a) - startOf(b))[0]
+    || live[0] || null;
+}
+
+function maintenanceLine(m, now) {
+  const start = startOf(m);
+  const end = endOf(m);
   let when = '';
   if (start != null && start > now) when = end != null ? `, ${timeText(start)} to ${timeText(end)}` : `, from ${timeText(start)}`;
   else if (end != null) when = `, under way until ${timeText(end)}`;
   return `<b>Scheduled maintenance:</b> ${esc(m.title)}${esc(when)}. <a href="/news/${esc(m.slug)}">Details</a>`;
+}
+
+// Shows the right notice for now, and checks again at the next start or end among the notices
+// already loaded. Timers longer than setTimeout allows (about 24 days) are re-armed in steps.
+const MAX_WAIT = 2 ** 31 - 1;
+let maintTimer = null;
+function showMaintenance(list) {
+  clearTimeout(maintTimer);
+  const now = Date.now();
+  const el = $('maint');
+  const m = pickMaintenance(list, now);
+  if (!m) { el.hidden = true; el.textContent = ''; return; }
+  const html = maintenanceLine(m, now);
+  if (el.innerHTML !== html) el.innerHTML = html;
+  el.hidden = false;
+  const next = list.flatMap((x) => [startOf(x), endOf(x)]).filter((t) => t != null && t > now).sort((a, b) => a - b)[0];
+  if (next != null) maintTimer = setTimeout(() => showMaintenance(list), Math.min(next - now + 50, MAX_WAIT));
 }
 
 // Its styles, loaded only when there is something to show; shown once they apply (or fail).
@@ -53,18 +85,16 @@ function useStyles() {
 }
 
 export async function showNews() {
+  // Maintenance: only notices that haven't ended, so ended ones can never use up the five places.
+  const now = new Date().toISOString();
   const [latest, maintenance] = await Promise.all([
     read(`select=${COLS}&order=published_at.desc&limit=3`),
-    read(`select=${COLS}&kind=eq.maintenance&order=published_at.desc&limit=5`),
+    read(`select=${COLS}&kind=eq.maintenance&or=(maintenance_ends_at.is.null,maintenance_ends_at.gt.${now})&order=published_at.desc&limit=5`),
   ]);
-  const line = (maintenance || []).map((m) => maintenanceLine(m)).find(Boolean);
-  if (!latest?.length && !line) return;
+  const notices = maintenance || [];
+  if (!latest?.length && !pickMaintenance(notices, Date.now())) return;
   await useStyles();
-  if (line) {
-    const el = $('maint');
-    el.innerHTML = line;
-    el.hidden = false;
-  }
+  showMaintenance(notices);
   if (latest?.length) {
     $('news-list').innerHTML = latest.map((a) => `<li class="e-news-item">
       <a class="e-news-link" href="/news/${esc(a.slug)}">${esc(a.title)}</a>
