@@ -22,6 +22,7 @@ import { generateQuests, accept, hourBucket } from '../../public/js/engine/quest
 import { canSend } from '../../public/js/engine/chat.js';
 import { duel } from '../../public/js/engine/pvp.js';
 import { checkNews, canDeleteNews } from '../../public/js/data/news.js';
+import { newsResponse } from '../../netlify/edge-functions/news.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const PUBLIC = path.resolve(ROOT, process.env.UI_PUBLIC_DIR || 'public');
@@ -486,11 +487,21 @@ export class FakeBackend {
     const denied = { __status: 401, body: { code: '42501', details: null, hint: null, message: 'permission denied for table news' } };
     const cols = (params.get('select') || '*').split(',').map((c) => c.trim());
     if (cols.some((c) => !PUBLIC.includes(c))) return denied;
-    for (const k of params.keys()) if (!['select', 'order', 'limit', 'offset'].includes(k) && !PUBLIC.includes(k)) return denied;
+    for (const k of params.keys()) if (!['select', 'order', 'limit', 'offset', 'or'].includes(k) && !PUBLIC.includes(k)) return denied;
+    // or=(col.op.value,...), as the entrance's maintenance read uses it; public columns only.
+    let anyOf = null;
+    if (params.has('or')) {
+      const parts = params.get('or').replace(/^\(|\)$/g, '').split(',').map((p) => p.match(/^(\w+)\.(is|gt|lt|eq)\.(.+)$/));
+      if (parts.some((m) => !m || !PUBLIC.includes(m[1]))) return denied;
+      anyOf = (n) => parts.some(([, col, op, v]) => (op === 'is' ? v === 'null' && n[col] == null
+        : op === 'eq' ? String(n[col]) === v
+          : n[col] != null && (op === 'gt' ? Date.parse(n[col]) > Date.parse(v) : Date.parse(n[col]) < Date.parse(v))));
+    }
     const order = params.get('order');
     if (order && !PUBLIC.includes(order.split('.')[0])) return denied;
     let rows = this.news.filter((n) => n.status === 'published' && n.published_at && new Date(n.published_at).getTime() <= Date.now());
     for (const [k, v] of params) if (PUBLIC.includes(k)) rows = rows.filter((n) => String(n[k]) === v.replace(/^eq\./, ''));
+    if (anyOf) rows = rows.filter(anyOf);
     rows.sort((x, y) => new Date(y.published_at) - new Date(x.published_at));
     if (order && order.endsWith('.asc')) rows.reverse();
     const from = Number(params.get('offset')) || 0;
@@ -527,6 +538,17 @@ export async function attach(context, backend, baseUrl) {
   await context.route('**/*', async (route) => {
     const req = route.request();
     const url = new URL(req.url());
+    // The public news pages (landing L-4): the real edge function handler, run here, reading the
+    // fake backend's public news. backend.newsPagesDown makes its reads fail (Supabase down).
+    if (req.url().startsWith(baseUrl) && /^\/news(\/|$)/.test(url.pathname)) {
+      const fakeFetch = async (u) => {
+        if (backend.newsPagesDown) throw new Error('connection refused');
+        const out = backend.rest(null, 'news', new URL(u).searchParams, false);
+        return new Response(JSON.stringify(out?.__status ? out.body : out), { status: out?.__status || 200, headers: { 'content-type': 'application/json' } });
+      };
+      const res = await newsResponse(new Request(req.url(), { method: req.method() }), { fetchImpl: fakeFetch });
+      return route.fulfill({ status: res.status, headers: Object.fromEntries(res.headers), body: await res.text() });
+    }
     if (req.url().startsWith(baseUrl)) return route.continue();
     if (ALLOWED_CDN?.test(req.url())) return cdnFetch(route);
     if (url.host !== SUPA.host) {
@@ -642,8 +664,9 @@ export async function setup() {
   const browser = await chromium.launch();
   return {
     url, browser,
-    async page({ backend = new FakeBackend(), viewport = { width: 390, height: 844 }, mobile = true, reducedMotion = 'no-preference' } = {}) {
-      const context = await browser.newContext({ viewport, isMobile: mobile, hasTouch: mobile, deviceScaleFactor: 1, reducedMotion });
+    // bypassCSP: only so axe can be injected into the news pages, whose policy allows no script.
+    async page({ backend = new FakeBackend(), viewport = { width: 390, height: 844 }, mobile = true, reducedMotion = 'no-preference', bypassCSP = false } = {}) {
+      const context = await browser.newContext({ viewport, isMobile: mobile, hasTouch: mobile, deviceScaleFactor: 1, reducedMotion, bypassCSP });
       await attach(context, backend, url);
       const page = await context.newPage();
       page.errors = [];

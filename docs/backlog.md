@@ -47,14 +47,14 @@ The UI modernization (Phases 1–4) was tested in Chromium only, against a fake 
 
 ## Follow-ups (not blocking)
 
+- **Pagination of `/news`** (from the L-4 review). The public list (`netlify/edge-functions/news.js`, `LIST_LIMIT = 100`) shows the 100 newest published articles. Older ones stay reachable by their address but drop off the list. Add pages (for example `/news?page=2`, or a link to older articles) before there are 100.
+
 - **Audit entries are best effort** (from the L-3 review).
   - The `admin` function's `log()` reports a failed `admin_log` insert to the server console but doesn't fail the action. Any admin change, news included, can therefore succeed without its audit entry if that insert fails.
   - Normal operation writes exactly one entry per change.
   - Guaranteeing the entry (the change and its log in one transaction, for example through a database function) would be a change across every admin action. It needs its own decision.
 
-- **The entrance's startup budget** (landing LAC-2: at most 30 KB decoded before the sign-in form) is at 29.8 KB after L-2.
-  - L-4's news list will need room.
-  - About half of `index.html`, `entry.css` and `entry.js` is comments, which could be trimmed. Otherwise, revisit the budget with the owner.
+- **The entrance's startup budget** (landing LAC-2) was revised to 32,000 decoded bytes in the L-4 review. The first paint is 31,112 bytes after L-4. Comments are not to be stripped to meet it (the owner's direction).
 
 - **Queued battle effects across an account change** (from the L-1 final review).
   - `playEffects()` in `main.js` schedules battle animations with `setTimeout`. The timers aren't tied to the game session (`gameGen`).

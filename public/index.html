@@ -37,6 +37,7 @@
           <button type="submit" class="e-btn" disabled>Sign in</button>
         </form>
         <p class="e-switch"><button type="button" id="authmode" class="e-link" disabled>New here? Create an account</button></p>
+        <p id="maint" class="e-maint" hidden></p>
         <fieldset id="iface" class="e-iface" aria-describedby="iface-note">
           <legend class="e-legend">Interface</legend>
           <div class="e-choices">
@@ -54,6 +55,12 @@
           </div>
         </div>
         <noscript><p class="e-msg e-bad">Signing in needs JavaScript. Turn it on in your browser to enter the realm.</p></noscript>
+      </section>
+
+      <section id="news" class="e-news" aria-labelledby="news-h" hidden>
+        <h2 id="news-h" class="e-h">Latest news</h2>
+        <ul id="news-list" class="e-news-list"></ul>
+        <p class="e-news-all"><a href="/news">All news</a></p>
       </section>
 
       <section class="e-about" aria-labelledby="about-h">
