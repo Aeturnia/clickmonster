@@ -32,7 +32,11 @@ The UI modernization (Phases 1–4), the desktop layout and the landing page wer
 - **Already seen live** by the owner on 2026-11-14: publishing a real maintenance article, and its line showing on the entrance while under way.
 - **The test entries** `testing2` and `this-is-a-test` were removed by the owner on 2026-11-14.
 
-**Netlify:** `/vendor/supabase-js@2.45.4/` is served with its long `immutable` cache header. This is a read-only request that Claude can make.
+**Netlify's `/vendor/*` cache header: done** on 2026-11-14, by Claude, with read-only requests to the live site:
+- **Files:** `supabase.js`, `591.supabase.js` and `LICENSE` under `/vendor/supabase-js@2.45.4/` each return 200 with `Cache-Control: public,max-age=31536000,immutable`, as `netlify.toml` sets.
+- **Contents:** each SHA-256 matches `main` and `public/vendor/README.md`.
+- **Encoding:** the scripts are served as `application/javascript` and Brotli-compressed when accepted.
+- **Observation, no action needed:** a missing file under `/vendor/` also gets the one-year `immutable` header on its 404. A browser could keep that 404 only for an address that doesn't exist yet, and Netlify publishes each deploy atomically, so the entrance can't point at a missing file.
 
 **Optional, about ten minutes, free:**
 - open the site in Firefox and Edge on the laptop (Firefox was never run);
