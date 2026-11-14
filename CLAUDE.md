@@ -9,7 +9,7 @@ Read these first:
 - `README.md`: features, architecture, layout, commands and deploying.
 - `docs/ui-modernization-audit.md`: the Phase 0 audit and the phase plan.
 - `docs/ui-phase-1-report.md` … `docs/ui-phase-4-report.md`: what each phase changed, its acceptance criteria, deviations and the review corrections.
-- `docs/backlog.md`: agreed but unscheduled work (sign-in news, password recovery, follow-ups), and the pre-release verification still owed (real devices, screen readers, live-backend staging, the live site).
+- `docs/backlog.md`: agreed but unscheduled work (sign-in news, password recovery, follow-ups), and the release verification still owed, split into before and after release.
 
 ## Where things stand (2026-11-14)
 
@@ -32,21 +32,29 @@ Read these first:
   - **Final baseline** on `main` at `d754dad`: engine 47/47 and browser 178/178, in each of 3 runs.
   - **The entrance's startup budget** (LAC-2) is 32,000 decoded bytes, revised in the L-4 review. It is 31,112 after L-4. Don't strip comments to meet it.
   - **Still open:**
-    - the backlog's pre-release checks, including publishing and unpublishing on the real site and the live maintenance line;
+    - the backlog's release checks: before release, sign-in on the live site and unpublishing; after release, the live maintenance line and the rest;
     - `/news` pagination (a follow-up);
-    - the test entries `testing2` and `this-is-a-test` in production, for the owner to remove;
+    - maintenance mode (a server-enforced pause of play), bug reports and CI (GitHub Actions), newly in the backlog, not scoped;
     - the rename, which is not approved.
 - **Development moved to the owner's Windows laptop.** `npm run deploy:functions` now runs from any shell (PR #15) and needs `SUPABASE_ACCESS_TOKEN` set in the environment.
 - **Don't start another milestone, or make gameplay or server changes,** until the owner approves it.
-- **Before a release:** the pre-release verification in `docs/backlog.md` is still owed:
-  - real devices and other browsers (including Firefox and Safari on desktop);
-  - screen readers, including keyboard navigation with the shortcuts;
-  - input methods and non-US keyboards;
-  - the owner's actual browser viewport;
-  - live-backend staging, including chat session changes and Realtime;
-  - the interface choice (L-2) on real tablets and phones, with browser zoom, and with screen readers;
-  - the entrance (L-1) on the live site: the vendored supabase-js against the live auth server, edge functions and Realtime; Netlify serving `/vendor/*` with its cache header; a real confirmation email; password managers and autofill; real-phone timing;
-  - public news (L-3, L-4) on the live site: publishing and unpublishing, the maintenance line, real link previews.
+- **Release verification** is in `docs/backlog.md`. The owner split it on 2026-11-14, because there aren't the resources to test every device before release.
+  - **Before release:** a short list on the owner's laptop and own phone:
+    - sign-in on the live site: a real confirmation email, session restore and refresh, the `game` function, Realtime chat;
+    - the same on the phone, with a battle and the map;
+    - one admin action writing one audit entry;
+    - unpublishing a news article live;
+    - the `/vendor/*` cache header;
+    - optionally, Firefox and Edge, a Discord link preview, and the owner's window size.
+  - **After release, as players report problems:**
+    - other devices and browsers;
+    - screen readers;
+    - input methods and non-US keyboards;
+    - real players and staff data;
+    - the maintenance line's changes;
+    - other link previews and locales.
+
+    A separate staging project is dropped.
 
   The test suites run in Chromium against a fake backend only.
 

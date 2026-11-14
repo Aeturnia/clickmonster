@@ -1,6 +1,6 @@
 # Landing page: scope
 
-**Status: complete (2026-11-14).** All four phases are done, and Stages 1 (L-1 and L-2) and 2 (L-3 and L-4) are formally closed. The scope was approved on 2026-11-13. Release readiness is a separate decision, subject to the pre-release checks in `docs/backlog.md`.
+**Status: complete (2026-11-14).** All four phases are done, and Stages 1 (L-1 and L-2) and 2 (L-3 and L-4) are formally closed. The scope was approved on 2026-11-13. Release readiness is a separate decision, subject to the "before release" checks in `docs/backlog.md`, with the rest after release (the owner's split, 2026-11-14).
 - **L-3, publication:**
   - **Code:** approved at `736a524` and merged as PR #29 (`724807b`).
   - **Production:** the migration was applied (with only its own history entry), the `admin` function deployed as version 8, and the public check passed 21 of 21.
