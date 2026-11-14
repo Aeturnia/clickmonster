@@ -211,3 +211,14 @@ The fake backend's public read now understands this `or=` form on public columns
 - **Pagination of `/news`:** the list shows at most 100 articles, and older ones stay reachable by address. This is in `docs/backlog.md` as a follow-up.
 - **Section 9** is consolidated into one post-merge procedure.
 
+### Re-checked on the deploy preview at `cb7cd18`
+
+Netlify rebuilt the preview from the corrected code. Plain reads against the live data:
+- **`POST /news/testing2`** returns 405 with `Allow: GET, HEAD`, `text/html; charset=utf-8`, `no-store` and the no-script policy.
+- **`/news/testing2`** returns 200, and **`/news/this-is-a-test`** returns 404, both `no-store`.
+- **The entrance, in a real browser at 390:**
+  - the news shows;
+  - both public reads return 200 from the live API, including the maintenance read with its `or=(maintenance_ends_at.is.null,maintenance_ends_at.gt.<now>)` filter;
+  - no maintenance line, as none is published;
+  - no console errors.
+
