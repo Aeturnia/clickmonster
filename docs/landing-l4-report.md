@@ -1,6 +1,10 @@
 # Landing page — phase L-4 report: public news
 
-**Status: approved in the final review at `888434d` and merged as PR #32 (`d754dad`, 2026-11-14). The live checks passed (section 9). Awaiting the L-4 completion review.**
+**Status: complete (2026-11-14).**
+- **Code:** approved in the final review at `888434d` and merged as PR #32 (`d754dad`).
+- **Live checks:** passed (section 9).
+- **The record:** accepted in the completion review and merged as PR #33 (`8018bbb`).
+- **Findings:** L4-01, L4-02 and L4-03 are closed. LAC-2's revised target of 32,000 decoded bytes is accepted.
 - **Authorized:** on 2026-11-13, after L-3's production results were approved. On its own branch and PR.
 - **No database, migration or `admin` function change.**
 - **The new piece:** a Netlify Edge Function, which goes live only when Netlify deploys `main` after the merge.
@@ -201,7 +205,7 @@ This confirms what the Node and harness tests could only stand in for: Netlify b
 
 ## 10. Not verified
 
-- **The production deploy itself:** expected to match the preview (section 8), and checked after the merge (section 9).
+- **The production deploy** is no longer open: it was checked after the merge (section 9). Still open live are publishing and unpublishing on the real site, and the maintenance line, as section 9 lists.
 - **Real link previews** (Discord, Slack, iMessage and others) reading the metadata.
 - **Real devices, other browsers and screen readers.** For example, whether a screen reader announces the late-arriving news section; it appears silently, after the form, without moving focus.
 - **Dates on the entrance** use the visitor's own locale and time zone; the article pages use UTC. That was checked only in this browser's en-US locale.
