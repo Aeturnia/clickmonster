@@ -1,6 +1,6 @@
 # Landing page: scope
 
-**Status: scope approved (2026-11-13). Stage 1 (L-1 and L-2) and L-3 are complete. L-4 is not authorized.**
+**Status: scope approved (2026-11-13). Stage 1 (L-1 and L-2) and L-3 are complete. L-4 is merged and checked live, awaiting its completion review.**
 - **L-3, publication:**
   - **Code:** approved at `736a524` and merged as PR #29 (`724807b`).
   - **Production:** the migration was applied (with only its own history entry), the `admin` function deployed as version 8, and the public check passed 21 of 21.
@@ -9,7 +9,7 @@
 - **L-2, the interface picker:** complete, merged as PR #27 (`4c9d049`) after review with no corrections. See `docs/landing-l2-report.md`.
 - **Regression baseline** on `main` at `4c9d049`: engine 29/29 and browser 156/156, in each of 3 runs.
 - **L-3's production results** were reviewed and approved; their record was merged as PR #30 (`eccbcc3`).
-- **L-4:** not authorized. Its prerequisite, the accepted production check for L-3, is now met. L-4 needs the owner's separate authorization.
+- **L-4, public news:** approved in its final review at `888434d` and merged as PR #32 (`d754dad`, 2026-11-14). The read-only live checks passed. See `docs/landing-l4-report.md`, section 9. Awaiting the completion review.
 - **LAC-2's byte target is revised to 32,000 decoded bytes** (L-4 review, 2026-11-13). This is a scoped exception, decided by the reviewer and recorded here rather than counting the original 30 KB as met.
   - **Why:** the news itself loads after the first paint, as the owner directed. Its two hooks (the hidden news markup in `index.html` and the after-paint loader in `entry.js`) bring the first paint to 31,112 bytes as served, against 29,800 after L-2.
   - **Unchanged:** the metric is still decoded bytes, measured as in L-1 and L-2, not compressed size. The other LAC-2 conditions also stand: three requests before the first paint, no game code or supabase-js for an anonymous visitor, and news loaded independently.

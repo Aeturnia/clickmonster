@@ -48,11 +48,12 @@ Read these first:
   - **Function:** `admin` version 8.
   - **Public check:** 21 of 21.
   - **Test entries:** `testing2` (Published) and `this-is-a-test` (Draft) are still in production, for the owner to remove.
-  - **L-4 (public news) is implemented,** in its own PR, awaiting independent review. See `docs/landing-l4-report.md`.
+  - **L-4 (public news) is merged and live,** awaiting its completion review. See `docs/landing-l4-report.md`.
     - It covers the entrance's news and maintenance line (`js/entry-news.js`, loaded after the first paint) and the article pages (`netlify/edge-functions/news.js`).
-    - The edge function goes live when Netlify deploys `main` after the merge; it is checked on the live site then.
+    - **Merged** as PR #32 (`d754dad`, 2026-11-14) after its final review at `888434d`. Netlify deployed the edge function, and the read-only live checks passed (report section 9).
     - **Review of `5953655`:** L4-01 (the maintenance notice expires while the page is open) and L4-02 (405 headers) are corrected. The 32 KB budget is decided.
-    - **Re-review of `8e4b3af`:** those were accepted. L4-03 (an open-ended notice under way comes before an upcoming one) is corrected. Awaiting re-review.
+    - **Re-review of `8e4b3af`:** those were accepted. L4-03 (an open-ended notice under way comes before an upcoming one) was corrected and accepted.
+    - **Still open:** the backlog's pre-release checks and `/news` pagination; publishing and unpublishing on the real site; the test entries, for the owner to remove.
 - **Don't start anything beyond L-4, or make gameplay or server changes,** until the owner approves it.
 - **Before a release:** the pre-release verification in `docs/backlog.md` is still owed:
   - real devices and other browsers (including Firefox and Safari on desktop);
