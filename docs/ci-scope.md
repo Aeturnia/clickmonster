@@ -1,6 +1,12 @@
 # Continuous integration: scope
 
-**Status: every question in section 6 is decided (2026-11-14). The scope review's corrections CI-S01 to CI-S04 are made (section 9). Awaiting re-review. Not authorized for implementation.**
+**Status: scope approved (2026-11-14).** It was approved in the final re-review at `b2df19e` and merged as PR #37 (`6e21a82`). CI-S01 to CI-S04 are closed (section 9). The owner's decisions Q1 to Q7 stand.
+- **CI-A is not authorized.** It needs the owner's separate authorization. Until then: no workflow file, no required checks or branch protection, and no parts 2 or 3.
+- **For the CI-A implementation review** (the reviewer's notes, not blockers):
+  - the concurrency group must not cancel unrelated runs: group by workflow and branch or PR, never one global group;
+  - Linux-specific test fixes must not weaken existing assertions; each is listed in the report with its reason;
+  - a failed database job still stops its local stack (a cleanup step that runs even on failure);
+  - CI-1a stays a separate gate after the merge, and required checks are turned on only once the check names exist and the first runs have passed.
 - **Backlog item:** "Continuous integration (GitHub Actions)" in `docs/backlog.md`.
 - **This scope covers part 1:** the test suites on every PR. Parts 2 and 3 are described in section 7 and left for later.
 - **No workflow file is added by this PR.** A workflow with `pull_request` or `push` triggers runs, and spends Actions minutes, as soon as it's pushed. It arrives only in the implementation PR, once authorized.

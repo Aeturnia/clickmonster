@@ -34,7 +34,10 @@ Read these first:
   - **Still open:**
     - the backlog's release checks: before release, sign-in on the live site and unpublishing; after release, the live maintenance line and the rest;
     - `/news` pagination (a follow-up);
-    - maintenance mode (a server-enforced pause of play), bug reports and CI (GitHub Actions), newly in the backlog, not scoped;
+    - maintenance mode (a server-enforced pause of play) and bug reports, newly in the backlog, not scoped;
+- **CI (GitHub Actions): scope approved** (2026-11-14), `docs/ci-scope.md`, merged as PR #37 (`6e21a82`).
+  - **What it is:** one workflow, three jobs (engine, browser in Chromium, database on the local stack), on each PR's merge commit, with no secrets and no production traffic.
+  - **Not authorized:** CI-A, its implementation. Add no `.github/workflows/` file, and don't set required checks, until the owner authorizes it.
     - the rename, which is not approved.
 - **Development moved to the owner's Windows laptop.** `npm run deploy:functions` now runs from any shell (PR #15) and needs `SUPABASE_ACCESS_TOKEN` set in the environment.
 - **Don't start another milestone, or make gameplay or server changes,** until the owner approves it.
