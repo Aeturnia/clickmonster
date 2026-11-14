@@ -99,7 +99,7 @@ tools/sim.mjs        ← balance simulator
 
 ## Development
 
-No build step and no runtime dependencies. Requires Node 18+ for tests. The UI tests need the dev
+No build step and no runtime dependencies. Requires Node 22 for tests (`engines` in `package.json`, and what CI uses). The UI tests need the dev
 dependencies (`npm install`) and a Playwright Chromium (`npx playwright install chromium`). They never
 contact the live Supabase project: every request is answered by a fake backend in
 `tests/ui/harness.mjs` built on the real game engine, and any unexpected request fails the test.
@@ -115,6 +115,12 @@ node tools/ui-states.mjs out 320,390   # interaction states: pending, refused ta
 npm run deploy:functions   # deploy the game and admin servers (needs SUPABASE_ACCESS_TOKEN)
 npx serve public   # or any static server, then open http://localhost:3000
 ```
+
+**CI:** GitHub Actions (`.github/workflows/ci.yml`, scoped in `docs/ci-scope.md`) runs the three
+suites as separate checks, `engine`, `browser` and `database`, on every PR into `main`, on each push to
+`main`, and by hand. A PR run tests GitHub's merge of the PR into `main`; each job's summary records
+the PR head and the tested commit. When a check fails, its log is on the PR's Checks tab, and the
+failed suite's output is kept as an artifact for 7 days.
 
 Zones live in the database (`zones` table) and are edited in the admin console. The built-in zones in
 `public/js/data/zones.js` seed it (`node tools/seed-zones.mjs`) and are the fallback if it can't be

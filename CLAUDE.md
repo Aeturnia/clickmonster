@@ -156,11 +156,24 @@ Read these first:
 ## Testing
 
 ```
-npm test                 # engine, entrance file checks, news rules and the news page handler (47)
+npm test                 # engine, entrance file checks, the startup budget, news rules and the news page handler (48)
 npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (178)
 npm run test:db          # database (pgTAP, 42) and API/function tests (9) on the LOCAL Supabase stack
 npx playwright install chromium   # once
 ```
+
+**CI** (GitHub Actions, `.github/workflows/ci.yml`; scope `docs/ci-scope.md`):
+- **Three checks,** each on its own runner, in parallel: `engine` (`npm test`), `browser` (`npm run test:ui`, Chromium) and `database` (`npm run test:db` on the local stack, which the job starts and always stops).
+- **When it runs:**
+  - on a PR into `main`, testing GitHub's merge commit (the PR merged into `main`);
+  - on each push to `main`;
+  - by hand (Actions, CI, Run workflow).
+- **Each job's summary** records the PR head SHA and the tested SHA. Cite both in reports.
+- **No secrets, no production traffic,** and `contents: read` only. Actions are pinned by commit SHA, with the version in a comment.
+- **Concurrency:** a newer push to a PR cancels that PR's older run. Runs on `main` are never cancelled.
+- **Reading a failure:** the job's log on the PR's Checks tab. The failed suite's output is kept as an artifact for 7 days.
+- **Cost:** GitHub Pro's $18 a month of shared compute, at $0.006 a minute per job, rounded up per job. Batch fixes into one push.
+- **The startup budget** is now a test (`tests/entrance-budget.test.mjs`): the document plus every stylesheet and script `index.html` loads, counted as LF, at most 32,000 bytes.
 
 **The local Supabase stack** (landing L-3) runs in Docker Desktop. The pinned CLI is a dev dependency.
 - **Start it:**
