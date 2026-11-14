@@ -22,7 +22,8 @@ function track(page, base) {
   });
   return log;
 }
-const gameModules = (log) => log.filter((p) => p.startsWith('/js/') && p !== '/js/entry.js' && p !== '/js/net.js' && p !== '/js/config.js');
+// The entrance's own modules (entry, the client, the config and, since L-4, its news) are not game code.
+const gameModules = (log) => log.filter((p) => p.startsWith('/js/') && !['/js/entry.js', '/js/net.js', '/js/config.js', '/js/entry-news.js'].includes(p));
 const library = (log) => log.filter((p) => p.startsWith('/vendor/'));
 
 // Counts clients and auth listeners: wraps the library's createClient as the vendored script
@@ -89,7 +90,12 @@ test('LAC-2 / LAC-5a an anonymous visitor downloads no game code; the form start
   await page.waitForSelector('#authform', { state: 'visible' });
   assert.equal(await page.evaluate(() => document.activeElement === document.body), true, 'no autofocus');
   await page.waitForTimeout(10000); // a visitor reading the entrance
-  assert.deepEqual(log.filter((p) => !p.startsWith('/icon') && !p.startsWith('/manifest') && !p.startsWith('/favicon')), ['/', '/css/entry.css', '/js/entry.js'], 'document, entrance styles and script only');
+  // Since landing L-4 the entrance also loads its news, after the first paint and on its own:
+  // the news module, the public config and two public reads (tests/ui/news-public.test.mjs).
+  const NEWS_AFTER_PAINT = ['/js/entry-news.js', '/js/config.js', `${SUPA_HOST}/rest/v1/news`];
+  const visited = log.filter((p) => !p.startsWith('/icon') && !p.startsWith('/manifest') && !p.startsWith('/favicon'));
+  assert.deepEqual(visited.slice(0, 3), ['/', '/css/entry.css', '/js/entry.js'], 'document, entrance styles and script first');
+  assert.deepEqual(visited.slice(3).filter((p) => !NEWS_AFTER_PAINT.includes(p)), [], 'then only the news');
   assert.deepEqual(gameModules(log), [], 'no game module');
   assert.deepEqual(library(log), [], 'no supabase-js');
   await page.focus('#email'); // the visitor starts to sign in

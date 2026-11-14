@@ -22,6 +22,7 @@ import { generateQuests, accept, hourBucket } from '../../public/js/engine/quest
 import { canSend } from '../../public/js/engine/chat.js';
 import { duel } from '../../public/js/engine/pvp.js';
 import { checkNews, canDeleteNews } from '../../public/js/data/news.js';
+import { newsResponse } from '../../netlify/edge-functions/news.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const PUBLIC = path.resolve(ROOT, process.env.UI_PUBLIC_DIR || 'public');
@@ -527,6 +528,17 @@ export async function attach(context, backend, baseUrl) {
   await context.route('**/*', async (route) => {
     const req = route.request();
     const url = new URL(req.url());
+    // The public news pages (landing L-4): the real edge function handler, run here, reading the
+    // fake backend's public news. backend.newsPagesDown makes its reads fail (Supabase down).
+    if (req.url().startsWith(baseUrl) && /^\/news(\/|$)/.test(url.pathname)) {
+      const fakeFetch = async (u) => {
+        if (backend.newsPagesDown) throw new Error('connection refused');
+        const out = backend.rest(null, 'news', new URL(u).searchParams, false);
+        return new Response(JSON.stringify(out?.__status ? out.body : out), { status: out?.__status || 200, headers: { 'content-type': 'application/json' } });
+      };
+      const res = await newsResponse(new Request(req.url(), { method: req.method() }), { fetchImpl: fakeFetch });
+      return route.fulfill({ status: res.status, headers: Object.fromEntries(res.headers), body: await res.text() });
+    }
     if (req.url().startsWith(baseUrl)) return route.continue();
     if (ALLOWED_CDN?.test(req.url())) return cdnFetch(route);
     if (url.host !== SUPA.host) {
@@ -642,8 +654,9 @@ export async function setup() {
   const browser = await chromium.launch();
   return {
     url, browser,
-    async page({ backend = new FakeBackend(), viewport = { width: 390, height: 844 }, mobile = true, reducedMotion = 'no-preference' } = {}) {
-      const context = await browser.newContext({ viewport, isMobile: mobile, hasTouch: mobile, deviceScaleFactor: 1, reducedMotion });
+    // bypassCSP: only so axe can be injected into the news pages, whose policy allows no script.
+    async page({ backend = new FakeBackend(), viewport = { width: 390, height: 844 }, mobile = true, reducedMotion = 'no-preference', bypassCSP = false } = {}) {
+      const context = await browser.newContext({ viewport, isMobile: mobile, hasTouch: mobile, deviceScaleFactor: 1, reducedMotion, bypassCSP });
       await attach(context, backend, url);
       const page = await context.newPage();
       page.errors = [];

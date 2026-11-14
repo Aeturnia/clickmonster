@@ -1,0 +1,26 @@
+/* Public news pages (landing L-4), served by netlify/edge-functions/news.js. They load entry.css
+   (the colour tokens, base type and the realm backdrop) and this file; no script, no game code. */
+.n-page { max-width: 46rem; margin: 0 auto; padding: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) 3rem max(1rem, env(safe-area-inset-left)); }
+.n-top { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: .5rem 1.5rem; padding: .5rem 0 1rem; border-bottom: 1px solid var(--line); }
+.n-brand { font-family: Georgia, "Times New Roman", serif; font-weight: 600; font-size: 1.5rem; color: var(--gold-soft); text-decoration: none; }
+.n-nav { display: flex; flex-wrap: wrap; gap: .25rem 1.25rem; }
+.n-nav a, .n-links a { color: var(--gold); font-weight: 600; text-decoration: none; display: inline-block; padding: 10px 0; }
+.n-nav a:hover, .n-links a:hover, .n-item h2 a:hover { text-decoration: underline; }
+.n-page a:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 2px; }
+.n-main { padding-top: 1.75rem; }
+.n-main h1 { margin: 0 0 .5rem; font-family: Georgia, "Times New Roman", serif; font-weight: 600; font-size: clamp(1.75rem, 1.3rem + 2vw, 2.5rem); line-height: 1.15; color: var(--gold-soft); }
+.n-kind { margin: 0 0 .35rem; font-size: .75rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.n-dates { margin: 0 0 1rem; color: var(--muted); font-size: .9375rem; }
+.n-summary { margin: 0 0 1.25rem; font-size: 1.125rem; color: var(--text); }
+.n-window { margin: 0 0 1.25rem; padding: .6rem .8rem; border-left: 3px solid var(--gold); background: rgba(0, 0, 0, .2); border-radius: 4px; }
+.n-body { border-top: 1px solid var(--line); padding-top: 1.25rem; font-size: 1.0625rem; line-height: 1.6; }
+.n-body p { margin: 0 0 1rem; }
+.n-body ul { margin: 0 0 1rem; padding-left: 1.4rem; }
+.n-body li { margin-bottom: .4rem; }
+.n-list { list-style: none; margin: 0; padding: 0; }
+.n-item { padding: 1.1rem 0; border-bottom: 1px solid var(--line); }
+.n-item h2 { margin: 0 0 .35rem; font-family: Georgia, "Times New Roman", serif; font-size: 1.375rem; line-height: 1.2; }
+.n-item h2 a { color: var(--text); text-decoration: none; }
+.n-item p:last-child { margin: 0; color: var(--muted); }
+.n-empty, .n-message p { color: var(--muted); }
+.n-links { display: flex; flex-wrap: wrap; gap: .25rem 1.5rem; }

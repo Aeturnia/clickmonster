@@ -14,6 +14,11 @@
 //                      since landing L-1, main.js before), counted from the files; each level is
 //                      one more round trip before the module can run
 //   gameDepth          the same from main.js
+//   visitor.beforePaint the resources the browser started before its first contentful paint (its
+//                      own Resource Timing), with their decoded size: what the first paint waited
+//                      on, unlike the counts above, which include anything finished up to 300 ms
+//                      after the form appeared (since landing L-4, that can include the news,
+//                      which is loaded after the first paint, on purpose)
 //   visitor.idle10s    a visitor who reads the entrance for 10 s without touching it: what had
 //                      been requested by then (landing LAC-5a)
 //   visitor.afterFocus the same visitor, 1.5 s after focusing the email field
@@ -105,6 +110,17 @@ const result = { entryModule, staticDepth: depth(path.join(PUBLIC, entryModule))
   await page.waitForTimeout(300); // let finished requests report their sizes
   result.visitor = sum(log);
   result.visitor.loadedBeforeForm = [...new Set(log.filter((r) => r.kind !== 'document').map((r) => r.kind))];
+  result.visitor.beforePaint = await page.evaluate(() => {
+    const paint = performance.getEntriesByName('first-contentful-paint')[0]?.startTime ?? null;
+    const nav = performance.getEntriesByType('navigation')[0];
+    const res = performance.getEntriesByType('resource').filter((r) => paint != null && r.startTime < paint);
+    return {
+      firstContentfulPaintMs: paint == null ? null : Math.round(paint),
+      requests: 1 + res.length,
+      decodedBytes: (nav?.decodedBodySize || 0) + res.reduce((n, r) => n + (r.decodedBodySize || 0), 0),
+      resources: res.map((r) => new URL(r.name).pathname),
+    };
+  });
   await page.waitForTimeout(10000 - 300);
   result.visitor.idle10s = sum(log);
   await page.focus('#email');

@@ -334,6 +334,24 @@ $('gate-signout').addEventListener('click', async () => {
 });
 
 // ---------------------------------------------------------------- start
+// Public news (L-4): its own module, loaded after the entrance has rendered. Nothing waits for it,
+// and a failure shows nothing (js/entry-news.js).
+function loadNews() { import('./entry-news.js').then((m) => m.showNews()).catch(() => { /* no news shown */ }); }
+// After the page has loaded and the browser reports its first paint (a fast load can finish before
+// it). A tab opened in the background never paints, so it waits at most 1.5 s.
+function afterPaint() {
+  let started = false;
+  const go = () => { if (!started) { started = true; setTimeout(loadNews, 0); } };
+  try {
+    if (performance.getEntriesByName('first-contentful-paint').length) { go(); return; }
+    const watch = new PerformanceObserver(() => { watch.disconnect(); go(); });
+    watch.observe({ type: 'paint', buffered: true });
+  } catch { /* no paint timing: the fallback below */ }
+  setTimeout(go, 1500);
+}
+if (document.readyState === 'complete') afterPaint();
+else addEventListener('load', afterPaint, { once: true });
+
 syncChoice();
 submit.disabled = false;
 modeBtn.disabled = false;

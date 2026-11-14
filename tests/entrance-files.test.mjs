@@ -29,7 +29,7 @@ test('the vendored build loads only its own chunk, from beside itself', () => {
 });
 
 test('the entry path names no third-party host', () => {
-  for (const f of ['public/index.html', 'public/admin.html', 'public/js/entry.js', 'public/js/net.js', 'public/js/main.js', 'public/js/admin.js', 'public/css/entry.css']) {
+  for (const f of ['public/index.html', 'public/admin.html', 'public/js/entry.js', 'public/js/entry-news.js', 'public/js/net.js', 'public/js/main.js', 'public/js/admin.js', 'public/css/entry.css', 'public/css/entry-news.css', 'public/css/news.css']) {
     const hosts = [...text(f).matchAll(/https?:\/\/([a-z0-9.-]+)/gi)].map((m) => m[1]).filter((h) => !/supabase\.co$/.test(h) && h !== 'www.w3.org');
     assert.deepEqual(hosts, [], f);
   }

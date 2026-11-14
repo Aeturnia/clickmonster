@@ -48,8 +48,11 @@ Read these first:
   - **Function:** `admin` version 8.
   - **Public check:** 21 of 21.
   - **Test entries:** `testing2` (Published) and `this-is-a-test` (Draft) are still in production, for the owner to remove.
-  - **L-4 is not authorized.** Its prerequisite, the accepted production check, is met.
-- **Don't start L-4, or anything else, or make gameplay or server changes,** until the owner approves it.
+  - **L-4 (public news) is implemented,** in its own PR, awaiting independent review. See `docs/landing-l4-report.md`.
+    - It covers the entrance's news and maintenance line (`js/entry-news.js`, loaded after the first paint) and the article pages (`netlify/edge-functions/news.js`).
+    - The edge function goes live when Netlify deploys `main` after the merge; it is checked on the live site then.
+    - **The entrance's first paint is 31.1 KB, over the 30 KB target.** The owner decides the budget.
+- **Don't start anything beyond L-4, or make gameplay or server changes,** until the owner approves it.
 - **Before a release:** the pre-release verification in `docs/backlog.md` is still owed:
   - real devices and other browsers (including Firefox and Safari on desktop);
   - screen readers, including keyboard navigation with the shortcuts;
@@ -133,7 +136,12 @@ Read these first:
   - **Production checks:** `supabase/checks/news_precheck.sql` before applying, and `news_verify.sql` after. Both are read-only.
   - **The deploy procedure,** including how the migration history is read and reconciled, is in `docs/landing-l3-report.md`, section 4. Every step needs the owner's authorization.
   - **`tools/news-public-check.mjs`** requires `--published` and `--hidden`.
-- **Edge functions import shared code only from `js/engine/` and `js/data/`,** because `tools/deploy-functions.mjs` uploads only those; `tests/news.test.mjs` checks this.
+- **Public news pages** are the Netlify Edge Function `netlify/edge-functions/news.js`, for `/news` and `/news/<slug>`.
+  - **Data:** published rows only, read through the public REST API with the publishable key.
+  - **Pages:** no script, a strict policy, `no-store`, and the canonical address from `public/js/site.js` (`SITE_ORIGIN`, which also holds `SITE_NAME`).
+  - **Tests:** the handler is tested in Node (`tests/news-pages.test.mjs`), and the harness serves `/news` through it.
+  - **The entrance's news** (`js/entry-news.js`) loads only after the first contentful paint, and failures show nothing.
+- **Supabase edge functions import shared code only from `js/engine/` and `js/data/`,** because `tools/deploy-functions.mjs` uploads only those; `tests/news.test.mjs` checks this.
 - **Admin requests are single-flight** (Phase 4 review, P4-01 to P4-04). `st.pendingForms` holds one key per request in flight:
   - a form id;
   - `action:target` for button actions (`actionKey()`, drawn by `markPending()` after every render, run through `pendingWhile()`);
@@ -154,8 +162,8 @@ Read these first:
 ## Testing
 
 ```
-npm test                 # engine, entrance file checks and news rules (39)
-npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (166)
+npm test                 # engine, entrance file checks, news rules and the news page handler (47)
+npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (174)
 npm run test:db          # database (pgTAP, 42) and API/function tests (8) on the LOCAL Supabase stack
 npx playwright install chromium   # once
 ```

@@ -1,0 +1,175 @@
+{
+  "entryModule": "js/entry.js",
+  "staticDepth": 1,
+  "gameDepth": 7,
+  "visitor": {
+    "requests": 7,
+    "bytes": 35524,
+    "byType": {
+      "document": {
+        "requests": 1,
+        "bytes": 5510
+      },
+      "css": {
+        "requests": 1,
+        "bytes": 10667
+      },
+      "ownJs": {
+        "requests": 3,
+        "bytes": 19343
+      },
+      "api": {
+        "requests": 2,
+        "bytes": 4
+      }
+    },
+    "modules": 3,
+    "gameModules": 1,
+    "library": false,
+    "loadedBeforeForm": [
+      "css",
+      "ownJs",
+      "api"
+    ],
+    "beforePaint": {
+      "firstContentfulPaintMs": 108,
+      "requests": 3,
+      "decodedBytes": 31314,
+      "resources": [
+        "/css/entry.css",
+        "/js/entry.js"
+      ]
+    },
+    "idle10s": {
+      "requests": 7,
+      "bytes": 35524,
+      "byType": {
+        "document": {
+          "requests": 1,
+          "bytes": 5510
+        },
+        "css": {
+          "requests": 1,
+          "bytes": 10667
+        },
+        "ownJs": {
+          "requests": 3,
+          "bytes": 19343
+        },
+        "api": {
+          "requests": 2,
+          "bytes": 4
+        }
+      },
+      "modules": 3,
+      "gameModules": 1,
+      "library": false
+    },
+    "afterFocus": {
+      "requests": 9,
+      "bytes": 150541,
+      "byType": {
+        "document": {
+          "requests": 2,
+          "bytes": 116307
+        },
+        "css": {
+          "requests": 1,
+          "bytes": 10667
+        },
+        "ownJs": {
+          "requests": 4,
+          "bytes": 23563
+        },
+        "api": {
+          "requests": 2,
+          "bytes": 4
+        }
+      },
+      "modules": 4,
+      "gameModules": 1,
+      "library": true
+    }
+  },
+  "returning": {
+    "requests": 46,
+    "bytes": 442611,
+    "byType": {
+      "document": {
+        "requests": 2,
+        "bytes": 116307
+      },
+      "css": {
+        "requests": 2,
+        "bytes": 74673
+      },
+      "ownJs": {
+        "requests": 28,
+        "bytes": 238708
+      },
+      "api": {
+        "requests": 14,
+        "bytes": 12923
+      }
+    },
+    "modules": 28,
+    "gameModules": 25,
+    "library": true
+  },
+  "formBlockedBy": {
+    "libraryDown": {
+      "formAppeared": true,
+      "screenText": "A PERSISTENT FANTASY WORLD ClickMonster Exploration, combat and adventure, in a world every player shares. Enter the rea"
+    },
+    "zonesDown": {
+      "formAppeared": true,
+      "screenText": "A PERSISTENT FANTASY WORLD ClickMonster Exploration, combat and adventure, in a world every player shares. Enter the rea"
+    }
+  },
+  "throttled": {
+    "msToForm": 735,
+    "runs": [
+      692,
+      735,
+      744
+    ]
+  },
+  "shots": [
+    {
+      "size": "320x640",
+      "formTop": 241,
+      "formBottomInView": true,
+      "violations": []
+    },
+    {
+      "size": "390x844",
+      "formTop": 242,
+      "formBottomInView": true,
+      "violations": []
+    },
+    {
+      "size": "844x390",
+      "formTop": 94,
+      "formBottomInView": true,
+      "violations": []
+    },
+    {
+      "size": "1024x768",
+      "formTop": 123,
+      "formBottomInView": true,
+      "violations": []
+    },
+    {
+      "size": "1440x900",
+      "formTop": 134,
+      "formBottomInView": true,
+      "violations": []
+    },
+    {
+      "size": "1920x1080",
+      "formTop": 148,
+      "formBottomInView": true,
+      "violations": []
+    }
+  ]
+}
