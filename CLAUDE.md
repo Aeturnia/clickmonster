@@ -42,12 +42,13 @@ Read these first:
     - one Supabase client owned by `net.js`;
     - the local RLS tests and production gate in L-3.
 - **Development moved to the owner's Windows laptop.** `npm run deploy:functions` now runs from any shell (PR #15) and needs `SUPABASE_ACCESS_TOKEN` set in the environment.
-- **Landing L-3 (publication) is in production,** and its production results await review. See `docs/landing-l3-report.md`, section 12.
+- **Landing L-3 (publication) is complete and in production.** Its production results were approved, and their record merged as PR #30 (`eccbcc3`). See `docs/landing-l3-report.md`, section 12.
   - **Code:** approved at `736a524`, merged as PR #29 (`724807b`).
   - **Database:** the news migration was applied by hand, because production has no history for the earlier migrations. Only `20261115090000` is recorded in the history; the six earlier versions are deliberately unrecorded.
   - **Function:** `admin` version 8.
   - **Public check:** 21 of 21.
-  - **L-4 waits for the review.**
+  - **Test entries:** `testing2` (Published) and `this-is-a-test` (Draft) are still in production, for the owner to remove.
+  - **L-4 is not authorized.** Its prerequisite, the accepted production check, is met.
 - **Don't start L-4, or anything else, or make gameplay or server changes,** until the owner approves it.
 - **Before a release:** the pre-release verification in `docs/backlog.md` is still owed:
   - real devices and other browsers (including Firefox and Safari on desktop);
