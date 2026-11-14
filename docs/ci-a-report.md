@@ -1,6 +1,6 @@
 # CI-A report: GitHub Actions for the test suites
 
-**Status: implemented. Awaiting independent review. PR #39 is not merged.**
+**Status: implemented. Awaiting independent review. PR #39 is not merged.** At the final head, the browser job failed intermittently on Windows, with a different test on each attempt (section 4a). This is reported, not fixed.
 - **Authorized:** by the owner on 2026-11-14, after the scope (`docs/ci-scope.md`) was approved and merged as PR #37 (`6e21a82`).
 - **Scope exception:** after the first run, the owner authorized one exception. Only the browser job runs on Windows (scope, section 10).
 - **No game, server, database or deploy change.** No branch protection or required checks are set. Parts 2 and 3 are not started.
@@ -66,7 +66,27 @@ All on PR #39. "Tested" is GitHub's temporary merge commit of the PR head into `
 | [`43640654600`](https://github.com/Aeturnia/clickmonster/actions/runs/43640654600) | `03205bd` | `affcd9f` | **CI-3:** a planted failure in each suite | fail: only `CI-3 planted failure`; 48 passed | fail: only `CI-3 planted failure`; 178 passed | fail: only `CI-3 planted failure`; 9 passed, pgTAP passed |
 | [`43641540153`](https://github.com/Aeturnia/clickmonster/actions/runs/43641540153) | `2ae7e24` | `404d675` | **CI-4:** `index.html` padded | fail: only the LAC-2 test, "the first paint is 32038 bytes, over the 32000-byte budget"; 47 passed | pass 178/178 | pass, 42 + 9 |
 
-**The final head's run** is linked in the PR comment. That head adds only this report to the reverted code. The code is byte-identical to `c3d46b8`, the green baseline: `git diff c3d46b8` on the code is empty.
+| [`43645573860`](https://github.com/Aeturnia/clickmonster/actions/runs/43645573860), attempt 1 | `7c8c5d5` | `a60ef9e` | This report added; **code identical to `c3d46b8`** | pass 48/48 | **fail, 177/178** (section 4a) | pass, 42 + 9 |
+| `43645573860`, attempt 2 (the browser job only, re-run once) | `7c8c5d5` | `a60ef9e` | The same commit | (not re-run) | **fail, 177/178, a different test** | (not re-run) |
+
+`7c8c5d5` adds only this report to the reverted code. The code is byte-identical to `c3d46b8`: `git diff c3d46b8` on the code is empty.
+
+### 4a. Intermittent browser failures on Windows (run `43645573860`)
+
+At the same code that passed 178/178 in `43639927061`, the browser job failed one test on each attempt, a different test each time:
+
+| Attempt | Test (file:line) | Error |
+|---|---|---|
+| 1 | "the audit log shows news changes readably" (`tests/ui/admin-news.test.mjs:242`) | `page.waitForSelector: Timeout 30000ms exceeded`, waiting for `#login` (the admin sign-in form), in `signIn` (`harness.mjs:687`), before the test's own steps |
+| 2 | "LAC-12 Automatic, chosen or unset or unreadable, gives the same layouts as before" (`tests/ui/layout-choice.test.mjs:193`) | `page.waitForSelector: Timeout 15000ms exceeded`, waiting for `#top .hud-row` (the game's top bar), in `play()` (`layout-choice.test.mjs:27`) |
+
+**What they have in common:** a page that didn't render its first element within the timeout. No assertion about the game's behaviour or layout failed, and every other test in each attempt passed.
+
+**Not established:** the cause. It may be the shared Windows runner stalling, for example on CPU contention or antivirus scanning. It may also be a real intermittent problem in a page load or the fake backend that only shows under a slower machine. No trace or screenshot was captured: the harness saves none on a timeout, and the uploaded artifact holds only the test output.
+
+**What it means for CI-2:** the browser check is **not yet reliable** on Windows. It passed 178/178 in 3 of 5 attempts with real code (`43639927061`, and the browser job of the CI-3 and CI-4 runs, where only the planted test failed or nothing failed), and failed one test in 2.
+
+**Not done, because it changes test behaviour and needs the owner's decision:** retries, longer timeouts, or capturing a Playwright trace on failure. Locally the suite passed 178/178 in each of 3 runs at this code (section 7).
 
 ### Acceptance criteria
 
@@ -74,7 +94,7 @@ All on PR #39. "Tested" is GitHub's temporary merge commit of the PR head into `
 |---|---|
 | CI-1 | **Met.** The PR runs show three separate checks, and each summary records the event, the PR head SHA and the tested SHA. The checkout logs confirm the merge commit, for example "HEAD is now at daa6cef Merge c3d46b8… into 6e21a82…" |
 | CI-1a | **Not yet possible.** A push to `main` and a manual run can only happen after the merge. To be recorded in a short docs PR then (scope, section 8) |
-| CI-2 | **Met, as revised:** engine 48 on Ubuntu, browser 178 on Windows in Chromium, database 42 + 9 on Ubuntu. The browser result is a **Windows Chromium baseline, not Linux browser compatibility** |
+| CI-2 | **Partly met.** Engine 48 on Ubuntu and database 42 + 9 on Ubuntu pass every time. Browser 178/178 on Windows in Chromium **passed at `c3d46b8`, but failed intermittently at the same code in `43645573860`** (section 4a). The browser result is a **Windows Chromium baseline, not Linux browser compatibility** |
 | CI-3 | **Met.** Each of the three checks failed on its planted test alone, with every real test passing. The revert came only after all three jobs had finished. Artifacts were kept for all three (engine 2,816 bytes, browser 9,189, database 1,723). After the failure, the database job's stop step ran: "Stopped supabase local development setup." |
 | CI-4 | **Met.** Padded `index.html` counts 32,038 both on Ubuntu (the CI log) and on the Windows CRLF checkout (locally), and fails there. Only the engine check failed, and only on the LAC-2 test. Unpadded, both count 31,112 |
 | CI-5 | **Met.** `contents: read`, no secrets or production credentials, and no production host in the workflow. The tests' own boundaries were unchanged and ran: the UI harness fails any request off its fake backend, and the database tests refuse anything not on 127.0.0.1. Runner setup traffic (checkout, actions, `npm ci`, the Playwright browser, Docker images, caches, artifacts) is the allowed kind |
@@ -106,7 +126,9 @@ Billed per job, rounded up to a whole minute, at the documented rates: $0.006 a 
 | `43639927061` (baseline) | 13 s → 1 | 437 s → 8 (Windows) | 120 s → 2 | 3 Ubuntu + 8 Windows | $0.098 |
 | `43640654600` (CI-3) | 12 s → 1 | 516 s → 9 (Windows) | 132 s → 3 | 4 Ubuntu + 9 Windows | $0.114 |
 | `43641540153` (CI-4) | 14 s → 1 | 503 s → 9 (Windows) | 130 s → 3 | 4 Ubuntu + 9 Windows | $0.114 |
-| **Total so far** | | | | | **$0.392** |
+| `43645573860` attempt 1 (final head) | 20 s → 1 | 481 s → 9 (Windows) | 107 s → 2 | 3 Ubuntu + 9 Windows | $0.108 |
+| `43645573860` attempt 2 (browser only) | | 463 s → 8 (Windows) | | 8 Windows | $0.080 |
+| **Total so far** | | | | | **$0.580** |
 
 **A normal passing run is about $0.10:** the browser job takes 7 to 9 minutes on Windows, and is about 80 to 90% of the cost. On Pro's $18 a month of shared compute, that is roughly 180 runs if nothing else uses it.
 
@@ -126,6 +148,7 @@ The local runs and CI agree on every count.
 ## 8. Not verified, and limits
 
 - **CI-1a:** the `push` and `workflow_dispatch` runs, after the merge.
+- **The browser check's reliability** on Windows (section 4a): not settled, and required checks shouldn't be turned on until it is.
 - **Required checks** are not set (Q2). They're for the owner to turn on after CI-1a, once the check names `engine`, `browser` and `database` have passed on `main`.
 - **Linux browser compatibility:** the browser job runs only on Windows, so a Linux-only layout regression won't be caught (section 5).
 - **Billed cost:** computed from durations, not read from the account (section 6).
