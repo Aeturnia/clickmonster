@@ -1,0 +1,113 @@
+{
+  "target": "janiqspmhkbsyemkknpv.supabase.co",
+  "at": "2026-11-14T01:52:07.001Z",
+  "probe": "rls-check-1794621125007",
+  "published": "testing2",
+  "hidden": "this-is-a-test",
+  "prerequisite": "Confirmed in the admin console beforehand: \"testing2\" is Published, and \"this-is-a-test\" exists and is Draft or Unpublished.",
+  "passed": 21,
+  "failed": 0,
+  "leaks": [],
+  "results": [
+    {
+      "check": "a published article can be read",
+      "pass": true,
+      "detail": "HTTP 200"
+    },
+    {
+      "check": "only the article columns come back",
+      "pass": true
+    },
+    {
+      "check": "the public list loads",
+      "pass": true,
+      "detail": "1 published"
+    },
+    {
+      "check": "every listed article has a publication time in the past",
+      "pass": true
+    },
+    {
+      "check": "the hidden entry \"this-is-a-test\" is not visible",
+      "pass": true,
+      "detail": "HTTP 200"
+    },
+    {
+      "check": "select * is refused",
+      "pass": true,
+      "detail": "HTTP 401, 42501"
+    },
+    {
+      "check": "the default select is refused",
+      "pass": true,
+      "detail": "HTTP 401, 42501"
+    },
+    {
+      "check": "status is not readable",
+      "pass": true,
+      "detail": "HTTP 401, 42501"
+    },
+    {
+      "check": "created_by is not readable",
+      "pass": true,
+      "detail": "HTTP 401, 42501"
+    },
+    {
+      "check": "updated_by is not readable",
+      "pass": true,
+      "detail": "HTTP 401, 42501"
+    },
+    {
+      "check": "created_at is not readable",
+      "pass": true,
+      "detail": "HTTP 401, 42501"
+    },
+    {
+      "check": "updated_at is not readable",
+      "pass": true,
+      "detail": "HTTP 401, 42501"
+    },
+    {
+      "check": "filtering on status is refused",
+      "pass": true,
+      "detail": "HTTP 401, 42501"
+    },
+    {
+      "check": "ordering on updated_at is refused",
+      "pass": true,
+      "detail": "HTTP 401, 42501"
+    },
+    {
+      "check": "insert is refused",
+      "pass": true,
+      "detail": "HTTP 401"
+    },
+    {
+      "check": "upsert is refused",
+      "pass": true,
+      "detail": "HTTP 401"
+    },
+    {
+      "check": "update is refused",
+      "pass": true,
+      "detail": "HTTP 401"
+    },
+    {
+      "check": "delete is refused",
+      "pass": true,
+      "detail": "HTTP 401"
+    },
+    {
+      "check": "the published article still exists",
+      "pass": true
+    },
+    {
+      "check": "the published article is unchanged",
+      "pass": true
+    },
+    {
+      "check": "no row \"rls-check-1794621125007\" was created",
+      "pass": true
+    }
+  ]
+}

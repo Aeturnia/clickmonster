@@ -42,10 +42,12 @@ Read these first:
     - one Supabase client owned by `net.js`;
     - the local RLS tests and production gate in L-3.
 - **Development moved to the owner's Windows laptop.** `npm run deploy:functions` now runs from any shell (PR #15) and needs `SUPABASE_ACCESS_TOKEN` set in the environment.
-- **Landing L-3 (publication) is implemented and tested on the local Supabase stack,** in its own PR, awaiting independent review. See `docs/landing-l3-report.md`.
-  - **Nothing is in production yet.** Applying the news migration and deploying the `admin` function each need the owner's explicit authorization, separate from approving the PR.
-  - **The PR must not merge before that deploy:** merging publishes the admin console, which would call actions the live function doesn't have.
-  - **Then:** run `tools/news-public-check.mjs` against production and review its results. L-4 waits for that.
+- **Landing L-3 (publication) is in production,** and its production results await review. See `docs/landing-l3-report.md`, section 12.
+  - **Code:** approved at `736a524`, merged as PR #29 (`724807b`).
+  - **Database:** the news migration was applied by hand, because production has no history for the earlier migrations. Only `20261115090000` is recorded in the history; the six earlier versions are deliberately unrecorded.
+  - **Function:** `admin` version 8.
+  - **Public check:** 21 of 21.
+  - **L-4 waits for the review.**
 - **Don't start L-4, or anything else, or make gameplay or server changes,** until the owner approves it.
 - **Before a release:** the pre-release verification in `docs/backlog.md` is still owed:
   - real devices and other browsers (including Firefox and Safari on desktop);
