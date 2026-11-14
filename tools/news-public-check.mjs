@@ -10,19 +10,34 @@
 // for rows, so a refused write is refused whether or not the row exists. If one gets through,
 // the check fails and says exactly what to remove; this tool has no key that could remove it.
 //
-//   node tools/news-public-check.mjs --published <address> [--hidden <address>] [--out file.json]
-//   node tools/news-public-check.mjs --local --published <address> ...   (the local stack, to try the tool)
+//   node tools/news-public-check.mjs --published <address> --hidden <address> [--out file.json]
+//   node tools/news-public-check.mjs --local --published <address> --hidden <address> ...   (the local stack, to try the tool)
 // It never uses a secret or service key.
+//
+// Both addresses are required (L-3 review, L3-01). Before running it, confirm in the admin
+// console that:
+//   --published  is an article whose status is Published, and
+//   --hidden     is a different entry that exists with status Draft or Unpublished.
+// The public key can't see a hidden entry, so it can't tell an existing hidden entry from a typo:
+// that confirmation is the owner's, and the report records it. Missing, malformed or identical
+// addresses stop the check before any request, and it never reports a pass without them.
 import fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { SUPABASE_URL, SUPABASE_KEY } from '../public/js/config.js';
+import { SLUG_RE } from '../public/js/data/news.js';
 
 const args = process.argv.slice(2);
-const opt = (name) => { const i = args.indexOf(`--${name}`); return i >= 0 ? args[i + 1] : null; };
+const opt = (name) => { const i = args.indexOf(`--${name}`); return i >= 0 && args[i + 1] && !args[i + 1].startsWith('--') ? args[i + 1] : null; };
 const published = opt('published');
 const hidden = opt('hidden');
 const out = opt('out');
-if (!published) { console.error('Give the address of a published article: --published <address>'); process.exit(2); }
+const stop = (msg) => { console.error(`Not run: ${msg}`); process.exit(2); };
+if (!published) stop('give the address of a Published article: --published <address>');
+if (!hidden) stop('give the address of an existing Draft or Unpublished entry: --hidden <address>. The hidden-row check is required; it is never skipped.');
+for (const [flag, value] of [['--published', published], ['--hidden', hidden]]) {
+  if (!SLUG_RE.test(value) || value.length < 3 || value.length > 80) stop(`${flag} "${value}" is not a news address (lower-case letters, numbers and single hyphens, 3 to 80 characters).`);
+}
+if (published === hidden) stop('--published and --hidden must be two different entries.');
 
 let API = SUPABASE_URL;
 let KEY = SUPABASE_KEY;
@@ -62,13 +77,9 @@ const all = await rest(`news?select=slug,published_at&order=published_at.desc&li
 record('the public list loads', all.status === 200 && Array.isArray(all.json), `${Array.isArray(all.json) ? all.json.length : 0} published`);
 if (Array.isArray(all.json)) record('every listed article has a publication time in the past', all.json.every((r) => r.published_at && new Date(r.published_at) <= new Date()));
 
-// 2. Hidden rows.
-if (hidden) {
-  const h = await rest(`news?select=slug&slug=eq.${slugParam(hidden)}`);
-  record(`the hidden entry "${hidden}" is not visible`, h.status === 200 && Array.isArray(h.json) && h.json.length === 0, `HTTP ${h.status}`);
-} else {
-  record('hidden entry check', true, 'skipped: no --hidden address given');
-}
+// 2. The hidden entry (its existence and status are confirmed in the admin console beforehand).
+const h = await rest(`news?select=slug&slug=eq.${slugParam(hidden)}`);
+record(`the hidden entry "${hidden}" is not visible`, h.status === 200 && Array.isArray(h.json) && h.json.length === 0, `HTTP ${h.status}`);
 
 // 3. Column restrictions.
 for (const [name, path] of [
@@ -112,8 +123,13 @@ if (still && before && JSON.stringify(still) !== JSON.stringify(before)) leaks.p
 if (!still && before) leaks.push(`${published} disappeared while the check ran`);
 
 const failed = results.filter((r) => !r.pass);
-const summary = { target: new URL(API).host, at: new Date().toISOString(), probe, published, hidden, passed: results.length - failed.length, failed: failed.length, leaks, results };
+const summary = {
+  target: new URL(API).host, at: new Date().toISOString(), probe, published, hidden,
+  prerequisite: `Confirmed in the admin console beforehand: "${published}" is Published, and "${hidden}" exists and is Draft or Unpublished.`,
+  passed: results.length - failed.length, failed: failed.length, leaks, results,
+};
 if (out) fs.writeFileSync(out, JSON.stringify(summary, null, 2));
 console.log(`\n${failed.length ? 'GATE FAILED' : 'All checks passed'}: ${summary.passed} of ${results.length}.`);
+console.log(`This result counts only if the admin console showed "${hidden}" as an existing Draft or Unpublished entry before the run.`);
 if (leaks.length) console.log(`A write got through. Record it in the L-3 report and remove it: ${leaks.join('; ')}. L-4 stays blocked until the policy is fixed and checked again.`);
 process.exit(failed.length ? 1 : 0);

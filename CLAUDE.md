@@ -127,6 +127,9 @@ Read these first:
   - **The shared rules** are `public/js/data/news.js`: validation, the address, and the plain-text body format.
   - **The console section** is `admin-news.js`. Its pending keys are `news:<id>:<op>`.
   - **Rollback:** `supabase/rollback/20261115090000_news_down.sql`.
+  - **Production checks:** `supabase/checks/news_precheck.sql` before applying, and `news_verify.sql` after. Both are read-only.
+  - **The deploy procedure,** including how the migration history is read and reconciled, is in `docs/landing-l3-report.md`, section 4. Every step needs the owner's authorization.
+  - **`tools/news-public-check.mjs`** requires `--published` and `--hidden`.
 - **Edge functions import shared code only from `js/engine/` and `js/data/`,** because `tools/deploy-functions.mjs` uploads only those; `tests/news.test.mjs` checks this.
 - **Admin requests are single-flight** (Phase 4 review, P4-01 to P4-04). `st.pendingForms` holds one key per request in flight:
   - a form id;
@@ -148,7 +151,7 @@ Read these first:
 ## Testing
 
 ```
-npm test                 # engine, entrance file checks and news rules (36)
+npm test                 # engine, entrance file checks and news rules (39)
 npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (166)
 npm run test:db          # database (pgTAP, 42) and API/function tests (8) on the LOCAL Supabase stack
 npx playwright install chromium   # once

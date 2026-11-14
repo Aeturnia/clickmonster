@@ -1,6 +1,6 @@
 # Landing page — phase L-3 report: publication
 
-**Status: implemented and tested locally. Awaiting independent review.**
+**Status: review corrections made (L3-01, L3-02). Awaiting independent re-review.**
 - **Authorized:** on 2026-11-13. On its own branch and PR.
 - **Nothing has touched production:**
   - The migration is **not applied** to the live project.
@@ -44,6 +44,7 @@ The scope's first step for L-3 was to check that a local stack runs on this lapt
     - **Grants:** `anon` and `authenticated` get `select` on the ten article columns only, and nothing else.
     - **Row-level security:** they see only rows that are published and whose publication time has passed. Nothing grants client writes.
     - **Writes:** only the `admin` function's service role writes.
+- **`supabase/checks/news_precheck.sql` and `news_verify.sql`** (added in the review corrections): read-only SQL-editor checks of the live schema and migration history, for before and after applying (section 4).
 - **`supabase/rollback/20261115090000_news_down.sql`:** the rollback (drop the policy, the trigger, the table and its function). It is kept outside `migrations/`, so it never runs by itself.
 - **`public/js/data/news.js` (shared):** the rules that every part uses.
   - The kinds, limits and address format.
@@ -103,29 +104,68 @@ The scope's first step for L-3 was to check that a local stack runs on this lapt
 
 ## 4. The order from here (scope section 9)
 
+Every production step below needs the owner's explicit authorization, separately from approving this PR. That includes reading the live migration history and any change to it. Nothing in this section has been done.
+
 1. **Done for review:** the local database tests pass, and the PR is up for independent review and approval.
-2. **Owner's explicit authorization, separate from approving the PR:** apply the migration, and deploy the `admin` function.
-   - **Apply only `20261115090000_news.sql`,** by pasting it into the Supabase SQL editor.
-     - **Why not `supabase db push`:** earlier migrations went in through `db push` or the SQL editor, so the live project's migration history may not list them, and `db push` would then try to apply all seven.
-     - **When `db push` is fine:** only if `npx supabase migration list` against the live project (with the owner's token) shows the six earlier versions as applied.
-   - **Deploy the `admin` function only,** from the reviewed head of this branch: `npm run deploy:functions -- admin`, with `SUPABASE_ACCESS_TOKEN` set.
-     - Without the argument the script deploys `game` too, unchanged.
-     - The deploy happens before the merge, so the SHA it was made from is recorded in this report at that point.
-   - **The rollback, if needed:** run `supabase/rollback/20261115090000_news_down.sql` in the SQL editor.
-   - **What it removes:** every news row, and the table, policy, trigger and function. Nothing else depends on them.
-   - **Function rollback:** redeploy the previous `admin` function from `main` before this PR.
-3. **Only then merge this PR,** so the admin console's News section goes live when the deployed function supports it.
-4. **The production check:**
-   - The owner publishes an article in the console. It can be a real first article, or a clearly marked test entry that is unpublished and deleted afterwards; the report records which.
-   - The owner keeps one draft or unpublished entry for the hidden-row check.
+2. **Production database (the owner's authorization, with the owner's access token):**
+   1. **Link the CLI to the live project.**
+      - Run `npx supabase link --project-ref janiqspmhkbsyemkknpv`. It asks for the database password, and writes only to `supabase/.temp/`, which git ignores.
+   2. **Inspect the migration history, changing nothing.**
+      - Run `npx supabase migration list --linked`. It prints which versions the live history table records.
+      - Record the output here.
+   3. **Inspect the schema, changing nothing.**
+      - Paste `supabase/checks/news_precheck.sql` into the SQL editor, and record the result.
+      - **Rows 2 to 4 (news objects) must be false or none.** If they aren't, stop: news objects already exist, and that must be understood first.
+      - **Row 1** gives the Postgres version, row 6 the recorded versions, and row 7 any of the earlier migrations' tables that are missing.
+   4. **Decide how to apply, from steps 2 and 3:**
+
+      | What the history shows | How the news migration is applied |
+      |---|---|
+      | Exactly the six earlier versions, `20261112140000` to `20261114090000`, and nothing newer | **Through the CLI.** First `npx supabase db push --linked --dry-run`; it must list only `20261115090000_news.sql`. Then `npx supabase db push --linked`. The CLI records the history entry itself |
+      | Some or all earlier versions missing, or no history table | **By hand.** Paste `20261115090000_news.sql` into the SQL editor, then record only that version: `npx supabase migration repair 20261115090000 --status applied --linked`. Never use `db push` here: with older versions missing it either refuses or, with `--include-all`, re-applies migrations that already ran. `--include-all` is never used |
+      | `20261115090000` already recorded, or news objects present | **Stop.** Nothing is applied until the owner has looked at what is there |
+
+      **The earlier versions are never marked applied** just because their files exist. If some are missing from the history, that stays as it is. Reconciling them would need each one's objects checked in production first, and it is a separate decision for the owner, outside L-3.
+   5. **Verify.**
+      - Paste `supabase/checks/news_verify.sql` into the SQL editor. Every row's `ok` must be true: the table, RLS, the exact column grants, no table-wide or write privileges, the one read policy, the trigger, the constraints, the unique address, the index, no execute right on `news_guard()`, and the history entry.
+      - Run `npx supabase migration list --linked` again; it must show `20261115090000` recorded.
+      - Record both here.
+   6. **If anything fails, roll back.**
+      - Run `supabase/rollback/20261115090000_news_down.sql` in the SQL editor. It removes every news row, and the table, policy, trigger and function; nothing else depends on them.
+      - Then remove the history entry: `npx supabase migration repair 20261115090000 --status reverted --linked`.
+3. **Production function (the owner's authorization):** deploy the `admin` function only, from the reviewed head of this branch: `npm run deploy:functions -- admin`, with `SUPABASE_ACCESS_TOKEN` set.
+   - Without the argument the script deploys `game` too, unchanged.
+   - The deploy happens before the merge, so the SHA it was made from is recorded here at that point.
+   - **Rollback:** redeploy `admin` from `main` before this PR.
+4. **Only then merge this PR,** so the admin console's News section goes live when the deployed function supports it.
+5. **The production check:**
+   - **The owner, in the admin console:**
+     - publishes an article. It can be a real first article, or a clearly marked test entry that is unpublished and deleted afterwards; the report records which;
+     - confirms a second, different entry that **exists with status Draft or Unpublished**.
+   - **The prerequisite:** the public key can't see a hidden entry, so the tool can't tell an existing hidden entry from a typo. That confirmation in the console is what makes its hidden-row check meaningful, and the report records it.
    - Then run:
      ```
-     node tools/news-public-check.mjs --published <its address> --hidden <a draft's address> --out docs/ui-audit/landing/l3-public-check.json
+     node tools/news-public-check.mjs --published <its address> --hidden <the hidden entry's address> --out docs/ui-audit/landing/l3-public-check.json
      ```
-   - The results go in this report.
-5. **Review of those results.** L-4 doesn't start until they are accepted.
+   - Both addresses are required (L3-01). The results go in this report.
+6. **Review of those results.** L-4 doesn't start until they are accepted.
 
-`tools/news-public-check.mjs` uses only the publishable key from `public/js/config.js`, and refuses to run with a secret key. It checks:
+### Rehearsed on the local stack
+
+The checks and the history commands were rehearsed with `--local` only.
+
+| Rehearsal | Result |
+|---|---|
+| `news_verify.sql` on the database as the CLI applied it | 13 of 13 rows ok |
+| `news_precheck.sql` with news already present | Rows 2 to 4 flag it: `true`, `true`, and the policy's name |
+| Both checks with news dropped inside a rolled-back transaction (the "before" state) | **Precheck:** Postgres 17.11; no news objects; history `20261112140000` … `20261114090000`; no earlier tables missing. **Verify:** 12 of 13 rows fail, as they should (only "no write privileges" holds) |
+| History entry removed (`migration repair 20261115090000 --status reverted --local`), with the objects still present | `migration list --local` shows it unrecorded, and `db push --dry-run --local` would push only `20261115090000_news.sql` |
+| `migration repair 20261115090000 --status applied --local` | Exactly that version is recorded again; the others are unchanged |
+| The six earlier history entries removed, then `db push --dry-run --local` | The CLI refuses ("Found local migration files to be inserted before the last migration on remote database") and suggests `--include-all`, which would re-apply all six. That is why the second row of the decision table never uses `db push` |
+
+After the rehearsal the local history was restored exactly, and verify was 13 of 13 again.
+
+`tools/news-public-check.mjs` uses only the publishable key from `public/js/config.js`, and refuses to run with a secret key. It requires `--published` and `--hidden`: two different, well-formed addresses. Without them it stops before any request, and the hidden-row check is never skipped. It checks:
 - the published read and its columns;
 - that the hidden entry stays hidden;
 - nine kinds of hidden-column and filter request;
@@ -180,16 +220,63 @@ The audit-log test was added later; it needs the News section, which `main` does
 
 | Suite | Tests | Result |
 |---|---|---|
-| Engine (`npm test`) | 36: 29 before, plus 6 news rules, plus 1 deploy check | 36/36 in each of 3 runs |
-| Browser (`npm run test:ui`) | 166: 156 before, plus 10 | 166/166 in each of 3 runs |
-| Local stack (`npm run test:db`) | 42 pgTAP, plus 8 API and function tests | 42/42 and 8/8 in each of 3 runs, on the final code (after an earlier full `db reset` and stack restart) |
+| Engine (`npm test`) | 39: 29 before, plus 6 news rules, 1 deploy check and 3 public-check argument tests | 39/39 in each of 3 runs |
+| Browser (`npm run test:ui`) | 166: 156 before, plus 10 | 166/166 in each of 3 runs, with the local stack stopped |
+| Local stack (`npm run test:db`) | 42 pgTAP, plus 8 API and function tests | 42/42 and 8/8 in each of 3 runs on the corrected code, run with no browsers open |
 
 **A stopped run on the way.** A first three-run pass, with the local stack running alongside the browser suite, was stopped by Claude Code because the laptop ran critically low on memory. Before that, its first browser run had 9 failures: 7 whole test files at once, and 2 D2-03 tests.
 - With the owner's agreement, the runs were split: the stack was stopped for the engine and browser suites, then started again for the database tests with no browsers running.
 - All passed, as above. The failures were memory starvation, not defects.
 - **On this laptop, don't run the browser suite and the local stack at the same time.**
 
-## 10. Not verified
+## 10. Review corrections (review of `b0d9a15`)
+
+The review accepted the database design, the RLS policy and grants, the admin-only operations, the publication lifecycle, the admin News section and the local test evidence. It found two gaps in the production gate.
+
+### L3-01: the production check could pass without testing a hidden entry (medium)
+
+**Defect.** `--hidden` was optional. Leaving it out recorded "hidden entry check: skipped" as a pass, so the gate could report every check passing without ever testing a draft or unpublished entry.
+
+**Correction** (`tools/news-public-check.mjs`):
+- `--published` and `--hidden` are both required.
+- Each must be a well-formed news address, which also rules out query-string injection, and the two must differ. A flag given with no value counts as missing.
+- Otherwise the tool stops with exit code 2 and a clear message, before any request, and reports nothing as passing. The skip path is gone.
+- **The tool:**
+  - still uses only the public key;
+  - still aims its write probes only at its own `rls-check-<time>` address;
+  - now prints, and writes into its JSON output, the prerequisite: the owner confirmed in the admin console that the hidden entry exists as a Draft or Unpublished entry.
+
+**Tests** (`tests/news-public-check.test.mjs`, 3 tests in the engine suite):
+- The tool runs with `fetch` replaced by a stub, so nothing can reach a server.
+- **Bad arguments** must stop it with code 2, before any request and with nothing reported as passing: no arguments, either address missing, a flag with no value, identical addresses, malformed addresses, and an injection attempt.
+- **A valid pair** gets as far as its first request (the stub), so validation doesn't block a correct run.
+- **On `b0d9a15`'s tool,** 2 of the 3 fail; the valid-pair test passes there too.
+
+### L3-02: a manual SQL apply had no plan for the migration history (medium)
+
+**Defect.** The procedure recommended the SQL editor without saying how the history would record the migration. A later `db push` could then treat it as pending.
+
+**Correction:** section 4, step 2, is now a complete procedure:
+1. link;
+2. read the history;
+3. read the schema with `supabase/checks/news_precheck.sql`;
+4. a decision table for the CLI or a manual apply;
+5. for a manual apply, record only `20261115090000` with `supabase migration repair … --status applied`;
+6. verify with `supabase/checks/news_verify.sql` and a second `migration list`;
+7. roll back, including removing the history entry.
+
+- **The earlier six versions are never marked applied** without their objects being checked, and that is outside L-3.
+- **Every step needs the owner's explicit authorization,** including history changes.
+- **Both SQL checks are read-only.** They and the history commands were rehearsed on the local stack (section 4, "Rehearsed on the local stack").
+
+### Recorded, not changed: the audit log can miss an entry
+
+The `admin` function's `log()` helper reports a failed `admin_log` insert to the server console but doesn't fail the action. So a news change, like every other admin change, could succeed without its audit entry if that insert failed.
+- **Inherited:** this is the existing behaviour of all admin actions, not something new in L-3.
+- **Normal operation:** the tests show exactly one entry per change.
+- **Recorded as a limitation** in `docs/backlog.md`. Making audit entries guaranteed (transactional) would be a change across every admin action, and it isn't part of L-3.
+
+## 11. Not verified
 
 - **Production.** Steps 2 to 5 of section 4 are the owner's to authorize, and none has happened. The production Postgres version, and whether the migration applies there, are unknown until then.
 - **The deployed function.** Deploying it bundles the files the deploy script uploads. The new import was checked against that rule, but the deploy itself wasn't run.

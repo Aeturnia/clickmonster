@@ -47,6 +47,11 @@ The UI modernization (Phases 1–4) was tested in Chromium only, against a fake 
 
 ## Follow-ups (not blocking)
 
+- **Audit entries are best effort** (from the L-3 review).
+  - The `admin` function's `log()` reports a failed `admin_log` insert to the server console but doesn't fail the action. Any admin change, news included, can therefore succeed without its audit entry if that insert fails.
+  - Normal operation writes exactly one entry per change.
+  - Guaranteeing the entry (the change and its log in one transaction, for example through a database function) would be a change across every admin action. It needs its own decision.
+
 - **The entrance's startup budget** (landing LAC-2: at most 30 KB decoded before the sign-in form) is at 29.8 KB after L-2.
   - L-4's news list will need room.
   - About half of `index.html`, `entry.css` and `entry.js` is comments, which could be trimmed. Otherwise, revisit the budget with the owner.
