@@ -12,7 +12,7 @@ Earlier status:
 - **Authorized:** by the owner on 2026-11-14, after the scope (`docs/ci-scope.md`) was approved and merged as PR #37 (`6e21a82`).
 - **Scope exception:** after the first run, the owner authorized one exception. Only the browser job runs on Windows (scope, section 10).
 - **No game, server, database or deploy change.** No branch protection or required checks are set. Parts 2 and 3 are not started.
-- **PR #38** (the scope-approval record) is still open. This branch avoids the lines it changes.
+- **PR #38** (the scope-approval record) was merged on 2026-11-15 as `6c3ace0` and merged into this branch (section 10).
 
 ## 1. What changed
 
@@ -25,7 +25,14 @@ Earlier status:
 | `docs/ci-scope.md` | Section 10, the runner exception; CI-2 and the cost revised (the owner's instruction) |
 | `docs/backlog.md` | A follow-up: cross-platform fonts and responsive layout (section 5) |
 
-**Not changed:** every existing test, including all 178 browser tests and their thresholds; `public/` (the game, the entrance, the admin console); `supabase/`; `netlify/`.
+**Not changed:** `public/` (the game, the entrance, the admin console), `supabase/` and `netlify/`; every browser test's thresholds and timeouts.
+
+**Tests changed, by review decision only:**
+- **`tests/ui/entrance.test.mjs`:** one test, LAC-5b, now waits for the held `state` call before acting (section 10). That is 13 lines added and no assertion changed.
+- **`tests/ui/harness.mjs`:** one line, which starts the diagnostics (sections 9 and 11).
+- **`tests/ui/diagnostics.mjs`:** new.
+
+Every other existing test is unchanged.
 
 ## 2. The workflow
 
@@ -106,7 +113,7 @@ At the same code that passed 178/178 in `43639927061`, the browser job failed on
 | CI-3 | **Met.** Each of the three checks failed on its planted test alone, with every real test passing. The revert came only after all three jobs had finished. Artifacts were kept for all three (engine 2,816 bytes, browser 9,189, database 1,723). After the failure, the database job's stop step ran: "Stopped supabase local development setup." |
 | CI-4 | **Met.** Padded `index.html` counts 32,038 both on Ubuntu (the CI log) and on the Windows CRLF checkout (locally), and fails there. Only the engine check failed, and only on the LAC-2 test. Unpadded, both count 31,112 |
 | CI-5 | **Met.** `contents: read`, no secrets or production credentials, and no production host in the workflow. The tests' own boundaries were unchanged and ran: the UI harness fails any request off its fake backend, and the database tests refuse anything not on 127.0.0.1. Runner setup traffic (checkout, actions, `npm ci`, the Playwright browser, Docker images, caches, artifacts) is the allowed kind |
-| CI-6 | **Met.** No game, server, database or deploy change, and **no test-only fixes:** no existing test was edited. The Linux failures were handled by the owner's runner exception, not by changing tests |
+| CI-6 | **Met.** No game, server, database or deploy change. The Linux failures were handled by the owner's runner exception, not by changing tests. **One existing test was later changed, by review decision:** LAC-5b's synchronization (section 10). No assertion or threshold was changed |
 | CI-7 | **Met.** `README.md` and `CLAUDE.md` |
 | CI-8 | **Met,** below |
 

@@ -2,9 +2,21 @@
 //
 // On when UI_DIAGNOSTICS=1 (the CI browser job sets it). Off by default, so local runs are as
 // before. It changes no test, assertion, timeout or outcome: it only records.
-//   - Before a page navigates, every test context starts a Playwright trace (screenshots, DOM
-//     snapshots, network and sources), through BrowserContext.tracing. The suite runs on node:test,
-//     not Playwright Test, so Playwright Test's `trace: 'retain-on-failure'` option doesn't apply.
+//   - Before a page navigates, every test context starts a Playwright trace (DOM snapshots, network
+//     and sources), through BrowserContext.tracing. The suite runs on node:test, not Playwright
+//     Test, so Playwright Test's `trace: 'retain-on-failure'` option doesn't apply.
+//   - The trace's own screenshots (its screencast) are off, to reduce recording overhead (CI-A
+//     review, CI-A-02). The failure screenshot below is taken separately. UI_TRACE_SCREENSHOTS=1
+//     turns the screencast back on, for comparison only.
+//   - Resource measurements for every test, passing or failing (CI-A-02), one JSON line each in
+//     tests/ui/artifacts/metrics/<file>.jsonl, with the runner's details as the file's first line:
+//     the test's duration; the Node test process's event-loop delay (monitorEventLoopDelay, 20 ms
+//     resolution) and CPU use; the whole machine's CPU use (os.cpus() times); and memory. They are
+//     read at each test's start and end only, so they add almost no work. The Node test process is
+//     the one that serves the page files (startServer) and answers the fake backend (attach).
+//     Reading the event-loop figures: the histogram includes its own sampling interval, rounded up to
+//     the OS timer. On Windows (15.6 ms ticks) an idle process reads about 31 ms at a 20 ms resolution,
+//     so the delay is the reading minus about 31 ms; a 300 ms stall reads as a maximum of about 316.
 //   - From the start, each page records console errors and warnings, page errors, failed requests,
 //     responses of 400 and over, and which requests are still in flight.
 //   - When a test fails (an afterEach hook sees `passed === false`), each of that test's contexts
@@ -24,12 +36,66 @@
 // the fake backend (attach() in harness.mjs blocks everything else).
 import { beforeEach, afterEach } from 'node:test';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { monitorEventLoopDelay, performance } from 'node:perf_hooks';
 
 export const DIAGNOSTICS = process.env.UI_DIAGNOSTICS === '1';
+export const TRACE_SCREENSHOTS = process.env.UI_TRACE_SCREENSHOTS === '1';
 const ROOT = new URL('./artifacts/failures/', import.meta.url);
+const METRICS = new URL('./artifacts/metrics/', import.meta.url);
 const FILE = path.basename(process.argv[1] || 'unknown', '.mjs');
+
+// ---------------------------------------------------------------- resource measurements (CI-A-02)
+const round = (n, d = 1) => (n == null || !Number.isFinite(n) ? null : Math.round(n * 10 ** d) / 10 ** d);
+const ms = (ns) => round(ns / 1e6);
+const mb = (b) => Math.round(b / 1048576);
+const eld = DIAGNOSTICS ? monitorEventLoopDelay({ resolution: 20 }) : null;
+eld?.enable();
+function machineCpu() {
+  let busy = 0, total = 0;
+  for (const { times: t } of os.cpus()) { const b = t.user + t.nice + t.sys + t.irq; busy += b; total += b + t.idle; }
+  return { busy, total };
+}
+const mark = () => ({ wall: performance.now(), cpu: process.cpuUsage(), machine: machineCpu() });
+// Since `from`: wall time, the Node process's CPU (user + system, all its threads, as a percentage of
+// one core), the machine's CPU (all cores, as a percentage of all of them), event-loop delay, memory.
+function measure(from) {
+  const now = mark();
+  const wallMs = now.wall - from.wall;
+  const cpu = process.cpuUsage(from.cpu);
+  const busy = now.machine.busy - from.machine.busy;
+  const total = now.machine.total - from.machine.total;
+  const mem = process.memoryUsage();
+  return {
+    durationMs: Math.round(wallMs),
+    nodeCpuPct: round((100 * (cpu.user + cpu.system)) / 1000 / wallMs),
+    machineCpuPct: total > 0 ? round((100 * busy) / total) : null,
+    eventLoopDelayMs: eld ? { mean: ms(eld.mean), p99: ms(eld.percentile(99)), max: ms(eld.max) } : null,
+    rssMB: mb(mem.rss), heapUsedMB: mb(mem.heapUsed), freeMemMB: mb(os.freemem()),
+  };
+}
+let metricsFile = null;
+function writeMetrics(line) {
+  try {
+    if (!metricsFile) {
+      fs.mkdirSync(METRICS, { recursive: true });
+      metricsFile = new URL(`${FILE}.jsonl`, METRICS);
+      const cpus = os.cpus();
+      fs.writeFileSync(metricsFile, `${JSON.stringify({
+        runner: true, file: FILE, startedAt: new Date().toISOString(), traceScreenshots: TRACE_SCREENSHOTS,
+        platform: os.platform(), release: os.release(), arch: os.arch(), cores: cpus.length, cpuModel: cpus[0]?.model,
+        totalMemMB: mb(os.totalmem()), node: process.version,
+        runnerOs: process.env.RUNNER_OS || null, image: process.env.ImageOS || null, imageVersion: process.env.ImageVersion || null,
+      })}\n`);
+    }
+    fs.appendFileSync(metricsFile, `${JSON.stringify(line)}\n`);
+  } catch (err) {
+    console.log(`[diagnostics] could not write measurements: ${err?.message || err}`);
+  }
+}
+let testStart = null;
 
 let current = []; // the contexts opened by the test now running (tests in a file run one at a time)
 
@@ -51,7 +117,7 @@ export async function track(context, page, backend) {
   page.on('requestfailed', (r) => { diag.inFlight.delete(r); diag.requestFailed.push({ at: t(), method: r.method(), url: r.url().slice(0, 300), failure: r.failure()?.errorText }); });
   page.on('response', (r) => { if (r.status() >= 400) diag.badResponses.push({ at: t(), status: r.status(), url: r.url().slice(0, 300) }); });
   try {
-    await context.tracing.start({ screenshots: true, snapshots: true, sources: true });
+    await context.tracing.start({ screenshots: TRACE_SCREENSHOTS, snapshots: true, sources: true });
   } catch (err) {
     diag.traceError = String(err?.message || err);
   }
@@ -88,7 +154,7 @@ function probe() {
   });
 }
 
-async function capture(testName, { context, page, backend }, index) {
+async function capture(testName, { context, page, backend }, index, measured) {
   const dir = new URL(`${safe(FILE)}/${safe(testName)}${index ? `-${index + 1}` : ''}/`, ROOT);
   fs.mkdirSync(dir, { recursive: true });
   const diag = page.diag || {};
@@ -97,7 +163,8 @@ async function capture(testName, { context, page, backend }, index) {
     url: null, evaluate: null, probe: null, pageErrors: page.errors || [], console: diag.console, requestFailed: diag.requestFailed,
     badResponses: diag.badResponses, inFlight: [...(diag.inFlight?.values() || [])],
     backend: { unexpected: backend?.unexpected || [], authCalls: (backend?.authCalls || []).slice(-20), recentCalls: (backend?.calls || []).slice(-30) },
-    steps: {}, traceError: diag.traceError || null,
+    steps: {}, traceError: diag.traceError || null, traceScreenshots: TRACE_SCREENSHOTS,
+    measuredToFailure: measured || null,
   };
   const step = async (name, ms, fn) => {
     const t0 = Date.now();
@@ -116,15 +183,19 @@ async function capture(testName, { context, page, backend }, index) {
 }
 
 if (DIAGNOSTICS) {
-  beforeEach(() => { current = []; });
+  beforeEach(() => { current = []; eld?.reset(); testStart = mark(); });
   afterEach(async (t) => {
     const mine = current;
     current = [];
+    // Measured before any capture, so the capture's own work isn't counted.
+    let measured = null;
+    try { measured = testStart ? measure(testStart) : null; } catch { /* never let measuring fail a test */ }
+    writeMetrics({ test: t.name, passed: t.passed, contexts: mine.length, ...(measured || {}) });
     if (t.passed) return;
     const open = mine.filter((c) => !c.page.isClosed());
     if (!open.length) { console.log(`[diagnostics] ${t.name}: failed with no open page to capture`); return; }
     for (const [i, c] of open.entries()) {
-      try { await capture(t.name, c, i); } catch (err) { console.log(`[diagnostics] ${t.name}: capture failed: ${err?.message || err}`); }
+      try { await capture(t.name, c, i, measured); } catch (err) { console.log(`[diagnostics] ${t.name}: capture failed: ${err?.message || err}`); }
     }
   });
 }

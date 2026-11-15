@@ -100,6 +100,7 @@ jobs:
         # and page state for each failed test, under tests/ui/artifacts/failures/. Records only.
         env:
           UI_DIAGNOSTICS: '1'
+          UI_TRACE_SCREENSHOTS: '1' # comparison run only (CI-A-02); removed in the next commit
         run: mkdir -p ci-output && npm run test:ui 2>&1 | tee ci-output/browser.txt
       - name: Keep the output of a failed run
         if: failure()
@@ -109,6 +110,16 @@ jobs:
           path: |
             ci-output/
             tests/ui/artifacts/
+          if-no-files-found: ignore
+          retention-days: 7
+      # Every run, passing or failing: the per-test resource measurements (CI-A-02), so passing and
+      # failing runs can be compared. A few kilobytes.
+      - name: Keep the resource measurements
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: browser-metrics-attempt-${{ github.run_attempt }}
+          path: tests/ui/artifacts/metrics/
           if-no-files-found: ignore
           retention-days: 7
 
