@@ -164,7 +164,7 @@ Raised by the owner on 2026-11-14. Most device and browser checks are done after
 
 ## Continuous integration (GitHub Actions)
 
-Raised by the owner on 2026-11-14. Not yet scoped or scheduled. The repo has no CI today (no `.github/`). This is a development-only change: no game, server or database change.
+Raised by the owner on 2026-11-14. **Part 1 is scoped:** `docs/ci-scope.md`, approved and merged as PR #37 (`6e21a82`). Its implementation, CI-A, was authorized on 2026-11-14 and is in PR #39, under review. The repo has no CI today (no `.github/`). This is a development-only change: no game, server or database change.
 
 **1. The test suites on every PR** (the core):
 - **Jobs:** `npm test`, `npm run test:ui` (Chromium), and `npm run test:db` (the local Supabase stack in Docker), each on its own runner.
