@@ -1,6 +1,10 @@
 # CI-A report: GitHub Actions for the test suites
 
-**Status: the LAC-5b test correction is made (section 10). Awaiting independent re-review. PR #39 is not merged.**
+**Status: CI-A-02 made (resource measurements, reduced tracing), and a pre-existing fixture expiry fixed by review decision (section 11). Awaiting the independent CI-2 review. PR #39 is not merged.**
+- **The reduced-tracing series** (six Windows attempts): **6 of 6 passed 178/178.**
+- **The measurements** point to broader contention on the two-core runner, not the Node test process (section 11.5). The trace's screencast added substantially to that contention.
+
+Before that:
 - **Re-review of `f218428`:** CI-A-01 (diagnostics) was accepted and stays on, and the LAC-5b correction was authorized.
 - **The correction is in,** and `main` (with PR #38) is merged into the branch.
 - **The new series:** LAC-5b passed in all six Windows attempts. Three attempts failed the earlier unexplained timeout (`#top .hud-row`), now with diagnostics. The evidence points to the test environment being starved on the Windows runner, not to the application (section 10.4). **CI-2 is still not met.**
@@ -149,7 +153,11 @@ Billed per job, rounded up to a whole minute, at the documented rates: $0.006 a 
 | `43657243652` (`f218428`) | 13 s → 1 | 715 s → 12 (Windows) | 131 s → 3 | 4 Ubuntu + 12 Windows | $0.144 |
 | `43675530218` attempt 1 (LAC-5b corrected) | 23 s → 1 | 776 s → 13 (Windows) | 131 s → 3 | 4 Ubuntu + 13 Windows | $0.154 |
 | `43675530218` attempts 2–6 (browser only) | | 747, 587, 726, 552, 769 s → 13 + 10 + 13 + 10 + 13 (Windows) | | 59 Windows | $0.590 |
-| **Total so far** | | | | | **$2.220** |
+| `43680988350` (`2fc3a4e`) | 25 s → 1 | 722 s → 13 (Windows) | 129 s → 3 | 4 Ubuntu + 13 Windows | $0.154 |
+| `43757000211` (`0bc605a`, screencast on, for comparison) | 12 s → 1 | 724 s → 13 (Windows) | 120 s → 2 | 3 Ubuntu + 13 Windows | $0.148 |
+| `43758237058` attempt 1 (`7f1fd39`, reduced tracing) | 18 s → 1 | 516 s → 9 (Windows) | 129 s → 3 | 4 Ubuntu + 9 Windows | $0.114 |
+| `43758237058` attempts 2–6 (browser only) | | 456, 500, 481, 581, 484 s → 8 + 9 + 9 + 10 + 9 (Windows) | | 45 Windows | $0.450 |
+| **Total so far** | | | | | **$3.086** |
 
 **A normal passing run is about $0.10:** the browser job takes 7 to 9 minutes on Windows, and is about 80 to 90% of the cost. On Pro's $18 a month of shared compute, that is roughly 180 runs if nothing else uses it.
 
@@ -412,4 +420,150 @@ Nothing below has been done.
 | **Running total** | **$2.220** |
 
 These figures are computed from job durations; the billing page wasn't read. Browser attempts in this series took 552 to 776 s, the longest so far.
+
+## 11. CI-A-02: resource measurements and reduced tracing (re-review of `2fc3a4e`)
+
+**The re-review:**
+- **LAC-5b's correction accepted.** CI-2 remains open.
+- **Authorized:**
+  - low-overhead measurements of event-loop delay, CPU and memory for every test;
+  - trace screenshots (the screencast) off;
+  - a bounded series of up to six Windows attempts.
+- **Not allowed without another decision:** retries, longer timeouts, moving the local server, or a larger runner.
+
+### 11.1 The latest-head run before this work
+
+Run [`43680988350`](https://github.com/Aeturnia/clickmonster/actions/runs/43680988350), at `2fc3a4e` (merge `c373e7e`): **all three jobs passed**, with engine 48, browser 178/178 and database 42 + 9. The browser job took 722 s.
+
+### 11.2 A pre-existing fixture expiry (separate from CI-A-02)
+
+**What happened.** On 2026-11-15, the local comparison runs (11.4) failed `moderation: from a report to a sanction without leaving the report; explicit steps` (`admin-console.test.mjs:259`) with "current sanctions shown". It failed in both trace configurations, with diagnostics off, and at the reviewed head `2fc3a4e`.
+
+**Cause:**
+- **The fixture:** the fake admin data banned Grubnak until `NOW + 3 days` (`harness.mjs:233`, since UI Phase 4, `5a306bc`), with `NOW` fixed at 2026-11-12 12:00 UTC.
+- **The check:** the admin console decides whether a ban is current against the browser's real clock.
+- **So** the ban expired at 2026-11-15 12:00 UTC, and the test's precondition stopped holding.
+- **Not related** to CI or the diagnostics.
+
+**The owner's decision:** a one-line correction, approved. Grubnak's `banned_until` is now `iso(Date.now() + 3 * day)`, like the fixture's other active entries.
+- **Unchanged:** `NOW`, every historical timestamp, the application and every assertion.
+- **Commit:** `d7fe356`, separate from CI-A-02.
+
+**Checked:**
+- the moderation test alone passed;
+- Grubnak's ban was active, until 2026-11-18;
+- the full browser suite passed 178/178 (406 s);
+- it is the only date tied to the fixed `NOW` that lies in the future (a search for `NOW +`).
+
+### 11.3 What was added
+
+**In `tests/ui/diagnostics.mjs`,** still on only with `UI_DIAGNOSTICS=1`.
+
+**Measurements for every test, passing or failing,** one JSON line each in `tests/ui/artifacts/metrics/<file>.jsonl`:
+- the test's duration;
+- the Node test process's **event-loop delay** (`monitorEventLoopDelay`, 20 ms resolution: mean, p99 and max);
+- **the Node process's CPU** (`process.cpuUsage()` over wall time, as a percentage of one core);
+- **the whole machine's CPU** (`os.cpus()` times, as a percentage of all cores);
+- RSS, heap and free memory.
+
+**Each file's first line** records the runner: OS and release, cores, CPU model, memory, Node version, and the runner image.
+
+**Overhead:** the figures are read only at each test's start and end, and the histogram samples every 20 ms.
+
+**Uploads:**
+- **A new step uploads the measurements on every run** (`browser-metrics-attempt-<n>`, 7 days), so passing and failing runs can be compared.
+- **On a failure,** `diag.json` also carries the failing test's measurements up to the failure.
+
+**Reading the event-loop figures:** the histogram includes its own sampling interval, rounded to the OS timer.
+- On Windows, an idle process reads about **31 ms** at a 20 ms resolution.
+- A 300 ms stall reads as a maximum of about 316 ms. Both were checked on the laptop.
+- So delay is about the reading minus 31 ms.
+
+**Trace screenshots off:** `tracing.start({ screenshots: false, snapshots: true, sources: true })`.
+- **Still kept on failure:** the failure screenshot (taken separately), the DOM snapshots, the network log, page state, and console and page errors.
+- **`UI_TRACE_SCREENSHOTS=1`** turns the screencast back on, for comparison only. The workflow no longer sets it.
+
+**Checked locally (throwaway file, not committed):**
+- **A timed-out wait:** failed, with all four capture files saved, and the trace held **no screencast frames**.
+- **A passing test:** nothing captured.
+- **Both** wrote a measurement line; the process exit code was 1.
+
+### 11.4 The comparison: screencast on, then off
+
+**Locally,** on the owner's laptop (8 cores), the full browser suite with diagnostics on, in both configurations. Both include the fixture failure from 11.2, which was found here.
+
+| Screencast | Wall time | Event-loop max, median per test | Node CPU, median | Machine CPU, median / p95 |
+|---|---|---|---|---|
+| off | 465 s | 34 ms | 49% | 34% / 49% |
+| on | 503 s | 34 ms | 58% | 45% / 62% |
+
+**On the Windows runner:**
+- **2 cores** (AMD EPYC 7763), 8 GB, image `win25-vs2026` 20261103.298.1, Node 22.23.4.
+- **One run with the screencast on,** then the series with it off.
+
+| Run | Browser | Test time (sum) | Event-loop max, median / p95 / worst | Node CPU, median | Machine CPU, median / p95 |
+|---|---|---|---|---|---|
+| [`43757000211`](https://github.com/Aeturnia/clickmonster/actions/runs/43757000211) at `0bc605a` (merge `51bed55`), **screencast on** | **177/178** | 641 s | 42 / 113 / **3,651 ms** | 31% | **73% / 94%** |
+| [`43758237058`](https://github.com/Aeturnia/clickmonster/actions/runs/43758237058) attempt 1 at `7f1fd39` (merge `a3b369b`), off | 178/178 | 451 s | 34 / 100 / 369 ms | 27% | 60% / 95% |
+| attempt 2, off | 178/178 | 409 s | 33 / 66 / 172 ms | 26% | 56% / 89% |
+| attempt 3, off | 178/178 | 427 s | 34 / 62 / 436 ms | 30% | 58% / 86% |
+| attempt 4, off | 178/178 | 427 s | 34 / 59 / 88 ms | 29% | 58% / 86% |
+| attempt 5, off | 178/178 | 513 s | 34 / 90 / **2,787 ms** | 30% | 67% / 90% |
+| attempt 6, off | 178/178 | 424 s | 33 / 54 / 419 ms | 29% | 56% / 86% |
+
+**The reduced-tracing series passed 6 of 6.** Engine and database passed on Ubuntu.
+
+### 11.5 What the measurements show
+
+**The test that keeps failing,** `LAC-12 Automatic, chosen or unset or unreadable, gives the same layouts as before`, failed again in the screencast-on run, with the same `#top .hud-row` timeout:
+
+| Run | Duration | Event-loop max | Node CPU | Machine CPU |
+|---|---|---|---|---|
+| screencast on (failed) | **70.8 s** | **3,651 ms** (p99 482) | **10.6%** | **95.5%** |
+| off, attempts 1–6 (all passed) | 13.0–17.7 s | 32–76 ms | 39–42% | 66–77% |
+
+**Its failure capture:**
+- a trivial evaluate took 3.3 s;
+- the game's modules took 1.0–1.3 s each, against tens of milliseconds normally;
+- by the time of the capture, the game's top bar *was* visible: the start finished after the 15 s wait had run out.
+
+The capture also records no backend calls for that context. **This was not resolved:** it may be a different context of this many-context test, and it wasn't investigated further.
+
+**The next test in that run** (`a choice made on the entrance applies on sign-in…`) measured 98.1% machine CPU, 8.5% Node and a 1,747 ms stall. It passed.
+
+**Which explanation fits best:**
+- **Not the Node test process being busy.** In the worst stalls, Node used about 10% of one core while the machine was 95–98% busy, and its event loop still stalled for seconds. Node was waiting for CPU, not using it. When contention was lower, Node used about 40% and stalled for under 80 ms.
+- **Broader runner contention fits.** The two cores were saturated by something other than the Node process, and Node's stalls, the slow file serving and the slow Playwright commands all followed from that.
+- **What used the CPU** wasn't measured: per-process CPU for Chromium or the Playwright driver isn't recorded. The browser's renderer and GPU processes are the likely candidates. The failing tests render large desktop pages (1920×1080, some at 200% text), and the screencast encodes those frames.
+- **Browser responsiveness was low too:** Playwright evaluates took seconds. That is consistent with a saturated machine, not a browser-only fault.
+- **Trace screenshots added substantially to the contention.** With them on, the machine was busier (median 73% against 56–67%) and the suite slower (641 s against 409–513 s). The one failure came in that run.
+
+**Not established:**
+- **That contention is gone with the screenshots off.** Attempt 5 still had one 2,787 ms stall: in `AC-8 axe: new layouts have no serious or critical violations` (`responsive.test`), at 78% machine and 10.9% Node, and it passed.
+- **The earlier timeouts happened without any diagnostics** (run `43645573860`). So the runner's contention exists without tracing, and the six green attempts are a sample, not proof.
+
+### 11.6 For the reviewer
+
+**The evidence so far:**
+- with reduced tracing, the browser check passed 6 of 6, on top of the green latest-head run;
+- every captured timeout matches CPU contention on a two-core runner;
+- no application error was seen in any capture.
+
+**Options, none taken:**
+- **Accept CI-2 on this series,** with diagnostics kept on, and watch the measurements.
+- **A further bounded series.**
+- **A larger runner, or moving work off the runner:** these need another decision, as the review said.
+
+**Required checks** stay off until the reviewer decides.
+
+### 11.7 Cost
+
+| Item | Cost |
+|---|---|
+| `43680988350` | $0.154 |
+| Comparison run `43757000211` | $0.148 |
+| Series `43758237058` | $0.564 |
+| **Running total** | **$3.086** |
+
+These figures are computed from job durations; the billing page wasn't read. Reduced-tracing browser attempts took 456 to 581 s, against 724 s in the screencast-on run.
 

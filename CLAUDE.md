@@ -182,6 +182,9 @@ npx playwright install chromium   # once
 - **Reading a failure:** the job's log on the PR's Checks tab. The failed suite's output is kept as an artifact for 7 days.
 - **Cost:** GitHub Pro's $18 a month of shared compute, at $0.006 a minute per job, rounded up per job. Batch fixes into one push.
 - **Failure diagnostics** (`tests/ui/diagnostics.mjs`, CI-A-01) are on in the CI browser job (`UI_DIAGNOSTICS=1`). For each failed test they save a Playwright trace, a screenshot, the DOM and `diag.json` under `tests/ui/artifacts/failures/`, in the failure artifact. Locally, run `UI_DIAGNOSTICS=1 npm run test:ui` to get the same. They only record; they never change a result.
+  - **Every test** also writes resource measurements (duration, Node event-loop delay and CPU, machine CPU, memory) to `tests/ui/artifacts/metrics/`. CI uploads them on every run as `browser-metrics-attempt-<n>`.
+  - **The trace has no screenshots,** to reduce load on the two-core runner. `UI_TRACE_SCREENSHOTS=1` turns them back on, for comparison only.
+  - **Reading the event-loop delay on Windows:** an idle process reads about 31 ms.
 - **The startup budget** is now a test (`tests/entrance-budget.test.mjs`): the document plus every stylesheet and script `index.html` loads, counted as LF, at most 32,000 bytes.
 
 **The local Supabase stack** (landing L-3) runs in Docker Desktop. The pinned CLI is a dev dependency.
