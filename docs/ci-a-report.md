@@ -1,6 +1,9 @@
 # CI-A report: GitHub Actions for the test suites
 
-**Status: implemented. Awaiting independent review. PR #39 is not merged.** At the final head, the browser job failed intermittently on Windows, with a different test on each attempt (section 4a). This is reported, not fixed.
+**Status: review correction CI-A-01 made (failure diagnostics). Awaiting independent re-review. PR #39 is not merged.**
+- **The review** of `3b8d0c7` accepted CI-1 and CI-3 to CI-8. CI-2 is not accepted, because the Windows browser job failed intermittently (section 4a).
+- **CI-A-01** adds failure-only diagnostics (section 9). A bounded series of six Windows attempts captured two failures, both of a third test, `LAC-5b`. The evidence points to a timing assumption in that test, not a stalled browser or an application defect (section 9.3). The decisions are in section 9.4.
+- **Nothing is fixed:** no test, timeout or retry changed. The two earlier failures weren't reproduced, so their cause is still unknown.
 - **Authorized:** by the owner on 2026-11-14, after the scope (`docs/ci-scope.md`) was approved and merged as PR #37 (`6e21a82`).
 - **Scope exception:** after the first run, the owner authorized one exception. Only the browser job runs on Windows (scope, section 10).
 - **No game, server, database or deploy change.** No branch protection or required checks are set. Parts 2 and 3 are not started.
@@ -128,7 +131,10 @@ Billed per job, rounded up to a whole minute, at the documented rates: $0.006 a 
 | `43641540153` (CI-4) | 14 s → 1 | 503 s → 9 (Windows) | 130 s → 3 | 4 Ubuntu + 9 Windows | $0.114 |
 | `43645573860` attempt 1 (final head) | 20 s → 1 | 481 s → 9 (Windows) | 107 s → 2 | 3 Ubuntu + 9 Windows | $0.108 |
 | `43645573860` attempt 2 (browser only) | | 463 s → 8 (Windows) | | 8 Windows | $0.080 |
-| **Total so far** | | | | | **$0.580** |
+| `43647187448` (`3b8d0c7`) | 11 s → 1 | 452 s → 8 (Windows) | 115 s → 2 | 3 Ubuntu + 8 Windows | $0.098 |
+| `43651793464` attempt 1 (CI-A-01, diagnostics on) | 20 s → 1 | 545 s → 10 (Windows) | 126 s → 3 | 4 Ubuntu + 10 Windows | $0.124 |
+| `43651793464` attempts 2–6 (browser only) | | 719, 445, 716, 730, 476 s → 12 + 8 + 12 + 13 + 8 (Windows) | | 53 Windows | $0.530 |
+| **Total so far** | | | | | **$1.332** |
 
 **A normal passing run is about $0.10:** the browser job takes 7 to 9 minutes on Windows, and is about 80 to 90% of the cost. On Pro's $18 a month of shared compute, that is roughly 180 runs if nothing else uses it.
 
@@ -148,10 +154,123 @@ The local runs and CI agree on every count.
 ## 8. Not verified, and limits
 
 - **CI-1a:** the `push` and `workflow_dispatch` runs, after the merge.
-- **The browser check's reliability** on Windows (section 4a): not settled, and required checks shouldn't be turned on until it is.
+- **The browser check's reliability** on Windows (sections 4a and 9): not settled, and required checks shouldn't be turned on until it is.
 - **Required checks** are not set (Q2). They're for the owner to turn on after CI-1a, once the check names `engine`, `browser` and `database` have passed on `main`.
 - **Linux browser compatibility:** the browser job runs only on Windows, so a Linux-only layout regression won't be caught (section 5).
 - **Billed cost:** computed from durations, not read from the account (section 6).
 - **The Playwright browser** is downloaded on each run, not cached.
 - **Runner images change.** `windows-latest` and `ubuntu-latest` move to new images over time, which could change fonts or timing. The image is recorded in each job's summary.
 - **A slip, corrected before pushing:** the first attempt to revert CI-4 didn't apply. The amended commit kept the padding, so its tree was the same as `2ae7e24`. The local branch was reset to the pushed `2ae7e24` and the revert redone. The revert commit's tree is checked to equal `c3d46b8`. Nothing wrong was pushed.
+
+## 9. Review correction CI-A-01: failure diagnostics (review of `3b8d0c7`)
+
+**The review.** It accepted CI-1 and CI-3 to CI-8, and deferred CI-1a to after the merge. **CI-2 was not accepted**, because of the intermittent Windows failures (section 4a).
+
+**The owner's decision:** capture evidence first. Retries and longer timeouts are not allowed yet.
+
+### 9.1 What was added
+
+**`tests/ui/diagnostics.mjs`** (new), wired into the harness with one line in `setup().page()` (`track(context, page, backend)`). It is on only with `UI_DIAGNOSTICS=1`, which the CI browser job sets; local runs are unchanged by default.
+
+**Before a page navigates,** each test context:
+- **starts a Playwright trace** (screenshots, DOM snapshots, network and sources), through `BrowserContext.tracing`. The suite runs on `node:test`, not Playwright Test, so Playwright Test's `trace: 'retain-on-failure'` doesn't apply;
+- **records** console errors and warnings, page errors, failed requests, responses of 400 and over, and requests still in flight.
+
+**When a test fails,** an `afterEach` hook sees `passed === false`. It writes each of that test's open contexts to `tests/ui/artifacts/failures/<file>/<test>/`:
+- `trace.zip`, the trace (`npx playwright show-trace trace.zip`);
+- `screenshot.png` and `dom.html`;
+- `diag.json`, with:
+  - the URL;
+  - a timed trivial evaluate, and a timed `requestAnimationFrame`, which tell a stuck renderer from a running page;
+  - `readyState`;
+  - whether key elements (`#login`, `#authform`, `#top .hud-row`, `.a-nav` and others) are absent, present or visible;
+  - the resources loaded, with timings;
+  - the recorded errors and requests;
+  - the fake backend's recent calls, auth calls and unexpected requests.
+
+The existing failure-only upload (`tests/ui/artifacts/`) keeps them for 7 days.
+
+**Safeguards:**
+- **A passing test keeps nothing;** its trace is discarded when its context closes.
+- **Every capture step** has its own time limit and catches its own errors. The diagnostics can't hang a run or change a result.
+- **No test, assertion, timeout or outcome changed,** and there are no retries.
+- **It stays inside the test environment:** the pages only reach the local server and the fake backend (`attach()`).
+
+**Checked locally first** (Node 22.16.0):
+- **The hook works when imported:** an `afterEach` registered at the top level of an imported module runs for each test in the importing file, and sees `passed` as `false` on an assertion failure and on a rejected wait. The failures and exit code 1 are unchanged.
+- **A throwaway file** (not committed) produced the expected results:
+  - a wait timing out after an admin sign-in: failed, all four files saved, every step under 0.13 s;
+  - an assertion failure: failed, all four files saved;
+  - a passing test: nothing saved;
+  - the process exit code was 1.
+- **The full browser suite, diagnostics on:** 178/178 in 472 s, against 410 s off. **About 15% overhead,** and no files kept.
+
+### 9.2 The bounded series
+
+One run at `bcea8c7`, then five re-runs of the browser job only. That is **six Windows attempts**, all in [run `43651793464`](https://github.com/Aeturnia/clickmonster/actions/runs/43651793464), each testing merge commit `c9f2048` (`bcea8c7` merged into `6e21a82`).
+
+| Attempt | browser | Duration | Failure |
+|---|---|---|---|
+| 1 (with engine and database, both passing) | 178/178 | 545 s | |
+| 2 | 178/178 | 719 s | |
+| 3 | 178/178 | 445 s | |
+| 4 | **177/178** | 716 s | `LAC-5b an account change while the game is starting…` (`tests/ui/entrance.test.mjs:230`), diagnostics captured (artifact `14137108862`) |
+| 5 | **177/178** | 730 s | the same test, diagnostics captured (artifact `14138455797`) |
+| 6 | 178/178 | 476 s | |
+
+**Result:** 4 of 6 attempts passed. Neither earlier failure recurred (the `#login` wait in `admin-news`, the `#top .hud-row` wait in `layout-choice`). A third test failed twice.
+
+### 9.3 The `LAC-5b` failure
+
+**The error,** the same in both attempts: `assert.equal(stateCalls(backend), 1)` at `entrance.test.mjs:247` got **0**. The fake backend never received the game's `state` call.
+
+The two assertions just before it passed: the game was never shown, and the sign-in form was visible.
+
+**What the test does:**
+1. holds the `state` call;
+2. signs in;
+3. waits for the entrance's veil (`#app.veiled`);
+4. signs out;
+5. releases the hold;
+6. expects exactly one `state` call to have arrived.
+
+**What the diagnostics show,** in both captures:
+- **The browser wasn't stalled.**
+  - The trivial evaluate answered in 6 ms, and an animation frame came within 0–1 ms.
+  - `readyState` was `complete`, with no page errors, no console errors and nothing in flight.
+- **The game's start-up never reached `state`.** In order:
+  - the sign-in token request at about 280–300 ms;
+  - `css/style.css` and `js/main.js` loaded;
+  - the zones read (`/rest/v1/zones`) at 672 ms and 737 ms;
+  - the test's sign-out (`/auth/v1/logout`) 19 ms and 4 ms after the zones read started.
+
+  The backend's recorded calls are empty. Its auth calls are one `password` grant. The logout request shows as `net::ERR_ABORTED` in the browser, after the fake backend answered it.
+- **The screenshot** shows the sign-in form with "Your session has ended. Please sign in again." and no game, which is the correct end state.
+
+**What the code does.**
+- `entry.js:221` adds the veil **before** calling `game.start()`.
+- `start()` in `main.js` first awaits `zonesReady()` (line 1719). If the session has ended by then, it returns at line 1720, before `api('state')` at line 1721. This is the account-isolation guard from L-1 (L1-01, L1-02) working as designed.
+
+**Conclusion, as far as the evidence goes:**
+- **The application behaved correctly:** the stale start stopped before asking for the hero, and the entrance showed the sign-in form.
+- **The test assumes** that once the veil is up, the `state` request is already being held. On a slower run, the sign-out lands during the zones read instead, so no `state` call is ever made.
+- **This is a timing assumption in the test,** not a stalled browser and not an application defect.
+
+**Not established:**
+- **Why it appeared now.** It passed in all six earlier Windows attempts, the Ubuntu run and every local run. Tracing slows each page by about 15% locally, which may widen the window between the veil and the `state` call. The diagnostics may therefore be affecting this timing.
+- **The two earlier failures** (`#login` after 30 s, `#top .hud-row` after 15 s) weren't reproduced, so their cause is still unknown. They needn't share a cause with this one.
+
+### 9.4 For the reviewer to decide
+
+Nothing below has been done.
+
+- **`LAC-5b`, test-only:** the evidence supports changing the test to wait until the held `state` request has actually arrived (for example, `stateCalls(backend) === 1`) before signing out. That is what the test means to exercise. It would change only when the test acts, not what it asserts, and no application change is suggested.
+- **The earlier two failures:** keep the diagnostics on in CI, so the next occurrence is captured. A further bounded series is possible, at about $0.09 to $0.13 per Windows attempt.
+- **Required checks** should stay off until the browser check is reliable.
+
+### 9.5 Cost of the correction
+
+The series cost **$0.654**, of which $0.63 was 63 Windows minutes. The running total is **$1.332** (section 6). These figures are computed from job durations; the billing page wasn't read.
+
+With diagnostics on, browser attempts took 445 to 730 s, against 437 to 516 s before. Part of that is the tracing; the rest is runner variation that wasn't separated out.
+
