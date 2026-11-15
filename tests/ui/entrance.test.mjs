@@ -64,6 +64,17 @@ async function done(ctx) {
 }
 const noAxe = async (page, label) => assert.deepEqual((await axe(page, { minImpact: 'minor' })).map((v) => `${v.id}:${v.impact}`), [], label);
 const stateCalls = (backend) => backend.calls.filter((c) => c.fn === 'game' && c.action === 'state').length;
+// Waits, from Node, until the fake backend has received `n` state calls, or fails after `ms`. The
+// backend records a call before it awaits a hold, so this is the point where a held start is really
+// waiting on the server. (CI-A review: the veil appears before game.start() reaches state, because
+// start() first awaits zonesReady(), so the veil alone doesn't mean the call has been made.)
+async function untilStateCalls(backend, n, ms = 15000) {
+  const deadline = Date.now() + ms;
+  while (stateCalls(backend) < n) {
+    if (Date.now() > deadline) assert.fail(`expected ${n} state call(s) within ${ms} ms, got ${stateCalls(backend)}`);
+    await new Promise((r) => setTimeout(r, 20));
+  }
+}
 const inGame = (page) => page.waitForSelector('#top .hud-row', { timeout: 15000 });
 const visible = (page, sel) => page.isVisible(sel);
 const box = (page, sel) => page.evaluate((s) => { const r = document.querySelector(s).getBoundingClientRect(); return { top: r.top, bottom: r.bottom }; }, sel);
@@ -238,6 +249,7 @@ test('LAC-5b an account change while the game is starting leaves nothing of the 
   await page.fill('#password', ACCOUNTS.player.password);
   await page.click('#authform button[type=submit]');
   await page.waitForFunction(() => document.getElementById('app').classList.contains('veiled'), null, { timeout: 15000 });
+  await untilStateCalls(backend, 1); // the first start is now held at state
   await page.evaluate(async () => { const { sb } = await import(new URL('js/net.js', location.href)); await sb.auth.signOut(); });
   await page.waitForSelector('#authform', { state: 'visible' });
   release();
@@ -253,6 +265,7 @@ test('LAC-5b an account change while the game is starting leaves nothing of the 
   await page.fill('#password', ACCOUNTS.player.password);
   await page.click('#authform button[type=submit]');
   await page.waitForFunction(() => document.getElementById('app').classList.contains('veiled'), null, { timeout: 15000 });
+  await untilStateCalls(backend, 2); // the second start (the player again) is now held at state
   await page.evaluate(async (acct) => {
     const { sb } = await import(new URL('js/net.js', location.href));
     await sb.auth.signOut();
