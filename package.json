@@ -2,6 +2,9 @@
   "name": "clickmonster",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": "22.x"
+  },
   "scripts": {
     "test": "node --test tests/*.test.mjs",
     "sim": "node tools/sim.mjs",

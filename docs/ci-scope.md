@@ -37,6 +37,7 @@
   The database suite wasn't timed: it needs the stack, and the stack is stopped.
 - **Cost, a rough estimate to be replaced by measurement (CI-8):**
   - **Per run:** about 10 to 15 runner minutes. Each job is billed separately and **rounded up to a whole minute**: engine about 1, browser about 8 to 10 with setup, and database a few more for starting the stack.
+  - **Revised for the runner exception (section 10):** the browser job runs on Windows, at $0.010 a minute instead of $0.006. A run is then roughly $0.10 rather than $0.07, about 180 runs on $18 if nothing else uses it. The CI-A report records the measured durations and billed cost.
   - **Per PR:** a run for each push, plus one for the merge to `main`.
   - **The allowance is money, not minutes** (checked against GitHub's docs, 2026-11-14):
     - since GitHub's change of 2026-10-28, GitHub Pro (Q1) includes **$18 a month of compute**;
@@ -61,14 +62,16 @@
   - **For `push` and `workflow_dispatch`:** the tested commit is the branch's commit (`github.sha`).
 - **Concurrency:** a newer push to the same branch cancels the run still going, to save minutes.
 - **Permissions:** `contents: read` only. No secrets, and no access to the live project, Netlify or the Supabase access token.
-- **Runner:** `ubuntu-latest`, Node 22, `npm ci`.
+- **Runners:** Node 22 and `npm ci` on each.
+  - **Engine and database:** `ubuntu-latest`.
+  - **Browser:** `windows-latest`, by the owner's exception in CI-A (section 10).
 
 **Three jobs, in parallel, each its own check on the PR:**
 
 | Job | Steps | Notes |
 |---|---|---|
 | `engine` | `npm test` | Also runs the new budget check (below) |
-| `browser` | `npx playwright install --with-deps chromium`, then `npm run test:ui` | Chromium only. Caching the browser download between runs is an implementation option: it counts only once the workflow has a cache key (for example the Playwright version) and a run shows a cache hit |
+| `browser` | `npx playwright install chromium`, then `npm run test:ui` | Chromium only, **on Windows** (section 10). `--with-deps` is dropped there: it installs Linux system packages. Caching the browser download between runs is an implementation option: it counts only once the workflow has a cache key (for example the Playwright version) and a run shows a cache hit |
 | `database` | `npx supabase start -x studio,imgproxy,storage-api,logflare,vector,supavisor,mailpit,realtime,postgres-meta`, then `npm run test:db`, then `npx supabase stop` | The same command as `CLAUDE.md`. Docker is preinstalled on the runner |
 
 **A new budget check, in `npm test`** (a file test, so it also runs locally):
@@ -86,7 +89,7 @@
 |---|---|---|
 | CI-1 | **In CI-A:** the workflow runs on a PR into `main`, with three separate checks, and each job's summary records the PR head SHA and the tested merge SHA | The implementation PR's own checks page and run summaries |
 | CI-1a | **After CI-A merges:** the workflow runs on the push to `main`, and by hand (`workflow_dispatch`), with the same three checks and the tested commit recorded | The two runs' links, recorded in a short follow-up docs PR |
-| CI-2 | All three suites pass on Linux with the same counts as locally: engine 47 plus the budget check, browser 178, database 42 + 9 | The run's logs |
+| CI-2 | All three suites pass with the same counts as locally: **engine** 47 plus the budget check (48) **on Ubuntu**, **browser** 178 **on Windows, in Chromium**, and **database** 42 + 9 **on Ubuntu**. Revised by the owner's runner exception (section 10): the browser result is a Windows Chromium baseline, **not Linux browser compatibility** | The run's logs and job summaries (runner and image) |
 | CI-3 | **A failing test fails the check.** Shown once per job, on a throwaway commit (for example an `assert.fail()`), then reverted | Linked runs in the report |
 | CI-4 | The budget check fails above 32,000, passes at today's size, and counts the same on Windows (CRLF) and Linux (LF) | Run on both; a padded `index.html` makes it fail, then reverted |
 | CI-5 | **Least privilege and no production traffic:**<br>- `contents: read` only, and no secrets or production credentials (no `SUPABASE_ACCESS_TOKEN`, no Netlify token);<br>- **no test traffic** to the production Supabase project or the live Netlify site;<br>- the existing boundaries stay enforced: the UI harness fails any request to a host other than its fake backend, and the database tests refuse anything not on 127.0.0.1.<br>**Allowed:** the runner's own setup and reporting traffic, such as the checkout, action downloads, `npm ci`, the Playwright browser, Docker image pulls, caches, artifact uploads and status reports | The workflow file; the harness's and database tests' host checks; a search of the workflow for production hosts and secrets |
@@ -99,7 +102,7 @@
 ## 5. Risks, not yet verified
 
 Nothing in this project has run on Linux yet. The first run may need test-only fixes.
-- **Rendering on Linux.** Chromium on Linux has different fonts and font metrics. Things that could behave differently:
+- **Rendering on Linux. This happened:** in CI-A's first run, five layout tests failed on Ubuntu (section 10). Chromium on Linux has different fonts and font metrics. Things that could behave differently:
   - layout and geometry assertions (the desktop and chat-panel breakpoints in rem, the metric thresholds);
   - axe colour contrast.
 - **Timing on a slower runner.** A standard runner may be slower than the laptop. The tests with timing in them could be flaky: the 250 ms double-tap guard (tests wait about 270 ms) and the after-paint news loading.
@@ -167,4 +170,36 @@ The review accepted the three-job architecture, read-only permissions, no produc
   - **Reworded:** no test traffic to production Supabase or Netlify, no production credentials, and the existing fake-backend and localhost boundaries enforced.
   - **Explicitly allowed:** the runner's setup and reporting traffic.
 - **Nonblocking note, the browser cache.** It is now an implementation option, counted only with a cache key and a shown cache hit.
+
+## 10. Runner exception (CI-A, 2026-11-14)
+
+**What happened.** CI-A's first run, `43638208611`, ran all three jobs on Ubuntu:
+- **engine and database:** passed;
+- **browser:** 173 of 178. Five existing layout assertions failed. The full record is in `docs/ci-a-report.md`.
+
+The likely cause is Linux font metrics, but it isn't established. The game's font stack is `system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`, and the thresholds were set on Windows with Segoe UI.
+
+**The owner's decision:** a limited exception. **Only the browser job** runs on a GitHub-hosted Windows runner.
+
+| Job | Runner |
+|---|---|
+| `engine` | Ubuntu (`ubuntu-latest`) |
+| `browser` | Windows (`windows-latest`), Chromium |
+| `database` | Ubuntu (`ubuntu-latest`) |
+
+**Unchanged:**
+- all 178 browser tests, with their thresholds and assertions;
+- the fake-backend isolation;
+- SHA-pinned actions and read-only permissions;
+- the startup-budget test and its 32,000-byte ceiling.
+
+**What it establishes:** a Windows Chromium browser baseline, **not Linux browser compatibility**.
+
+**Kept:**
+- **The five Linux failures** are recorded, with their thresholds, in the CI-A report.
+- **A separate backlog item** investigates fonts and responsive layout across platforms (`docs/backlog.md`).
+
+The owner's decision is not authorization to change the game's CSS or to start that investigation.
+
+**CI-2 and the cost estimate** are revised above.
 

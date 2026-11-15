@@ -92,6 +92,18 @@ A separate staging Supabase project is dropped. The live sign-in session above c
 
 ## Follow-ups (not blocking)
 
+- **Cross-platform fonts and responsive layout** (from CI-A, 2026-11-14).
+  - **What happened:** CI-A's first run (`43638208611`) ran the browser suite on Ubuntu, and five existing layout assertions failed. The browser job now runs on Windows by the owner's exception (`docs/ci-scope.md`, section 10). The Linux results stand, recorded in `docs/ci-a-report.md`.
+  - **The likely cause** is Linux font metrics, but it isn't established. The game's stack is `system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`, and the thresholds were set with Segoe UI.
+  - **The investigation must cover:**
+    - which font the browser actually resolves on Linux;
+    - the HUD text clipped in phone landscape (844×390) and at 200% text (390px);
+    - the monster list showing 1 row at 320×640, against at least 2;
+    - a word broken to fit in an admin table at 320px;
+    - the admin content starting at 278px on a phone, against at most 250.
+  - **Keep the tests:** the thresholds and assertions stay as they are. Any fix is to the layout, not the tests, and only once scoped.
+  - **This is not authorized:** neither a CSS change nor the investigation as a milestone.
+
 - **Pagination of `/news`** (from the L-4 review). The public list (`netlify/edge-functions/news.js`, `LIST_LIMIT = 100`) shows the 100 newest published articles. Older ones stay reachable by their address but drop off the list. Add pages (for example `/news?page=2`, or a link to older articles) before there are 100.
 
 - **Audit entries are best effort** (from the L-3 review).

@@ -7,6 +7,7 @@
 //     older code that loads it from the CDN) is the pinned CDN module allowed, cached on disk
 //     after the first download so later runs are offline.
 import http from 'node:http';
+import { track } from './diagnostics.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -229,7 +230,7 @@ export class FakeBackend {
       { id: 'char-player', name: c.name, race: c.race, level: c.level, zone: c.loc.zone, x: c.loc.x, y: c.loc.y, strikes: 1, sanction_reason: 'Spamming the global channel', muted_until: null },
       ...NAMES.map(([name, race, level, zone], i) => ({ id: i === 0 ? 'char-other' : `char-${i}`, name, race, level, zone, x: 1 + (i % 5), y: 1 + (i % 4), strikes: i % 3 === 0 ? 2 : 0 })),
     ].map((p, i) => ({ banned_until: null, jailed_until: null, muted_until: null, sanction_reason: null, ...p, updated_at: iso(NOW - i * 3600000), created_at: iso(NOW - 30 * day + i * day) }));
-    players.find((p) => p.name === 'Grubnak').banned_until = iso(NOW + 3 * day);
+    players.find((p) => p.name === 'Grubnak').banned_until = iso(Date.now() + 3 * day);
     players.find((p) => p.name === 'Kettle').muted_until = iso(Date.now() + day);
     const others = this.chat.filter((m) => m.sender_id && m.sender_id !== 'char-player');
     const reports = (this.reportsSeed || others.slice(0, 2).map((m, i) => ({ message_id: m.id, reporter_name: c.name, reason: i ? '' : 'Rude to new players' })))
@@ -671,6 +672,8 @@ export async function setup() {
       const page = await context.newPage();
       page.errors = [];
       page.on('pageerror', (e) => page.errors.push(e.message));
+      // Failure diagnostics (CI-A-01, diagnostics.mjs): only with UI_DIAGNOSTICS=1, before any navigation.
+      await track(context, page, backend);
       // Native confirm()/prompt()/alert() are recorded (Phase 3 replaces them; tests assert none appear).
       page.nativeDialogs = [];
       page.on('dialog', (d) => { page.nativeDialogs.push({ type: d.type(), message: d.message() }); d.accept(); });

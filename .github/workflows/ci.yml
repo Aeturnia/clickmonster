@@ -1,0 +1,160 @@
+# Continuous integration, part 1 (docs/ci-scope.md, CI-A): the three test suites on every PR into
+# main, on each push to main, and by hand. Three jobs, each its own check.
+#   - Least privilege: read-only contents, no secrets, no production credentials. The tests talk
+#     only to the fake backend (tests/ui/harness.mjs) or the local stack on 127.0.0.1 (tests/db).
+#   - For a pull_request the checkout is GitHub's temporary merge commit (the PR merged into
+#     main), kept on purpose; each job records the PR head SHA and the tested SHA (CI-S01).
+#   - Third-party actions are pinned to full commit SHAs, with the version in a comment (Q6).
+#   - Runners: engine and database on Ubuntu; browser on Windows. The layout tests' thresholds were
+#     set with Windows fonts (Segoe UI); on Ubuntu five of them failed in run 43638208611 (see
+#     docs/ci-a-report.md). That is a Windows Chromium baseline, not Linux browser compatibility;
+#     the Linux font investigation is in docs/backlog.md.
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Only a newer push to the same PR cancels that PR's older run. Push and manual runs get a group of
+# their own (the run id), so no run on main is ever cancelled or dropped.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    # An explicit bash adds -o pipefail, so `npm test | tee` fails when the tests fail. On the
+    # Windows runner this is Git Bash, with the same flags.
+    shell: bash
+
+env:
+  HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+  TESTED_SHA: ${{ github.sha }}
+  EVENT: ${{ github.event_name }}
+
+jobs:
+  engine:
+    name: engine
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - name: Record the commits
+        run: |
+          {
+            echo "### engine"
+            echo "- event: $EVENT"
+            echo "- PR head: $HEAD_SHA"
+            echo "- tested: $TESTED_SHA"
+            echo "- node: $(node --version)"
+            echo "- runner: $RUNNER_OS, image $ImageOS $ImageVersion"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - run: npm ci
+      - name: npm test (engine, file checks, news rules and pages, the startup budget)
+        run: mkdir -p ci-output && npm test 2>&1 | tee ci-output/engine.txt
+      - name: Keep the output of a failed run
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: engine-output
+          path: ci-output/
+          retention-days: 7
+
+  browser:
+    name: browser
+    # Windows, by the owner's exception to the scope (CI-2): see the header comment.
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - name: Record the commits
+        run: |
+          {
+            echo "### browser"
+            echo "- event: $EVENT"
+            echo "- PR head: $HEAD_SHA"
+            echo "- tested: $TESTED_SHA"
+            echo "- node: $(node --version)"
+            echo "- runner: $RUNNER_OS, image $ImageOS $ImageVersion"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - run: npm ci
+      - name: Install Chromium for Playwright
+        # No --with-deps: it installs Linux system packages, and Windows needs none.
+        run: npx playwright install chromium
+      - name: npm run test:ui (Playwright and axe, against the fake backend)
+        # Failure diagnostics (tests/ui/diagnostics.mjs, CI-A review CI-A-01): a trace, screenshot, DOM
+        # and page state for each failed test, under tests/ui/artifacts/failures/. Records only.
+        env:
+          UI_DIAGNOSTICS: '1'
+        run: mkdir -p ci-output && npm run test:ui 2>&1 | tee ci-output/browser.txt
+      - name: Keep the output of a failed run
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: browser-output
+          path: |
+            ci-output/
+            tests/ui/artifacts/
+          if-no-files-found: ignore
+          retention-days: 7
+      # Every run, passing or failing: the per-test resource measurements (CI-A-02), so passing and
+      # failing runs can be compared. A few kilobytes.
+      - name: Keep the resource measurements
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: browser-metrics-attempt-${{ github.run_attempt }}
+          path: tests/ui/artifacts/metrics/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  database:
+    name: database
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - name: Record the commits
+        run: |
+          {
+            echo "### database"
+            echo "- event: $EVENT"
+            echo "- PR head: $HEAD_SHA"
+            echo "- tested: $TESTED_SHA"
+            echo "- node: $(node --version)"
+            echo "- runner: $RUNNER_OS, image $ImageOS $ImageVersion"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - run: npm ci
+      - name: Start the local Supabase stack (the same services as CLAUDE.md)
+        run: npx supabase start -x studio,imgproxy,storage-api,logflare,vector,supavisor,mailpit,realtime,postgres-meta
+      - name: npm run test:db (pgTAP, then the API and function tests, on 127.0.0.1)
+        run: mkdir -p ci-output && npm run test:db 2>&1 | tee ci-output/database.txt
+      - name: Keep the output of a failed run
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: database-output
+          path: ci-output/
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Stop the stack, even after a failure
+        if: always()
+        run: npx supabase stop --no-backup
