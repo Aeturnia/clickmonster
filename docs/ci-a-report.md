@@ -1,9 +1,14 @@
 # CI-A report: GitHub Actions for the test suites
 
-**Status: review correction CI-A-01 made (failure diagnostics). Awaiting independent re-review. PR #39 is not merged.**
+**Status: the LAC-5b test correction is made (section 10). Awaiting independent re-review. PR #39 is not merged.**
+- **Re-review of `f218428`:** CI-A-01 (diagnostics) was accepted and stays on, and the LAC-5b correction was authorized.
+- **The correction is in,** and `main` (with PR #38) is merged into the branch.
+- **The new series:** LAC-5b passed in all six Windows attempts. Three attempts failed the earlier unexplained timeout (`#top .hud-row`), now with diagnostics. The evidence points to the test environment being starved on the Windows runner, not to the application (section 10.4). **CI-2 is still not met.**
+
+Earlier status:
 - **The review** of `3b8d0c7` accepted CI-1 and CI-3 to CI-8. CI-2 is not accepted, because the Windows browser job failed intermittently (section 4a).
 - **CI-A-01** adds failure-only diagnostics (section 9). A bounded series of six Windows attempts captured two failures, both of a third test, `LAC-5b`. The evidence points to a timing assumption in that test, not a stalled browser or an application defect (section 9.3). The decisions are in section 9.4.
-- **Nothing is fixed:** no test, timeout or retry changed. The two earlier failures weren't reproduced, so their cause is still unknown.
+- **At that point nothing was fixed:** no test, timeout or retry had changed, and the two earlier failures hadn't been reproduced. (The LAC-5b test was corrected later, in section 10. The `#top .hud-row` timeout was captured in section 10.4.)
 - **Authorized:** by the owner on 2026-11-14, after the scope (`docs/ci-scope.md`) was approved and merged as PR #37 (`6e21a82`).
 - **Scope exception:** after the first run, the owner authorized one exception. Only the browser job runs on Windows (scope, section 10).
 - **No game, server, database or deploy change.** No branch protection or required checks are set. Parts 2 and 3 are not started.
@@ -134,7 +139,10 @@ Billed per job, rounded up to a whole minute, at the documented rates: $0.006 a 
 | `43647187448` (`3b8d0c7`) | 11 s → 1 | 452 s → 8 (Windows) | 115 s → 2 | 3 Ubuntu + 8 Windows | $0.098 |
 | `43651793464` attempt 1 (CI-A-01, diagnostics on) | 20 s → 1 | 545 s → 10 (Windows) | 126 s → 3 | 4 Ubuntu + 10 Windows | $0.124 |
 | `43651793464` attempts 2–6 (browser only) | | 719, 445, 716, 730, 476 s → 12 + 8 + 12 + 13 + 8 (Windows) | | 53 Windows | $0.530 |
-| **Total so far** | | | | | **$1.332** |
+| `43657243652` (`f218428`) | 13 s → 1 | 715 s → 12 (Windows) | 131 s → 3 | 4 Ubuntu + 12 Windows | $0.144 |
+| `43675530218` attempt 1 (LAC-5b corrected) | 23 s → 1 | 776 s → 13 (Windows) | 131 s → 3 | 4 Ubuntu + 13 Windows | $0.154 |
+| `43675530218` attempts 2–6 (browser only) | | 747, 587, 726, 552, 769 s → 13 + 10 + 13 + 10 + 13 (Windows) | | 59 Windows | $0.590 |
+| **Total so far** | | | | | **$2.220** |
 
 **A normal passing run is about $0.10:** the browser job takes 7 to 9 minutes on Windows, and is about 80 to 90% of the cost. On Pro's $18 a month of shared compute, that is roughly 180 runs if nothing else uses it.
 
@@ -273,4 +281,128 @@ Nothing below has been done.
 The series cost **$0.654**, of which $0.63 was 63 Windows minutes. The running total is **$1.332** (section 6). These figures are computed from job durations; the billing page wasn't read.
 
 With diagnostics on, browser attempts took 445 to 730 s, against 437 to 516 s before. Part of that is the tracing; the rest is runner variation that wasn't separated out.
+
+## 10. The LAC-5b correction (re-review of `f218428`)
+
+**The re-review:**
+- **CI-A-01 accepted:** the diagnostics stay on in the Windows browser job.
+- **LAC-5b's diagnosis accepted** (section 9.3), and a test-only synchronization correction authorized.
+- **Retries and longer timeouts:** still no.
+- **Required checks:** still off.
+- **PR #38:** approved, merged as `6c3ace0` (identical to `ddc62ee`), then merged into this branch (`8a3c72a`). The merge had no conflicts. The branch's `CLAUDE.md` now states CI-A as authorized and under review in PR #39.
+
+### 10.1 The failure at the reviewed head
+
+Run [`43657243652`](https://github.com/Aeturnia/clickmonster/actions/runs/43657243652), at `f218428` (merge `75e129e`):
+- **Results:** engine and database passed; browser 177/178, failing `LAC-5b` (`0 !== 1`) again.
+- **Its diagnostics** (artifact `14139146848`) match section 9.3:
+  - the trivial evaluate answered in 5 ms, and a frame came at once;
+  - no `state` call was made;
+  - the sign-out came 5 ms after the zones read began (zones read at 586 ms, logout at 591 ms).
+
+### 10.2 The correction
+
+**`tests/ui/entrance.test.mjs` only, 13 lines added, none removed.**
+
+**A new helper, `untilStateCalls(backend, n, ms = 15000)`:**
+- it polls, from Node, every 20 ms, until the fake backend has recorded `n` `state` calls;
+- after 15 seconds it fails the test with "expected n state call(s) within 15000 ms, got m";
+- **why the count is a sound signal:** the backend records a call before it awaits a hold (`harness.mjs:587–588`), so once the count reaches `n`, the start really is waiting at `state`.
+
+**Used at both points in the test:**
+- **before the first sign-out:** `untilStateCalls(backend, 1)`;
+- **before the switch to the moderator:** `untilStateCalls(backend, 2)`.
+
+**Unchanged:**
+- every assertion and final count: 1 after the first part, 3 at the end, the moderator's hero shown, no stale game;
+- `public/`, the server, authentication, every other test, and every threshold and timeout. The 15-second deadline matches the waits already in this test; it isn't a global change;
+- no retries, fixed sleeps or test hooks in the application.
+
+### 10.3 Validation
+
+**Locally,** with throwaway copies of the test that were not committed and are deleted:
+
+| Variant | Result |
+|---|---|
+| The **old** test with a 400 ms delay on the zones read (as on the slow runner) | **Fails** `0 !== 1`, the CI failure reproduced |
+| The **corrected** test with the same delay | Passes |
+| The **corrected** test with a zones read that never answers, so `state` is never asked for | **Fails** "expected 1 state call(s) within 15000 ms, got 0": it fails when the request never arrives |
+
+- **The corrected test alone,** 20 times with `UI_DIAGNOSTICS=1`: **20 of 20 passed.**
+- **The full suites,** 3 runs: engine 48/48 and browser 178/178 in each.
+
+**On CI:** run [`43675530218`](https://github.com/Aeturnia/clickmonster/actions/runs/43675530218) at `f3c22c1` (merge `4603484`), then five re-runs of the browser job. Six Windows attempts, diagnostics on; engine and database on Ubuntu passed.
+
+| Attempt | browser | Duration | Failure |
+|---|---|---|---|
+| 1 | 177/178 | 776 s | `LAC-12 Desktop falls back under 200% text…` (`layout-choice.test.mjs:134`): `#top .hud-row` not visible within 15 s, in `play()` (artifact `14146523372`) |
+| 2 | 177/178 | 747 s | the same test, the same wait (artifact `14146976364`) |
+| 3 | 178/178 | 587 s | |
+| 4 | 178/178 | 726 s | |
+| 5 | 178/178 | 552 s | |
+| 6 | 177/178 | 769 s | `LAC-12 Automatic, chosen or unset or unreadable…` (`layout-choice.test.mjs:193`): the same wait (artifact `14147723786`) |
+
+**LAC-5b passed in all six attempts.** The correction holds on CI.
+
+**The browser check passed in 3 of 6.** The failures are the earlier unexplained `#top .hud-row` timeout (section 4a, run `43645573860` attempt 2), now captured with diagnostics three times.
+
+### 10.4 The `#top .hud-row` timeouts: what the diagnostics show
+
+**The same in all three:**
+- **The game never asked for its data.** The fake backend recorded **no game calls at all**, and only one auth call, the password grant. The test's sign-in went in, but the game's code never got as far as `state`.
+- **Nothing errored:** no page errors, no console errors, no failed requests and no 4xx or 5xx responses.
+- **The entrance was showing "Entering the realm",** with the game still hidden: `#app` present but not visible, and `appDataset` empty.
+
+**Everything the test process serves was extremely slow:**
+- **Attempt 1** (from its trace's network log):
+  - the game's own modules, served by the local test server, took **33 to 43 seconds** (`engine/monster.js` 33.2 s, `engine/world.js` 34.2 s, `data/gems.js` 41.7 s, `data/zones.js` 42.9 s);
+  - eight more modules never finished (`chat-ui.js`, `layout.js`, `engine/combat.js` and others).
+- **Attempt 2:**
+  - the fake backend's sign-in (`/auth/v1/token`) took 11.5 s;
+  - `css/style.css` took 20.2 s.
+- **Attempt 6:**
+  - `js/net.js` took 10.3 s, and `js/config.js` 5.3 s;
+  - the vendored supabase-js took 3.3 s, and sign-in 2.3 s;
+  - `js/main.js` was still in flight when captured.
+
+  Normally each of these takes 10 to 50 ms (section 9.3).
+
+**Playwright's own commands to the page were slow too:**
+- **Attempt 1:** a trivial evaluate didn't answer within 5 s, and every capture step failed except saving the trace.
+- **Attempts 2 and 6:** the evaluate took 2.6 s and 1.9 s, against 5–6 ms in the LAC-5b captures. Every screenshot timed out after 10 s.
+
+**The tests themselves ran 63 to 95 s.**
+
+**Where those requests are handled:** the local file server (`startServer()`) and the fake backend's route handlers (`attach()`) both run **inside the Node test process**. Every page file and every Supabase request waits on that process.
+
+**Conclusion, as far as the evidence goes:**
+- **This isn't an application initialization defect.** The game's code was still being delivered when the wait ran out, with no errors.
+- **The test environment on the Windows runner was starved,** so that serving files, answering routes and Playwright commands all took seconds to tens of seconds.
+- **The earlier `admin-news` timeout** (`#login` after 30 s) is consistent with the same, but wasn't captured with diagnostics.
+
+**Not established:**
+- **What was starved:** the Node test process's event loop, the Playwright driver, or the whole runner VM. The diagnostics record no CPU or event-loop measurements.
+- **Why these tests:** the captured failures ran at 1920×1080, two with text at 200%. The earlier ones were also large desktop sizes (`LAC-12 Automatic`; the admin console at 1440×900). Rendering large pages in software on a two-core runner may be the load, but that wasn't measured.
+- **Whether tracing makes it worse.** Its screencast frames at 1920×1080 add load. But the same timeout happened without diagnostics (run `43645573860`), so tracing isn't the only cause.
+
+### 10.5 For the reviewer to decide
+
+Nothing below has been done.
+
+1. **Measure the starvation:** add event-loop delay (`perf_hooks.monitorEventLoopDelay`) and process CPU use (`process.cpuUsage()`) to `diag.json`, sampled through each test. This would tell the Node process apart from the machine. It is diagnostics only.
+2. **Reduce the tracing load:** keep DOM snapshots and network in the trace, but turn off its screencast (`screenshots: false`). The failure screenshot is taken separately anyway.
+3. **Move the local file server out of the test process,** so a busy test process can't delay page files. This is a harness change; the tests stay the same.
+4. **A larger Windows runner:** 4 cores, at a higher per-minute rate, if the runner itself is short of CPU.
+
+**The browser check isn't reliable on Windows yet,** so required checks should stay off.
+
+### 10.6 Cost
+
+| Item | Cost |
+|---|---|
+| Run `43657243652` | $0.144 |
+| This series | $0.744 |
+| **Running total** | **$2.220** |
+
+These figures are computed from job durations; the billing page wasn't read. Browser attempts in this series took 552 to 776 s, the longest so far.
 
