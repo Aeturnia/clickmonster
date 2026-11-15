@@ -1,6 +1,12 @@
 # CI-A report: GitHub Actions for the test suites
 
-**Status: CI-A-02 made (resource measurements, reduced tracing), and a pre-existing fixture expiry fixed by review decision (section 11). Awaiting the independent CI-2 review. PR #39 is not merged.**
+**Status: CI-A accepted and merged (2026-11-15). CI-1a is not yet passed (section 12).**
+- **The final review** accepted CI-1 to CI-8 at `0822c79`. PR #39 was merged as `a54e392`, with a tree identical to `0822c79`.
+- **After the merge:** the `push` run on `main` passed all three jobs.
+- **The manual run** (`workflow_dispatch`, authorized by the owner) failed one browser test. The diagnostics show a timing assumption in that test, not contention and not an application fault (section 12).
+- **Required checks stay off.**
+
+Before the merge: CI-A-02 made (resource measurements, reduced tracing), and a pre-existing fixture expiry fixed by review decision (section 11).
 - **The reduced-tracing series** (six Windows attempts): **6 of 6 passed 178/178.**
 - **The measurements** point to broader contention on the two-core runner, not the Node test process (section 11.5). The trace's screencast added substantially to that contention.
 
@@ -157,7 +163,9 @@ Billed per job, rounded up to a whole minute, at the documented rates: $0.006 a 
 | `43757000211` (`0bc605a`, screencast on, for comparison) | 12 s → 1 | 724 s → 13 (Windows) | 120 s → 2 | 3 Ubuntu + 13 Windows | $0.148 |
 | `43758237058` attempt 1 (`7f1fd39`, reduced tracing) | 18 s → 1 | 516 s → 9 (Windows) | 129 s → 3 | 4 Ubuntu + 9 Windows | $0.114 |
 | `43758237058` attempts 2–6 (browser only) | | 456, 500, 481, 581, 484 s → 8 + 9 + 9 + 10 + 9 (Windows) | | 45 Windows | $0.450 |
-| **Total so far** | | | | | **$3.086** |
+| `43765989167` (push to `main`, `a54e392`) | 19 s → 1 | 515 s → 9 (Windows) | 108 s → 2 | 3 Ubuntu + 9 Windows | $0.108 |
+| `43776194000` (manual run, `a54e392`) | 13 s → 1 | 541 s → 10 (Windows) | 116 s → 2 | 3 Ubuntu + 10 Windows | $0.118 |
+| **Total so far** | | | | | **$3.312** |
 
 **A normal passing run is about $0.10:** the browser job takes 7 to 9 minutes on Windows, and is about 80 to 90% of the cost. On Pro's $18 a month of shared compute, that is roughly 180 runs if nothing else uses it.
 
@@ -566,4 +574,74 @@ The capture also records no backend calls for that context. **This was not resol
 | **Running total** | **$3.086** |
 
 These figures are computed from job durations; the billing page wasn't read. Reduced-tracing browser attempts took 456 to 581 s, against 724 s in the screencast-on run.
+
+## 12. After the merge: CI-1a (2026-11-15)
+
+**The final review** accepted CI-1 to CI-8 at `0822c79`.
+- **PR #39** was merged as `a54e392`, its tree identical to `0822c79` (`git diff 0822c79 a54e392` is empty).
+- **Still configured as reviewed:** engine on Ubuntu, browser on Windows Chromium, database on Ubuntu; trace screenshots off by default; failure artifacts and resource measurements on.
+
+### 12.1 The two runs
+
+| Run | Event | Tested | engine | browser | database |
+|---|---|---|---|---|---|
+| [`43765989167`](https://github.com/Aeturnia/clickmonster/actions/runs/43765989167) | `push` to `main` (the merge) | `a54e392` | 48/48 | **178/178** | 42 + 9 |
+| [`43776194000`](https://github.com/Aeturnia/clickmonster/actions/runs/43776194000) | `workflow_dispatch` on `main` (authorized by the owner) | `a54e392` | 48/48 | **177/178** | 42 + 9 |
+
+**Both triggers work.** Each job's summary recorded the event, and the tested commit `a54e392`; for these events there is no separate PR merge commit.
+
+**The push run** is green. **The manual run** isn't, so **CI-1a is not passed yet.** The run was not re-run to make it green.
+
+### 12.2 The manual run's failure
+
+**The test:** `LAC-5b a library that fails once and is retried still gives one client` (`tests/ui/entrance.test.mjs:387`).
+- **The error:** `page.waitForSelector: Timeout 15000ms exceeded`, waiting for `#top .hud-row`, in `inGame()`.
+- **The page showed** "The sign-in service could not be loaded", with the form visible.
+
+**Not contention.** The test's measurements:
+- machine CPU 6.5% and Node 0.9%;
+- event-loop max 36 ms, which is the idle baseline;
+- a trivial evaluate took 3 ms, and nothing was in flight.
+
+**What the test does:**
+1. aborts the first two requests for the vendored supabase-js (`fail = 2`). Its comment: "the first attempt (on focus) and the first send";
+2. fills the form;
+3. sends;
+4. waits for "could not be loaded";
+5. sends again, and expects the game.
+
+**What the trace shows:**
+
+| Time in the trace | What happened |
+|---|---|
+| 24,330 ms | `fill('#email')` (focus) |
+| 24,383 ms | the first click on Sign in |
+| about 24,412 ms | **library request 1,** aborted |
+| 24,444 ms | "could not be loaded" shown |
+| 24,465 ms | the retry click |
+| about 24,477 ms | **library request 2,** aborted |
+| | **no third request, and no sign-in request (`authCalls` empty)** |
+
+`js/net.js` itself took 40 ms to load and finished just before request 1. The focus and the first send therefore shared **one** in-flight load: request 1. Its failure produced the message. The retry then made request 2, the test's *second* planned abort. The entrance correctly showed the error again and waited for another try, which the test never makes.
+
+**Conclusion, as far as the evidence goes:** a timing assumption in this test, like LAC-5b's earlier one.
+- **The test assumes** the focus load and the first send are always separate requests.
+- **When the library hasn't started loading by the time Sign in is clicked,** they share one, which is correct behaviour: one load at a time.
+- **The application behaved correctly throughout:** one shared load, a persistent error with `role="alert"`, and a fresh attempt on retry.
+
+**Not established:** why the timing differed on this run. The machine was idle, and the gap between focus and click (53 ms) is set by Playwright.
+
+### 12.3 For the reviewer to decide
+
+Nothing below has been done.
+
+- **A test-only correction for this test,** along the lines of LAC-5b's:
+  - abort until the retry instead of by count, for example failing every request until the test has seen "could not be loaded", then letting the next one through;
+  - or wait, from Node, for the focus-triggered request to have failed before the first send.
+
+  Either way the assertions stay as they are: one client, one listener, the alert, and the game after the retry.
+- **Then** repeat the manual run to complete CI-1a.
+- **Required checks** stay off until CI-1a passes and the owner authorizes them.
+
+**Cost:** the two runs were $0.226; the running total is $3.312 (section 6).
 

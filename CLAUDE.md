@@ -38,7 +38,8 @@ Read these first:
     - the rename, which is not approved.
 - **CI (GitHub Actions): scope approved** (2026-11-14), `docs/ci-scope.md`, merged as PR #37 (`6e21a82`).
   - **What it is:** one workflow, three jobs (engine, browser in Chromium, database on the local stack), on each PR's merge commit, with no secrets and no production traffic.
-  - **CI-A, its implementation,** was authorized by the owner on 2026-11-14 and is in PR #39, under review and not merged. See `docs/ci-a-report.md` on that branch.
+  - **CI-A, its implementation,** was accepted and merged as PR #39 (`a54e392`, 2026-11-15). See `docs/ci-a-report.md`.
+  - **CI-1a, the checks after the merge:** the `push` run passed. The manual run failed one test, on a timing assumption in that test (report section 12). It is not complete.
   - **Not authorized:** turning on required checks or branch protection, and parts 2 and 3.
 - **Development moved to the owner's Windows laptop.** `npm run deploy:functions` now runs from any shell (PR #15) and needs `SUPABASE_ACCESS_TOKEN` set in the environment.
 - **Don't start another milestone, or make gameplay or server changes,** until the owner approves it.
