@@ -100,7 +100,6 @@ jobs:
         # and page state for each failed test, under tests/ui/artifacts/failures/. Records only.
         env:
           UI_DIAGNOSTICS: '1'
-          UI_TRACE_SCREENSHOTS: '1' # comparison run only (CI-A-02); removed in the next commit
         run: mkdir -p ci-output && npm run test:ui 2>&1 | tee ci-output/browser.txt
       - name: Keep the output of a failed run
         if: failure()
