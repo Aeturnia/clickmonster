@@ -1,7 +1,7 @@
 # Continuous integration: scope
 
 **Status: scope approved (2026-11-14).** It was approved in the final re-review at `b2df19e` and merged as PR #37 (`6e21a82`). CI-S01 to CI-S04 are closed (section 9). The owner's decisions Q1 to Q7 stand.
-- **CI-A was authorized** by the owner on 2026-11-14, after this approval. It was accepted and merged as PR #39 (`a54e392`) on 2026-11-15. CI-1a passed on 2026-11-16 (`docs/ci-a-report.md`, section 12.5). Still not authorized: required checks or branch protection, and parts 2 and 3.
+- **CI-A was authorized** by the owner on 2026-11-14, after this approval. It was accepted and merged as PR #39 (`a54e392`) on 2026-11-15. CI-1a passed on 2026-11-16 (`docs/ci-a-report.md`, section 12.5), and CI-A and CI-1a were accepted as complete; the record was merged as PR #42 (`a0d5629`). Required checks are ready for the owner to configure (Q2). Still not authorized: required checks or branch protection, and parts 2 and 3.
 - **For the CI-A implementation review** (the reviewer's notes, not blockers):
   - the concurrency group must not cancel unrelated runs: group by workflow and branch or PR, never one global group;
   - Linux-specific test fixes must not weaken existing assertions; each is listed in the report with its reason;
