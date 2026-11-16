@@ -1,6 +1,8 @@
 # CI-A report: GitHub Actions for the test suites
 
-**Status: CI-A accepted and merged (2026-11-15). CI-1a is not yet passed (section 12).**
+**Status: CI-A accepted and merged (2026-11-15). CI-1a passed on 2026-11-16, after the library-retry test correction (section 12.5). Awaiting the CI-1a completion review. Required checks are still off.**
+
+Before that, on 2026-11-15:
 - **The final review** accepted CI-1 to CI-8 at `0822c79`. PR #39 was merged as `a54e392`, with a tree identical to `0822c79`.
 - **After the merge:** the `push` run on `main` passed all three jobs.
 - **The manual run** (`workflow_dispatch`, authorized by the owner) failed one browser test. The diagnostics show a timing assumption in that test, not contention and not an application fault (section 12).
@@ -165,7 +167,11 @@ Billed per job, rounded up to a whole minute, at the documented rates: $0.006 a 
 | `43758237058` attempts 2–6 (browser only) | | 456, 500, 481, 581, 484 s → 8 + 9 + 9 + 10 + 9 (Windows) | | 45 Windows | $0.450 |
 | `43765989167` (push to `main`, `a54e392`) | 19 s → 1 | 515 s → 9 (Windows) | 108 s → 2 | 3 Ubuntu + 9 Windows | $0.108 |
 | `43776194000` (manual run, `a54e392`) | 13 s → 1 | 541 s → 10 (Windows) | 116 s → 2 | 3 Ubuntu + 10 Windows | $0.118 |
-| **Total so far** | | | | | **$3.312** |
+| `43964915310` (push to `main`, `0569796`) | 12 s → 1 | 576 s → 10 (Windows) | 114 s → 2 | 3 Ubuntu + 10 Windows | $0.118 |
+| `43966604836` (manual run, `0569796`) | 14 s → 1 | 580 s → 10 (Windows) | 117 s → 2 | 3 Ubuntu + 10 Windows | $0.118 |
+| **Total so far** | | | | | **$3.548** |
+
+**Not in this table:** the ordinary CI runs for PRs #40 and #41 and the push run for #40's merge. They are listed in section 12.5, but they aren't CI-A verification runs.
 
 **A normal passing run is about $0.10:** the browser job takes 7 to 9 minutes on Windows, and is about 80 to 90% of the cost. On Pro's $18 a month of shared compute, that is roughly 180 runs if nothing else uses it.
 
@@ -679,4 +685,28 @@ Nothing below has been done.
 - record both before CI-1a is marked complete.
 
 Required checks stay off.
+
+### 12.5 CI-1a complete (2026-11-16)
+
+**The review of PR #41** approved the correction at `fa8f4b1`, and authorized one fresh manual run once the merge's push run had passed.
+
+**The merge:** PR #41 was merged as `0569796`, its tree identical to `fa8f4b1` (`git diff fa8f4b1 0569796` is empty).
+
+| Run | Event | Tested | engine | browser | database |
+|---|---|---|---|---|---|
+| [`43964915310`](https://github.com/Aeturnia/clickmonster/actions/runs/43964915310) | `push` to `main` (the merge of PR #41) | `0569796` | **48/48** | **178/178** | **42 pgTAP + 9** |
+| [`43966604836`](https://github.com/Aeturnia/clickmonster/actions/runs/43966604836) | `workflow_dispatch` on `main` (authorized in the PR #41 review), started only after the push run passed | `0569796` | **48/48** | **178/178** | **42 pgTAP + 9** |
+
+**Both triggers ran all three checks green** on the merged commit, and each job's summary recorded the event and the tested SHA. Neither run was re-run; each is a first attempt.
+
+**Other runs since the CI-1a record,** for completeness. These are ordinary CI, not CI-1a evidence:
+- PR #40 at `83458d2` (run `43779761988`): green;
+- the push for its merge, `189f6d9` (run `43780775756`): green, **with the old test**;
+- PR #41 at `fa8f4b1` (run `43780834834`): green.
+
+**CI-1a's requirement is met:** a `push` to `main` and a manual run, each with three green checks.
+
+**Unchanged:**
+- **Required checks stay off** until this record is reviewed and the owner authorizes them. When they are turned on, the check names are `engine`, `browser` and `database`.
+- **Not started:** parts 2 and 3.
 

@@ -39,7 +39,10 @@ Read these first:
 - **CI (GitHub Actions): scope approved** (2026-11-14), `docs/ci-scope.md`, merged as PR #37 (`6e21a82`).
   - **What it is:** one workflow, three jobs (engine, browser in Chromium, database on the local stack), on each PR's merge commit, with no secrets and no production traffic.
   - **CI-A, its implementation,** was accepted and merged as PR #39 (`a54e392`, 2026-11-15). See `docs/ci-a-report.md`.
-  - **CI-1a, the checks after the merge:** the `push` run passed. The manual run failed one test, on a timing assumption in that test (report section 12). It is not complete.
+  - **CI-1a, the checks after the merge:** passed on 2026-11-16, after the library-retry test correction (PR #41).
+    - **Both runs green:** the `push` run `43964915310` and the manual run `43966604836`, both on `0569796` (report section 12.5).
+    - **Awaiting the completion review.**
+    - **Required checks stay off** until the owner authorizes them.
   - **Not authorized:** turning on required checks or branch protection, and parts 2 and 3.
 - **Development moved to the owner's Windows laptop.** `npm run deploy:functions` now runs from any shell (PR #15) and needs `SUPABASE_ACCESS_TOKEN` set in the environment.
 - **Don't start another milestone, or make gameplay or server changes,** until the owner approves it.
