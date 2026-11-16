@@ -21,7 +21,7 @@
 
 ## 2. What exists
 
-- **No CI:** there is no `.github/` directory.
+- **No CI:** there was no `.github/` directory when this scope was written. CI-A has since added `.github/workflows/ci.yml`.
 - **The suites** (`package.json`):
   - `npm test`: engine, entrance file checks, news rules and the news page handler (47);
   - `npm run test:ui`: Playwright 1.63.0 and axe-core 4.10.2 in Chromium, against the fake backend (178);
