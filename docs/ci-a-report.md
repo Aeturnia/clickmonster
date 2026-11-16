@@ -645,3 +645,38 @@ Nothing below has been done.
 
 **Cost:** the two runs were $0.226; the running total is $3.312 (section 6).
 
+### 12.4 The correction (2026-11-15, for review)
+
+**The review of PR #40:**
+- the record was accepted; PR #40 was merged as `189f6d9`;
+- CI-1a is incomplete;
+- **a test-only correction to this test was authorized,** to be reviewed before it merges.
+
+**`tests/ui/entrance.test.mjs`, this one test only:**
+- **The library now fails until the first send has shown its error, then loads.** This replaces "abort exactly two requests". A flag, `failing`, is cleared once "could not be loaded" is visible, just before the retry.
+- **Every library request** is noted as `aborted` or `loaded`.
+- **One assertion added:** the last library request was `loaded` ("the retry loaded the library").
+- **Every existing assertion is unchanged:** the error, its `role="alert"`, the game after the retry, and one client with one listener (`[1, 1]`).
+- **Unchanged:** `public/`, authentication, timeouts and retries.
+
+**Checked locally,** with throwaway copies of the test (not committed, deleted):
+
+| Variant | Library requests | Result |
+|---|---|---|
+| **Shared load:** `js/net.js` delayed 400 ms, so focus and the first send share one load (as in run `43776194000`) | aborted, loaded | **Passes** |
+| **Separate loads:** the focus load allowed to fail before the first send | aborted, aborted, loaded | **Passes** |
+| **A library that never recovers:** `failing` never cleared | all aborted | **Fails** (`#top .hud-row` timeout) |
+| **The old test,** with the shared load | aborted, aborted | **Fails**: the CI failure, reproduced |
+
+**Then:**
+- the corrected test alone: **20 of 20 passed**;
+- engine **48/48**;
+- browser **178/178** (403 s).
+
+**Still to do after review and merge:**
+- check the push run on `main`;
+- a fresh manual run, with the owner's authorization;
+- record both before CI-1a is marked complete.
+
+Required checks stay off.
+

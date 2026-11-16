@@ -387,17 +387,25 @@ test('LAC-5b a malformed saved session counts as none: the entrance works and si
 test('LAC-5b a library that fails once and is retried still gives one client', async () => {
   const ctx = await open({ count: true });
   const { page } = ctx;
-  let fail = 2; // the first attempt (on focus) and the first send
-  await page.route('**/vendor/supabase-js@2.45.4/supabase.js', (r) => (fail-- > 0 ? r.abort('internetdisconnected') : r.continue()));
+  // The library fails until the first send has shown its error, then loads (CI-1a review). Focus and
+  // the first send may share one load or make two; either way every load before the error fails.
+  let failing = true;
+  const libraryRequests = [];
+  await page.route('**/vendor/supabase-js@2.45.4/supabase.js', (r) => {
+    libraryRequests.push(failing ? 'aborted' : 'loaded');
+    return failing ? r.abort('internetdisconnected') : r.continue();
+  });
   await page.goto(`${env.url}/`);
   await page.fill('#email', ACCOUNTS.player.email);
   await page.fill('#password', ACCOUNTS.player.password);
   await page.click('#authform button[type=submit]');
   await page.waitForFunction(() => /could not be loaded/.test(document.getElementById('auth-msg').textContent));
   assert.equal(await page.getAttribute('#auth-msg', 'role'), 'alert');
+  failing = false;
   await page.click('#authform button[type=submit]');
   await inGame(page);
   assert.deepEqual(await page.evaluate(() => [window.__clients, window.__listeners]), [1, 1]);
+  assert.equal(libraryRequests.at(-1), 'loaded', 'the retry loaded the library');
   await done(ctx);
 });
 
