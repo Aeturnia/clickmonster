@@ -1,6 +1,6 @@
 # Password recovery: scope
 
-**Status: draft for review (2026-11-17). Not authorized for implementation.**
+**Status: revised after the scope review of `01a5b0f` (PR-S01, PR-S02 and refinements; section 9). Awaiting re-review. Not authorized for implementation.**
 - **Backlog item:** "Password recovery" (`docs/backlog.md`), raised in the landing scope review (Q14) as a higher-priority account-reliability item.
 - **This scope adds no code.**
 - **It reads nothing from production.** One gate below asks for a read-only inspection of the production auth settings, which needs the owner's authorization.
@@ -74,7 +74,8 @@
 - **Sending:** it calls `resetPasswordForEmail(email, { redirectTo: SITE_ORIGIN + '/' })`.
   - `SITE_ORIGIN` comes from `public/js/site.js`.
   - The send is single-flight: one request at a time, with the busy state the form already uses.
-- **The answer is the same whether or not the address has an account,** so the page can't be used to find accounts: "If an account uses that address, we've sent it a link to choose a new password. It works for one hour." The link lifetime is set by the production setting (Q8).
+- **The answer is the same whether or not the address has an account,** so the page can't be used to find accounts: "If an account uses that address, we've sent it a link to choose a new password."
+  - **The wording promises no particular lifetime** until P-1 confirms the production setting (Q8). After that, it may say "It works for a limited time", or the confirmed duration.
 - **Errors:**
   - unreachable: the existing "Can't reach the sign-in service" message;
   - rate-limited (429): "Too many reset requests. Wait a few minutes, then try again.";
@@ -88,20 +89,37 @@
 - **The form:**
   - "New password" and "Confirm new password" (`autocomplete="new-password"`, the minimum length from the production setting, inline validation that the two match);
   - "Save password".
-- **Saving:** it calls `updateUser({ password })`.
-  - **If Q3 is accepted,** it then calls `signOut({ scope: 'others' })`, so every other device that knew the old password is signed out.
-  - **On success (Q2):** "Your password is changed.", and the player enters the realm with the recovery session, as after a sign-in.
-  - **Errors stay in the form:** a weak or too-short password (Supabase's own message), unreachable, or a session that is no longer valid. The last offers "Send a new link".
+- **Saving:** it calls `updateUser({ password })`, then `signOut({ scope: 'others' })` (Q3, approved). **What that sign-out does and doesn't do:**
+  - **Every other session's refresh token is revoked,** so other devices can't renew their sessions.
+  - **Access tokens already issued** to other devices may stay usable until they expire: `jwt_expiry`, 3600 s locally, with the production value confirmed in P-1. Supabase doesn't recall issued JWTs.
+  - **The current recovery session stays active.**
+- **The outcomes, reported truthfully:**
+  - **Both succeed (Q2):** "Your password is changed, and your other devices are signed out." The recovery guard is released (below), and the player enters the realm with this session, as after a sign-in.
+  - **The password is changed, but signing out the other devices fails:**
+    - **the message says so:** "Your password is changed, but your other devices couldn't be signed out. Try again." Nothing claims they were signed out;
+    - **the actions:** "Try again", which repeats only `signOut({ scope: 'others' })`, and "Continue to the realm", which proceeds without it;
+    - **the guard is released,** because the password is changed;
+    - **"Try again"** stays single-flight.
+  - **The password update fails:** the error stays in the form, and the password is **not** changed. The causes are a weak or too-short password (Supabase's own message), an unreachable service, or a session that is no longer valid; the last offers "Send a new link". The guard stays.
 - **Another account signed in in that browser:** the recovery session replaces it. As with any account change, the old game stops (L-1's account isolation), and the new form shows.
-- **Leaving without saving (Q9):** the recovery session stays saved, as after any sign-in. A reload without the fragment enters the game. **The form offers "Cancel", which signs out.**
+
+**The recovery guard (Q9, PR-S01).** An incomplete recovery stays in recovery mode until the password is changed or the player cancels.
+- **When a recovery link arrives,** the entrance stores a marker in `localStorage` (`clickmonster.recovery`) holding the recovering user's id. It does this before the session can be used.
+- **On every load, the entrance checks first.** If the saved session belongs to the user in the marker, it opens "Choose a new password" and **does not start or preload the game.** This holds for a reload, a new tab, or coming back later.
+- **"Cancel"** signs out the recovery session, which removes it everywhere in this browser, and clears the marker.
+- **A successful password update clears the marker,** and the player may enter normally.
+- **A stale marker** (it names a different user from the saved session, or there is no saved session) is cleared, and the entrance behaves as today.
+- **If storage is unavailable** (a private window or blocked site data), the marker can't be kept. The guard then lasts only for this page, and a reload behaves as a normal saved session. The report states this limit.
+- **This is an entrance and UI guard, not a server-enforced restriction.** The recovery session is an ordinary Supabase session, and its bearer token still works against the API and the `game` function. The guard decides only what the entrance shows and whether it starts the game. Enforcing it on the server would mean an API and server change, which is outside this scope.
 
 ### 3.3 Staying within the startup budget
 
 - **In the first paint, only:**
   - the "Forgot your password?" button in `index.html`;
-  - a short fragment check and a lazy loader in `entry.js`.
+  - in `entry.js`: a short check of the address fragment and of the recovery marker, made before the saved-session start (the marker must stop the game preload), plus the lazy loader.
 - **Everything else** loads only when needed, from a new **`js/entry-recover.js`**, plus its styles if it needs any: the reset request, the new-password form, their messages and their logic. "When needed" means the button is chosen, or the address carries a recovery or error fragment. The pattern is the same as `entry-news.js`.
 - **The budget test** (`tests/entrance-budget.test.mjs`) stays at 32,000 and must pass. Comments are kept.
+- **If the first-paint additions can't fit in 888 bytes,** that is reported as a decision for the owner, not trimmed to fit.
 
 ### 3.4 Not changed
 
@@ -117,10 +135,10 @@ Each item is the owner's action or authorization. Claude only reads, and only on
 
 | # | Setting | Needed value |
 |---|---|---|
-| P-1 | **Read-only inspection** of the production auth settings, through the Management API (`GET /v1/projects/{ref}/config/auth`). It covers SMTP, Site URL, redirect allow-list, templates, rate limits, password length and link expiry. **Needs authorization** | (inspection) |
-| P-2 | **Custom SMTP** with a verified sending domain, unless P-1 shows it is already set | sends to any address |
+| P-1 | **Read-only inspection** of the production auth settings, through the Management API (`GET /v1/projects/{ref}/config/auth`). It covers whether custom SMTP is set, Site URL, redirect allow-list, the reset template, rate limits, minimum password length, link (OTP) expiry and JWT expiry. **Only once the owner explicitly authorizes it.** **No secrets are disclosed:** SMTP credentials, tokens and keys are never printed, logged or recorded. The record keeps only which fields are set and the non-secret values above | (inspection) |
+| P-2 | **Custom SMTP** with a verified sending domain, unless P-1 shows it is already set. **The owner is leaning towards Resend** (no account yet). The steps are the owner's:<br>- create the Resend account;<br>- verify a sending domain **you own**, with Resend's DNS records. `clickmonsters.netlify.app` belongs to Netlify and can't be verified, so this needs your own domain or a subdomain of it;<br>- enter Resend's SMTP details in Supabase (Authentication → Emails → SMTP Settings).<br>The credentials go only in the dashboard: never in the repo, a PR or chat | sends to any address |
 | P-3 | **Site URL** | `https://clickmonsters.netlify.app` |
-| P-4 | **Redirect URLs** allow-list | `https://clickmonsters.netlify.app/**`. Optionally the deploy previews, `https://deploy-preview-*--clickmonsters.netlify.app/**` |
+| P-4 | **Redirect URLs** allow-list | **Only the production origin,** `https://clickmonsters.netlify.app/**`. Deploy-preview wildcards are **not** added: a wildcard would let reset links land on any preview build. Previews can be added later only by a separate decision |
 | P-5 | **"Reset password" email template:** plain text and the game's name, no tracking, and the link from `{{ .ConfirmationURL }}`. A draft is proposed in the implementation PR for the owner to approve | approved text |
 | P-6 | **The email rate limit,** with custom SMTP | at least the default of 30 an hour |
 | P-7 | **The live check,** by the owner, after the merge. With a real address: ask for a reset, receive the email, open the link on another device, set a password, and sign in with it. Claude can't do this: it doesn't enter passwords or read the owner's email | recorded |
@@ -129,29 +147,31 @@ Each item is the owner's action or authorization. Claude only reads, and only on
 
 | Q | Question | Recommendation |
 |---|---|---|
-| Q1 | **Email delivery.** Authorize the read-only inspection (P-1)? If custom SMTP isn't set, which provider and sending domain? | Authorize P-1 first. If SMTP is missing, set it up before release with a provider you're comfortable with, on a domain you own (Resend, Postmark and Amazon SES are common). The fake-backend and local work can go ahead meanwhile |
+| Q1 | **Email delivery.** Authorize the read-only inspection (P-1)? If custom SMTP isn't set, which provider and sending domain? | Authorize P-1 first, separately. **Leaning: Resend** (the owner, 2026-11-17; no account yet). It needs a sending domain you own (P-2). The fake-backend and local work can go ahead meanwhile |
 | Q2 | **After the new password is saved:** straight into the game, or back to sign in? | Straight in. The player has proven they own the address and chosen a password. Sign in again only if you want them to practise the new one |
-| Q3 | **Sign out every other device** after a reset? | Yes (`signOut({ scope: 'others' })`). A reset is often because the password may be known to someone else, and Supabase doesn't revoke other sessions on its own |
+| Q3 | **Sign out every other device** after a reset? | **Approved in the review:** `signOut({ scope: 'others' })`. It revokes the other refresh sessions, while their issued access tokens last until they expire; the current session stays. A failure is reported truthfully, with "Try again" (3.2) |
 | Q4 | **Where the request lives:** in the same entrance panel, or a separate page? | Same panel, so focus, layout and the interface choice stay as they are |
 | Q5 | **The startup budget:** keep 32,000 with the lazily loaded module (3.3), or raise it? | Keep 32,000 |
 | Q6 | **Email template wording** (P-5) | Claude drafts it in the implementation PR; the owner approves it before it goes in the dashboard |
 | Q7 | **The admin console's sign-in:** add a reset link? | No. Staff use the entrance |
-| Q8 | **Link lifetime** | 1 hour (Supabase's default), confirmed in P-1 |
-| Q9 | **A player who opens the link and leaves without saving:** keep them signed in (as after any sign-in), or sign them out? | Keep the session. Offer "Cancel", which signs out |
+| Q8 | **Link lifetime** | Whatever production is set to, read in P-1. The page promises no lifetime until then (3.1) |
+| Q9 | **A player who opens the link and leaves without saving** | **Decided in the review (PR-S01):** they stay in recovery mode across reloads and new tabs, and the game doesn't start. "Cancel" signs out; a saved password releases the guard (3.2). It is a UI guard, not server-enforced |
 
 ## 6. Acceptance criteria
 
 | ID | Criterion | How it's shown |
 |---|---|---|
 | PR-1 | "Forgot your password?" appears in sign-in mode only. It has an accessible name and is reachable by keyboard after the password field. The first paint stays within 32,000 bytes, and no recovery code loads until it's needed | Browser tests; the budget test; a request check that `entry-recover.js` doesn't load on a plain visit |
-| PR-2 | **The request:** sends `/recover` once, with `redirect_to` set to `SITE_ORIGIN/`. It shows the same neutral confirmation whether or not the account exists, maps a rate limit and an unreachable service to clear messages, and is single-flight | Fake backend: an existing address, an unknown address, 429, offline, a double press |
+| PR-2 | **The request:** sends `/recover` once, with `redirect_to` set to `SITE_ORIGIN/`. It shows the same neutral confirmation whether or not the account exists, and promises no link lifetime. It maps a rate limit and an unreachable service to clear messages, and is single-flight | Fake backend: an existing address, an unknown address, 429, offline, a double press |
 | PR-3 | **A recovery link:** shows "Choose a new password" first, and **never starts the game before a password is saved.** The token fragment is cleared from the address | A test on the old code that shows the game starting, which must fail on it; then the new behaviour |
-| PR-4 | **Saving a password:** new and confirm fields, matching and length checks, `updateUser`, and (Q3) the other sessions signed out. Then (Q2) into the game. Errors stay in the form, including a weak password and an invalid session | Fake backend, with each error |
+| PR-4 | **Saving a password:** new and confirm fields, matching and length checks, `updateUser`, then `signOut({ scope: 'others' })`. Then (Q2) into the game. Errors stay in the form, including a weak password and an invalid session, and the password is unchanged on those | Fake backend, with each error |
+| PR-4a | **The recovery guard (PR-S01):**<br>- **reload:** a reload during recovery shows "Choose a new password" again, with no game start or preload;<br>- **new tab:** the same in a new tab with the saved session;<br>- **Cancel:** signs out, clears the marker, and leaves the plain entrance;<br>- **success:** after the password is saved, a reload enters the game normally;<br>- **stale marker:** a marker for a different user, or with no saved session, is ignored and cleared, and a normal saved session still resumes straight into the game;<br>- **no storage:** without `localStorage`, the guard holds for the page, as documented | Browser tests, one per case. The reload case must fail on the old code |
+| PR-4b | **Other sessions (PR-S02):**<br>- **success:** after a successful update, the fake backend has received a `logout` with `scope=others`, and the message says the other devices are signed out;<br>- **sign-out failure:** if that sign-out fails, the message says the password is changed but the devices weren't signed out. "Try again" repeats only the sign-out, single-flight; "Continue to the realm" enters; nothing claims success;<br>- **current session:** it remains valid throughout | Fake backend: success, failure then retry, failure then continue |
 | PR-5 | **An expired or used link:** a clear message and "Send a new link", the fragment cleared, nothing started | A fake `#error_code=otp_expired` |
 | PR-6 | **Account isolation:** a recovery link opened while another account is in the game stops that game cleanly, as L-1 does, and shows the form for the new account | A browser test in the style of the L-1 isolation tests |
 | PR-7 | **Independent failures:** if the library or the service is down, the entrance stays usable with a message. News and sign-in are unaffected | Failure tests, as LAC-21 |
 | PR-8 | **Accessibility:** focus moves to each new panel's heading; messages use the existing alert and status pattern; no native dialogs; **axe finds 0 violations of any impact** in every new state at 320, 390 and 1440 | Browser tests and axe |
-| PR-9 | **The real flow, on the local stack:** an admin-generated recovery link, followed, redirects to an allowed URL with a recovery session. `updateUser` changes the password, so the new one signs in and the old one doesn't. With Q3, another session's refresh token is refused | `npm run test:db`, new tests |
+| PR-9 | **The real flow, on the local stack:**<br>- an admin-generated recovery link, followed, redirects to an allowed URL with a recovery session;<br>- `updateUser` changes the password, so the new one signs in and the old one doesn't;<br>- after `signOut({ scope: 'others' })`, another session's refresh token is refused, while the recovery session's own still works;<br>- a link to a URL off the allow-list is not honoured | `npm run test:db`, new tests |
 | PR-10 | **Documentation:** `README.md`, `CLAUDE.md` and `docs/backlog.md`. The production settings (section 4) are recorded as the owner sets them | The diff |
 
 **Evidence, as before:**
@@ -174,3 +194,29 @@ Each item is the owner's action or authorization. Claude only reads, and only on
 - **The production auth settings:** none were read (P-1).
 - **How the Supabase template renders** in real mail clients, and **delivery and spam handling** with a custom SMTP provider.
 - **Password managers** offering to save the new password. This belongs with the existing "password managers and autofill" release check.
+- **Server-side enforcement of the recovery guard:** none, by design (3.2).
+
+## 9. Scope review corrections (review of `01a5b0f`)
+
+The review accepted the design in principle, and requested these changes.
+
+**PR-S01, recovery-session persistence.** The draft let a reload enter the game without a new password.
+- **Changed to:** a `localStorage` marker keyed to the recovering user. The player stays in recovery mode across reloads and new tabs, without a game start or preload.
+- **"Cancel"** signs out. **A successful update** releases the guard.
+- **Documented:** without storage the guard is per page only, and it is a UI guard, not server-enforced.
+- **Where:** sections 3.2 and 3.3, Q9, and acceptance criterion PR-4a.
+
+**PR-S02, other sessions.** Q3 is kept, approved.
+- **Documented:** other refresh sessions are revoked; already-issued access tokens last until they expire; the current session stays.
+- **A failed sign-out after a successful update** is reported truthfully, with "Try again" and "Continue to the realm".
+- **Where:** section 3.2, Q3, PR-4b, and PR-9's local-stack check.
+
+**Refinements:**
+- **The budget:** 32,000 is kept. The recovery code stays lazily loaded, and the first-paint check now also covers the marker (3.3). If the additions don't fit, that goes to the owner, not trimmed.
+- **No link lifetime is promised** until P-1 confirms the setting (3.1, Q8, PR-2).
+- **Redirect URLs** are limited to the production origin; deploy-preview wildcards are dropped (P-4).
+- **Kept:** the neutral confirmation, the real recovery-link tests on the local stack (PR-9), and the central regression test, no game before the password is changed (PR-3, PR-4a).
+- **P-1** only with the owner's explicit authorization, and no secret is ever disclosed.
+
+**The owner's note:** leaning towards Resend for production email; no account yet. This is recorded in Q1 and P-2, including the need for a sending domain the owner controls.
+
