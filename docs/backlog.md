@@ -207,6 +207,8 @@ Netlify posts no deploy status for `main`, so this confirms that a deploy landed
 
 Raised in the landing-page scope review (2026-11-13, Q14). It is tracked separately from that milestone, as a higher-priority account-reliability item, and is not yet scheduled.
 
+**Being scoped:** `docs/password-recovery-scope.md` (draft, 2026-11-17). It isn't authorized for implementation.
+
 - **Today:** there is no way to reset a forgotten password. A player who forgets it loses access to their hero.
 - **Needs:**
   - a "Forgot password" request from the entrance;
