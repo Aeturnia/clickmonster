@@ -176,7 +176,7 @@ Raised by the owner on 2026-11-14. Most device and browser checks are done after
 
 ## Continuous integration (GitHub Actions)
 
-Raised by the owner on 2026-11-14. **Part 1 is scoped:** `docs/ci-scope.md`, approved and merged as PR #37 (`6e21a82`). Its implementation, CI-A, was accepted and merged as PR #39 (`a54e392`, 2026-11-15). The after-merge check CI-1a passed on 2026-11-16 (`docs/ci-a-report.md`, section 12.5), and awaits its completion review. Part 1 now runs as `.github/workflows/ci.yml`: engine and database on Ubuntu, browser on Windows. This is a development-only change: no game, server or database change.
+Raised by the owner on 2026-11-14. **Part 1 is scoped:** `docs/ci-scope.md`, approved and merged as PR #37 (`6e21a82`). Its implementation, CI-A, was accepted and merged as PR #39 (`a54e392`, 2026-11-15). The after-merge check CI-1a passed on 2026-11-16, and CI-A and CI-1a are accepted as complete (`docs/ci-a-report.md`). Parts 2 and 3 below are not started. Part 1 now runs as `.github/workflows/ci.yml`: engine and database on Ubuntu, browser on Windows. This is a development-only change: no game, server or database change.
 
 **1. The test suites on every PR** (the core):
 - **Jobs:** `npm test`, `npm run test:ui` (Chromium), and `npm run test:db` (the local Supabase stack in Docker), each on its own runner.

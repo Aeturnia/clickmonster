@@ -1,6 +1,10 @@
 # CI-A report: GitHub Actions for the test suites
 
-**Status: CI-A accepted and merged (2026-11-15). CI-1a passed on 2026-11-16, after the library-retry test correction (section 12.5). Awaiting the CI-1a completion review. Required checks are still off.**
+**Status: complete and accepted (2026-11-16).**
+- **CI-A** was accepted and merged as PR #39 (`a54e392`, 2026-11-15).
+- **CI-1a** was accepted in its final review. Its record was merged as PR #42 (`a0d5629`).
+- **Required checks:** ready for the owner to configure, as agreed in Q2. The checks are `engine`, `browser` and `database`, on pull requests targeting `main`. Until the owner applies them they are off.
+- **Not started:** parts 2 and 3.
 
 Before that, on 2026-11-15:
 - **The final review** accepted CI-1 to CI-8 at `0822c79`. PR #39 was merged as `a54e392`, with a tree identical to `0822c79`.
