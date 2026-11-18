@@ -1,4 +1,10 @@
-# ClickMonster
+# Monstra Regna (formerly ClickMonster)
+
+Live at **https://monstraregna.com**. The game was renamed from ClickMonster in MR-B1
+(`docs/monstra-regna-scope.md`). Technical identifiers keep the old name on purpose: the
+repository, the Supabase project, the `game`/`admin` functions, the Netlify site
+(`clickmonsters.netlify.app`) and the browser storage keys (`clickmonster.*`), so nobody is
+signed out by the rename. `tests/identity.test.mjs` lists the ones allowed.
 
 A text-based fantasy RPG for mobile browsers. Create a hero, explore gridded zones,
 fight turn-based battles, collect gold and gems, and build your stats however you like.
@@ -129,6 +135,8 @@ loaded. Gear tiers are in `public/js/data/items.js`.
 ## Deploying
 
 Netlify: connect the repo, and `netlify.toml` handles the rest (publish dir `public`, no build).
+The custom domain `monstraregna.com` points at the Netlify site; `www` redirects to it. The
+canonical address for news pages is `SITE_ORIGIN` in `public/js/site.js`.
 
 **Important:** the game server runs the engine too. After changing anything in `public/js/engine/`
 or `public/js/data/`, redeploy the function (`npm run deploy:functions`) so server and client agree.

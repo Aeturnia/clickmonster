@@ -31,14 +31,14 @@ test('an article: 200 HTML with its metadata, readable without script, never cac
   assert.equal(p.headers['content-type'], 'text/html; charset=utf-8');
   assert.equal(p.headers['cache-control'], 'no-store');
   assert.match(p.headers['content-security-policy'], /default-src 'none'/);
-  assert.match(p.text, /<title>Patch notes 1\.2 · ClickMonster<\/title>/);
+  assert.match(p.text, /<title>Patch notes 1\.2 · Monstra Regna<\/title>/);
   assert.equal(meta(p.text, 'name', 'description'), ARTICLE.summary);
   assert.match(p.text, new RegExp(`<link rel="canonical" href="${SITE_ORIGIN}/news/patch-notes-1-2">`));
   assert.equal(meta(p.text, 'property', 'og:type'), 'article');
   assert.equal(meta(p.text, 'property', 'og:title'), ARTICLE.title);
   assert.equal(meta(p.text, 'property', 'og:description'), ARTICLE.summary);
   assert.equal(meta(p.text, 'property', 'og:url'), `${SITE_ORIGIN}/news/patch-notes-1-2`);
-  assert.equal(meta(p.text, 'property', 'og:site_name'), 'ClickMonster');
+  assert.equal(meta(p.text, 'property', 'og:site_name'), 'Monstra Regna');
   assert.equal(meta(p.text, 'property', 'article:published_time'), ARTICLE.published_at);
   assert.equal(meta(p.text, 'property', 'article:modified_time'), ARTICLE.revised_at);
   assert.equal(meta(p.text, 'name', 'twitter:card'), 'summary');
@@ -64,7 +64,7 @@ test('everything from the database is escaped, in the body and in every attribut
   assert.doesNotMatch(p.text, /<script/i);
   assert.equal(p.text.match(/<b>/g).length, 1, 'no markup from the text: the only <b> is the page own Maintenance label');
   const enc = '&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;&lt;/title&gt;&#39;&amp;&lt;b&gt;';
-  assert.ok(p.text.includes(`<title>T ${enc} · ClickMonster</title>`), 'title');
+  assert.ok(p.text.includes(`<title>T ${enc} · Monstra Regna</title>`), 'title');
   for (const [attr, name, prefix] of [['name', 'description', 'S'], ['property', 'og:title', 'T'], ['property', 'og:description', 'S'], ['name', 'twitter:title', 'T'], ['name', 'twitter:description', 'S']]) {
     assert.ok(p.text.includes(`<meta ${attr}="${name}" content="${prefix} ${enc}`), `${name} attribute escaped`);
   }
@@ -79,7 +79,7 @@ test('the canonical address comes from SITE_ORIGIN, never from the request', asy
   const text = await res.text();
   assert.doesNotMatch(text, /attacker/);
   assert.equal(meta(text, 'property', 'og:url'), `${SITE_ORIGIN}/news/patch-notes-1-2`);
-  assert.equal(SITE_ORIGIN, 'https://clickmonsters.netlify.app');
+  assert.equal(SITE_ORIGIN, 'https://monstraregna.com'); // MR-B1: the canonical domain (D1)
 });
 
 test('addresses that are not valid slugs get the 404 page without any query', async () => {

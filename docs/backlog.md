@@ -111,7 +111,7 @@ A separate staging Supabase project is dropped. The live sign-in session above c
   - Normal operation writes exactly one entry per change.
   - Guaranteeing the entry (the change and its log in one transaction, for example through a database function) would be a change across every admin action. It needs its own decision.
 
-- **The entrance's startup budget** (landing LAC-2) is 34,000 decoded bytes. It was revised to 32,000 in the L-4 review, then to 34,000 by the owner for password recovery (2026-11-17). The first paint is 33,987 bytes with R-1. Comments are not to be stripped to meet it (the owner's direction).
+- **The entrance's startup budget** (landing LAC-2) is 34,000 decoded bytes. It was revised to 32,000 in the L-4 review, then to 34,000 by the owner for password recovery (2026-11-17). The first paint is 33,987 bytes with R-1, and 33,989 with MR-B1's rename. Comments are not to be stripped to meet it (the owner's direction).
 
 - **Queued battle effects across an account change** (from the L-1 final review).
   - `playEffects()` in `main.js` schedules battle animations with `setTimeout`. The timers aren't tied to the game session (`gameGen`).
@@ -217,7 +217,7 @@ Raised in the landing-page scope review (2026-11-13, Q14). It is tracked separat
 - **Status (2026-11-17):**
   - **Scoped and accepted** in `docs/password-recovery-scope.md` (PR #44, merged as `031a026`).
   - **R-1 is implemented and accepted, pending production activation.** It was merged as PR #45 (`48be811`), with "Forgot your password?" switched off (`RECOVERY_REQUESTS = false`). See `docs/password-recovery-r1-report.md`.
-  - **Startup budget:** the first paint is 33,987 of 34,000 bytes, so any change to `entry.js`, `index.html` or `entry.css` has only 13 bytes of room.
+  - **Startup budget:** the first paint is 33,989 of 34,000 bytes after MR-B1, so any change to `entry.js`, `index.html` or `entry.css` has only 11 bytes of room.
 - **Production activation** is not authorized. The checklist is in the R-1 report, section 7:
   1. a Resend account;
   2. a verified sending domain the owner controls;

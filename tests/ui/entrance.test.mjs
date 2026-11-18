@@ -85,7 +85,7 @@ test('LAC-1 the entrance is in the HTML: name and form visible with scripts off,
   const context = await env.browser.newContext({ javaScriptEnabled: false, viewport: { width: 390, height: 844 } });
   const page = await context.newPage();
   await page.goto(`${env.url}/`);
-  assert.equal((await page.textContent('#entry h1')).trim(), 'ClickMonster');
+  assert.equal((await page.textContent('#entry h1')).trim(), 'Monstra Regna');
   assert.ok(await page.isVisible('#authform #email'), 'the form is visible');
   assert.ok(await page.isVisible('#authform #password'));
   assert.match(await page.textContent('#entry noscript'), /needs JavaScript/);

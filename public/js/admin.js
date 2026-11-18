@@ -165,7 +165,7 @@ const adminOnly = (tab) => tab === 'staff' || GROUPS.some((g) => g.items.some(([
 const groupOf = (tab) => GROUPS.find((g) => g.items.some(([id]) => id === tab))?.id || 'world';
 
 function viewLogin() {
-  return `<div class="intro"><h1>ClickMonster Admin</h1><p>Staff sign in with their game account.</p></div>
+  return `<div class="intro"><h1>Monstra Regna Admin</h1><p>Staff sign in with their game account.</p></div>
     <form id="login" class="box narrow" novalidate>
       <div class="form-grid">
         ${field({ id: 'email', label: 'Email', wide: true, control: input('type="email" autocomplete="email" required') })}
@@ -177,14 +177,14 @@ function viewLogin() {
 }
 
 function viewDenied() {
-  return `<div class="intro"><h1>ClickMonster Admin</h1></div>
+  return `<div class="intro"><h1>Monstra Regna Admin</h1></div>
     <div class="box narrow"><p>This account is not on the staff list.</p>
     <p class="note">Signed in as ${esc(st.email)}. An admin can add you from the Staff section.</p>
     <button class="btn" data-a="signout">Sign out</button></div>`;
 }
 
 function header() {
-  return `<header class="a-head"><h1>ClickMonster Admin <span class="pill ${st.me.role}">${st.me.role}</span></h1>
+  return `<header class="a-head"><h1>Monstra Regna Admin <span class="pill ${st.me.role}">${st.me.role}</span></h1>
       <span class="who"><span class="email" title="${esc(st.me.email)}">${esc(st.me.email)}</span>
       <a class="textbtn" href="./">Open game</a>
       <button class="textbtn" data-a="signout">Sign out</button></span></header>`;
@@ -613,7 +613,7 @@ function render() {
   const caret = hadFocus && 'selectionStart' in activeEl ? [activeEl.selectionStart, activeEl.selectionEnd] : null;
   const saved = snapshotForms(root);
   let html;
-  if (st.phase === 'loading') html = '<div class="intro"><h1>ClickMonster Admin</h1><p>Loading</p></div>';
+  if (st.phase === 'loading') html = '<div class="intro"><h1>Monstra Regna Admin</h1><p>Loading</p></div>';
   else if (st.phase === 'login') html = viewLogin();
   else if (st.phase === 'denied') html = viewDenied();
   else {
