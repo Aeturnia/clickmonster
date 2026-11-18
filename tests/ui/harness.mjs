@@ -762,6 +762,40 @@ export async function settle(page) {
   await page.waitForTimeout(120);
 }
 
+// Records each floating gold or XP cue as it is added to the hero bar (gameplay polish amendment
+// G1). A cue lives 1.6 s, so tests read this record instead of racing to find it. Each record has
+// the cue's text, classes and computed style when added, the XP meter and gold line as they were
+// then, how many times its animation started, and when it was added and removed
+// (performance.now()). Read with page.evaluate(() => window.__cues).
+export async function watchCues(page) {
+  await page.evaluate(() => {
+    window.__cues = [];
+    const top = document.getElementById('top');
+    new MutationObserver((muts) => {
+      for (const m of muts) {
+        for (const n of m.addedNodes) {
+          if (n.nodeType !== 1 || !n.classList.contains('cue')) continue;
+          const cs = getComputedStyle(n);
+          const xp = top.querySelector('#hud-xp .meter');
+          const rec = {
+            text: n.textContent, cls: n.className, ariaHidden: n.getAttribute('aria-hidden'),
+            anim: cs.animationName, opacity: cs.opacity, color: cs.color, background: cs.backgroundColor,
+            inMeter: !!n.closest('.meter'),
+            xpLabel: xp?.querySelector('.meter-name').textContent,
+            xpFit: xp ? ['compact', 'stack'].filter((c) => xp.classList.contains(c)) : null,
+            goldWidth: top.querySelector('#hud-row .hud-res')?.getBoundingClientRect().width,
+            added: performance.now(), removed: null, starts: 0,
+          };
+          n.addEventListener('animationstart', () => { rec.starts++; });
+          n.__cue = rec;
+          window.__cues.push(rec);
+        }
+        for (const n of m.removedNodes) if (n.__cue) n.__cue.removed = performance.now();
+      }
+    }).observe(top, { childList: true });
+  });
+}
+
 // axe-core run; returns violations at or above the given impact.
 const AXE = fs.readFileSync(path.join(ROOT, 'node_modules/axe-core/axe.min.js'), 'utf8');
 // Floating combat numbers are excluded: they are decorative duplicates of the battle log,

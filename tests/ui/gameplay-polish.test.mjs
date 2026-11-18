@@ -1,10 +1,12 @@
-// Gameplay polish GP-1 (docs/gameplay-polish-scope.md, section 8): the XP cue plays once (A), the
-// numbers sit on the bars (B), only the current round shows (C), the outcome is shown once (D),
-// a mastery gain stays with its round (E), and the monster drop-down and the town rule (F).
+// Gameplay polish GP-1 (docs/gameplay-polish-scope.md, sections 8 and 14): the XP cue plays once
+// (A), the numbers sit on the bars (B), only the current round shows (C), the outcome is shown once
+// (D), a mastery gain stays with its round (E), the monster drop-down and the town rule (F), and,
+// from amendment 1, the floating gold and XP cues (GP-B6 to B8), two-line meters (GP-B9) and the
+// fight screen without HP bars (GP-H1 to H4).
 // Run with: npm run test:ui. Deterministic fixtures only, on the fake backend.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { setup, signIn, settle, FakeBackend, makeHero, axe, fixedQuest, townLairZone } from './harness.mjs';
+import { setup, signIn, settle, FakeBackend, makeHero, axe, fixedQuest, townLairZone, watchCues } from './harness.mjs';
 import { maxHp, xpToNext } from '../../public/js/engine/character.js';
 import { TOWN_NO_MONSTERS } from '../../public/js/engine/world.js';
 
@@ -84,7 +86,7 @@ test('GP-A1 after an XP gain, regeneration ticks leave the XP meter in place, an
   assert.equal(await xpMeter.evaluate((el) => el.isConnected), true, 'the XP meter was not recreated by the HP change');
   const anims = await page.evaluate(() => window.__anims);
   assert.deepEqual(anims.filter((a) => a === 'xp-glow'), ['xp-glow'], `the glow started once: ${anims.join(', ')}`);
-  assert.deepEqual(anims.filter((a) => a === 'delta'), ['delta'], `the +XP chip started once: ${anims.join(', ')}`);
+  // The +XP cue no longer lives in the meter (amendment G1); GP-B7 checks it plays once.
   await done(ctx);
 });
 
@@ -142,33 +144,41 @@ const meterFit = () => [...document.querySelectorAll('.meter')].filter((m) => m.
   return { meter: m.className, overflow: m.scrollWidth > m.clientWidth + 1, cut, out, wrapped };
 }).filter((x) => x.overflow || x.cut.length || x.out || x.wrapped.length);
 
+// A world boss with a seven-digit Shared HP: the only bar left in a fight (amendment G3).
+const BIG_HUNT = () => ({ id: 'h-big', zone: 'bramblebrook', name: 'Old Mother Bramble', level: 12, hp: 1234567, max_hp: 2000000, ends_at: new Date(Date.now() + 3 * 3600000).toISOString() });
+async function intoHunt(page) {
+  await page.waitForSelector('#main [data-a="hunt"]');
+  await tap(page, '#main [data-a="hunt"]');
+  await page.waitForSelector('#fx-foe .meter');
+}
+
 for (const [w, h] of [[320, 640], [390, 844], [1024, 768], [1440, 900]]) {
-  test(`GP-B1 at ${w}px, seven-digit HP and XP fit on the bars, in the hero bar and in a battle`, async () => {
-    const ctx = await game({ edit: BIG, viewport: { width: w, height: h } });
+  test(`GP-B1 at ${w}px, seven-digit HP and XP fit on the bars, in the hero bar and on a world boss's bar`, async () => {
+    const ctx = await game({ edit: BIG, viewport: { width: w, height: h }, activeHunts: [BIG_HUNT()] });
     const { page } = ctx;
     assert.deepEqual(await page.evaluate(meterFit), [], 'explore');
-    await fightNamed(page, 'Wisp Swarm');
-    assert.deepEqual(await page.evaluate(meterFit), [], 'battle');
+    await intoHunt(page);
+    assert.deepEqual(await page.evaluate(meterFit), [], 'world-boss hunt');
     await done(ctx);
   });
 }
 
 for (const w of [320, 390]) {
   test(`GP-B2 at ${w}px with 200% text, the bars still fit`, async () => {
-    const ctx = await game({ edit: BIG, viewport: { width: w, height: 844 }, textScale: '200%' });
+    const ctx = await game({ edit: BIG, viewport: { width: w, height: 844 }, textScale: '200%', activeHunts: [BIG_HUNT()] });
     const { page } = ctx;
     assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).fontSize), '32px');
     assert.deepEqual(await page.evaluate(meterFit), [], 'explore');
-    await fightNamed(page, 'Wisp Swarm');
-    assert.deepEqual(await page.evaluate(meterFit), [], 'battle');
+    await intoHunt(page);
+    assert.deepEqual(await page.evaluate(meterFit), [], 'world-boss hunt');
     await done(ctx);
   });
 }
 
 test('GP-B3 the numbers are at least 4.5:1 against the fill and against the empty track, for HP, XP and the foe', async () => {
-  const ctx = await game({ edit: (h) => { h.hp = Math.floor(maxHp(h) / 2); } });
+  const ctx = await game({ edit: (h) => { h.hp = Math.floor(maxHp(h) / 2); }, activeHunts: [BIG_HUNT()] });
   const { page } = ctx;
-  await fightNamed(page, 'Bog Hag');
+  await intoHunt(page); // the foe colour is on the world boss's Shared HP bar
   const pairs = await page.evaluate(() => {
     const rgb = (s) => s.match(/[\d.]+/g).slice(0, 3).map(Number);
     const lum = ([r, g, b]) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
@@ -206,19 +216,151 @@ test('GP-B4 when a bar shows the short numbers, screen readers still get the ful
   await done(ctx);
 });
 
-test('GP-B5 reduced motion: no animation on the XP bar or the gain chips', async () => {
+test('GP-B5 reduced motion: no animation on the XP bar or the gain cues; the cues stay still for the same time', async () => {
   const ctx = await game({ reducedMotion: 'reduce' });
   const { page } = ctx;
+  await watchCues(page);
   await fightNamed(page, 'Garden Snake');
   await finish(page);
-  const s = await page.evaluate(() => ({
-    chip: [...document.querySelectorAll('#top .delta')].map((d) => getComputedStyle(d).animationName),
-    glow: document.querySelector('#top .meter.xp.gain .meter-track') && getComputedStyle(document.querySelector('#top .meter.xp.gain .meter-track')).animationName,
-    width: getComputedStyle(document.querySelector('#top .meter-track i')).transitionDuration,
+  const glow = await page.evaluate(() => document.querySelector('#top .meter.xp.gain .meter-track') && getComputedStyle(document.querySelector('#top .meter.xp.gain .meter-track')).animationName);
+  assert.equal(glow, 'none');
+  await page.waitForTimeout(1900);
+  const cues = await page.evaluate(() => window.__cues);
+  assert.ok(cues.length >= 2, `the gold and XP cues are shown: ${JSON.stringify(cues)}`);
+  for (const c of cues) {
+    assert.equal(c.anim, 'none', c.text);
+    assert.equal(c.starts, 0, c.text);
+    assert.ok(c.removed && c.removed - c.added >= 1500 && c.removed - c.added < 2300, `${c.text} shown for ${c.removed - c.added} ms`);
+  }
+  await done(ctx);
+});
+
+// ---------------------------------------------------------------- amendment 1: floating cues (G1)
+
+// The contrast of a cue's text on its dark backing, composited over the hero bar's background.
+const cueContrast = (c) => {
+  const nums = (s) => s.match(/[\d.]+/g).map(Number);
+  const [r, g, b] = nums(c.color);
+  const [br, bg, bb, ba = 1] = nums(c.background);
+  const BG = [21, 17, 14]; // --bg, behind the hero bar
+  const back = [br, bg, bb].map((v, i) => v * ba + BG[i] * (1 - ba));
+  const lum = ([x, y, z]) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(x) + 0.7152 * f(y) + 0.0722 * f(z); };
+  const [hi, lo] = [lum([r, g, b]), lum(back)].sort((p, q) => q - p);
+  return (hi + 0.05) / (lo + 0.05);
+};
+
+test('GP-B6 the XP cue takes no space in the bar: the label stays "Lv N" and the fit is the same as without it', async () => {
+  // The owner's case (scope 14.1): level 62 at 23,516 XP, a win in Cinderspire Caldera.
+  const ctx = await game({ hero: { level: 62, zone: 'cinderspire', x: 3, y: 3 }, edit: (h) => { h.xp = 23516; } });
+  const { page } = ctx;
+  await watchCues(page);
+  await page.selectOption('#mon-select', { index: 0 });
+  await page.click('#main [data-a="fight"]'); await settle(page);
+  await finish(page);
+  assert.equal((await battle(page)).over, 'victory');
+  await page.waitForTimeout(2900); // the cue and the glow are over
+  const xp = (await page.evaluate(() => window.__cues)).find((c) => /XP$/.test(c.text));
+  assert.ok(xp, 'an XP cue was shown');
+  assert.equal(xp.inMeter, false, 'the cue is not inside the meter');
+  assert.equal(xp.xpLabel, 'Lv 62', 'while the cue shows, the label is only the level');
+  const after = await page.evaluate(() => { const m = document.querySelector('#top #hud-xp .meter'); return { label: m.querySelector('.meter-name').textContent, fit: ['compact', 'stack'].filter((c) => m.classList.contains(c)) }; });
+  assert.deepEqual(xp.xpFit, after.fit, 'the same fit with the cue and without it');
+  assert.equal(after.label, 'Lv 62');
+  await done(ctx);
+});
+
+test('GP-B7 the XP cue starts once, holds through a regeneration tick without restarting, is removed at 1.6 s, and is not recreated', async () => {
+  const ctx = await game({ edit: (h) => { h.hp = Math.floor(maxHp(h) * 0.5); } });
+  const { page } = ctx;
+  await watchCues(page);
+  // As soon as the XP cue appears, make the next one-second tick regenerate HP, and note the cue's
+  // state when that tick repaints the HP meter.
+  await page.evaluate(() => {
+    const top = document.getElementById('top');
+    new MutationObserver((muts) => {
+      for (const n of muts.flatMap((m) => [...m.addedNodes])) {
+        if (n.nodeType !== 1 || !n.classList.contains('cue') || !/XP$/.test(n.textContent)) continue;
+        window.clickmonster.char.lastTick -= 3000;
+        new MutationObserver(() => {
+          if (window.__atTick) return;
+          window.__atTick = { connected: n.isConnected, starts: n.__cue.starts, opacity: getComputedStyle(n).opacity, at: performance.now() - n.__cue.added };
+        }).observe(top.querySelector('#hud-hp'), { childList: true });
+      }
+    }).observe(top, { childList: true });
+  });
+  await fightNamed(page, 'Garden Snake');
+  await finish(page);
+  assert.equal((await battle(page)).over, 'victory');
+  await page.waitForFunction(() => window.__atTick, null, { timeout: 3000 });
+  const tick = await page.evaluate(() => window.__atTick);
+  assert.ok(tick.at < 1600, `the tick came while the cue showed (${Math.round(tick.at)} ms)`);
+  assert.equal(tick.connected, true, 'the tick did not replace the cue');
+  assert.equal(tick.starts, 1, 'its animation started once');
+  assert.equal(tick.opacity, '1', 'no fading');
+  await page.waitForTimeout(1900);
+  let cues = await page.evaluate(() => window.__cues.filter((c) => /XP$/.test(c.text)));
+  assert.equal(cues.length, 1, 'one XP cue');
+  const [c] = cues;
+  assert.equal(c.ariaHidden, 'true');
+  assert.equal(c.starts, 1);
+  assert.ok(c.removed && c.removed - c.added >= 1500 && c.removed - c.added < 2300, `shown for ${c.removed - c.added} ms`);
+  // Two more regeneration ticks: no cue comes back.
+  await page.evaluate(() => { window.clickmonster.char.lastTick -= 6000; });
+  await page.waitForTimeout(2200);
+  cues = await page.evaluate(() => window.__cues.filter((x) => /XP$/.test(x.text)));
+  assert.equal(cues.length, 1, 'later ticks did not recreate the cue');
+  assert.equal(await page.$('#top .cue'), null);
+  await done(ctx);
+});
+
+for (const way of ['gain', 'spend']) {
+  test(`GP-B8 a gold ${way} floats over the gold, told apart by colour, at least 4.5:1, and the gold line keeps its width`, async () => {
+    const ctx = way === 'gain' ? await game() : await game({ hero: { y: 5 }, edit: (h) => { h.hp = Math.floor(maxHp(h) / 2); } });
+    const { page } = ctx;
+    await watchCues(page);
+    let amount;
+    if (way === 'gain') {
+      await fightNamed(page, 'Garden Snake');
+      await finish(page);
+      amount = (await battle(page)).rewards.gold;
+      assert.ok(amount > 0, 'the fight drops gold');
+    } else {
+      const gold = await page.evaluate(() => window.clickmonster.char.gold);
+      await tap(page, '#dock [data-a="heal"]');
+      amount = gold - await page.evaluate(() => window.clickmonster.char.gold);
+      assert.ok(amount > 0, 'healing costs gold');
+    }
+    await page.waitForTimeout(1900);
+    const cue = (await page.evaluate(() => window.__cues)).find((c) => !/XP$/.test(c.text));
+    assert.ok(cue, 'a gold cue was shown');
+    assert.equal(cue.text, `${way === 'gain' ? '+' : '-'}${amount.toLocaleString('en-US')}`);
+    assert.ok(cue.cls.split(' ').includes(way === 'gain' ? 'up' : 'down'), cue.cls);
+    assert.equal(cue.ariaHidden, 'true');
+    assert.ok(cueContrast(cue) >= 4.5, `contrast ${cueContrast(cue).toFixed(2)}`);
+    const width = await page.evaluate(() => document.querySelector('#top #hud-row .hud-res').getBoundingClientRect().width);
+    assert.ok(Math.abs(cue.goldWidth - width) < 0.5, `the gold line is ${cue.goldWidth} wide with the cue, ${width} without`);
+    await done(ctx);
+  });
+}
+
+test('GP-B9 on two lines, the label and the numbers each span the bar (fix A)', async () => {
+  const ctx = await game();
+  const { page } = ctx;
+  // Narrow columns force the hero bar's meters onto two lines.
+  await page.addStyleTag({ content: '#top .hud-bars { grid-template-columns: 5.5rem 5.5rem !important; }' });
+  await page.evaluate(() => dispatchEvent(new Event('resize')));
+  await page.waitForTimeout(100);
+  const parts = await page.evaluate(() => [...document.querySelectorAll('#top .meter.stack')].map((m) => {
+    const text = m.querySelector('.meter-text');
+    const cs = getComputedStyle(text);
+    const room = text.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    return { meter: m.className, room, name: m.querySelector('.meter-name').getBoundingClientRect().width, num: m.querySelector('.meter-num').getBoundingClientRect().width };
   }));
-  assert.ok(s.chip.length, 'the gain chips are shown');
-  assert.ok(s.chip.every((a) => a === 'none'), s.chip.join(', '));
-  assert.equal(s.glow, 'none');
+  assert.ok(parts.length >= 1, 'at least one meter is on two lines');
+  for (const p of parts) {
+    assert.ok(Math.abs(p.name - p.room) < 1, `${p.meter}: the label is ${p.name} wide on a ${p.room} bar`);
+    assert.ok(Math.abs(p.num - p.room) < 1, `${p.meter}: the numbers are ${p.num} wide on a ${p.room} bar`);
+  }
   await done(ctx);
 });
 
@@ -579,3 +721,99 @@ test('GP-X1 axe: no violations of any impact on the explore picker, a fight with
     await done(ctx);
   }
 });
+
+// ---------------------------------------------------------------- amendment 1: no HP bars in a fight (G2, G3)
+
+// Floats added to the fight's sides: which side, and whether each sits in its side's strip.
+const watchFloats = (page) => page.evaluate(() => {
+  window.__floats = [];
+  new MutationObserver((muts) => {
+    for (const n of muts.flatMap((m) => [...m.addedNodes])) {
+      if (n.nodeType === 1 && n.classList.contains('float')) window.__floats.push({ side: n.closest('.side')?.id, inStrip: n.parentElement.classList.contains('side-fx'), cls: n.className });
+    }
+  }).observe(document.getElementById('main'), { childList: true, subtree: true });
+});
+
+test('GP-H1 an ordinary fight shows no HP bar on either side; the damage numbers still float over both sides', async () => {
+  const ctx = await game();
+  const { page } = ctx;
+  await watchFloats(page);
+  await fightNamed(page, 'Bog Hag');
+  for (let i = 0; i < 3 && await page.$('[data-a="melee"]'); i++) await tap(page, '[data-a="melee"]');
+  const v = await page.evaluate(() => ({ meters: document.querySelectorAll('#versus .meter').length, strips: [...document.querySelectorAll('#versus .side')].map((s) => !!s.querySelector('.side-fx')) }));
+  assert.equal(v.meters, 0, 'no HP bars');
+  assert.deepEqual(v.strips, [true, true], 'each side keeps its strip');
+  const floats = await page.evaluate(() => window.__floats);
+  assert.ok(floats.some((f) => f.side === 'fx-foe') && floats.some((f) => f.side === 'fx-you'), JSON.stringify(floats));
+  assert.ok(floats.every((f) => f.inStrip), "every float is in its side's strip");
+  await done(ctx);
+});
+
+test('GP-H2 a world-boss hunt shows the Shared HP bar and no bar for you', async () => {
+  const ctx = await game({ activeHunts: [BIG_HUNT()] });
+  const { page } = ctx;
+  await intoHunt(page);
+  const v = await page.evaluate(() => ({
+    you: document.querySelectorAll('#fx-you .meter').length,
+    foe: [...document.querySelectorAll('#fx-foe .meter')].map((m) => m.querySelector('.meter-name').textContent),
+    inStrip: !!document.querySelector('#fx-foe .side-fx .meter'),
+  }));
+  assert.deepEqual(v, { you: 0, foe: ['Shared HP'], inStrip: true });
+  await done(ctx);
+});
+
+test('GP-H3 a duel shows no bars', async () => {
+  const opponent = { ...MUSA, level: 30, gold: 900 };
+  const ctx = await game({ hero: { level: 35, zone: 'duskhollow', x: 2, y: 2 }, edit: (h) => { Object.assign(h.stats, { str: 900, dex: 900, int: 900, wis: 900, vit: 900 }); h.hp = maxHp(h); }, players: [opponent] });
+  const { page } = ctx;
+  await tap(page, '[data-a="list"][data-v="players"]');
+  await page.waitForSelector('[data-a="attack"]');
+  await page.click('[data-a="attack"]');
+  await page.click('#confirm [data-r="ok"]'); await settle(page);
+  await page.waitForSelector('.outcome');
+  assert.equal(await page.evaluate(() => document.querySelectorAll('#versus .meter').length), 0);
+  await done(ctx);
+});
+
+// Each kind of float, placed in each side's strip, at the start and the end of its rise: its box
+// must not touch the name or the sub-line, and must stay inside the strip and the fight's area.
+const floatGeometry = () => {
+  const out = [];
+  const hit = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+  const v = document.getElementById('versus').getBoundingClientRect();
+  for (const side of document.querySelectorAll('#versus .side')) {
+    const strip = side.querySelector('.side-fx');
+    if (!strip) { out.push({ side: side.id, problems: ['no strip'] }); continue; }
+    const name = side.querySelector('.side-name').getBoundingClientRect();
+    const sub = side.querySelector('.side-sub').getBoundingClientRect();
+    for (const [cls, text] of [['crit', '1,234!'], ['miss', 'Miss'], ['dmg-you', '-1,234']]) {
+      const el = document.createElement('span');
+      el.className = `float ${cls}`;
+      el.textContent = text;
+      strip.appendChild(el);
+      void getComputedStyle(el).animationName;
+      const anim = el.getAnimations()[0];
+      anim.pause();
+      const s = strip.getBoundingClientRect();
+      for (const t of [0, anim.effect.getComputedTiming().duration - 1]) {
+        anim.currentTime = t;
+        const b = el.getBoundingClientRect();
+        const problems = [hit(b, name) && 'covers the name', hit(b, sub) && 'covers the sub-line', b.top < s.top - 0.5 && 'above the strip',
+          b.bottom > s.bottom + 0.5 && 'below the strip', (b.left < v.left - 0.5 || b.right > v.right + 0.5) && 'outside the fight'].filter(Boolean);
+        if (problems.length) out.push({ side: side.id, cls, t, problems });
+      }
+      el.remove();
+    }
+  }
+  return out;
+};
+
+for (const [w, scale] of [[390, null], [320, '200%']]) {
+  test(`GP-H4 at ${w}px${scale ? ` with ${scale} text` : ''}, critical hits, misses and damage stay in their strip, clear of the names and sub-lines`, async () => {
+    const ctx = await game({ viewport: { width: w, height: 844 }, textScale: scale });
+    const { page } = ctx;
+    await fightNamed(page, 'Bog Hag');
+    assert.deepEqual(await page.evaluate(floatGeometry), []);
+    await done(ctx);
+  });
+}
