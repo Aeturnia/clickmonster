@@ -504,7 +504,8 @@ MR-B1 and MR-B2 were accepted in principle. MR-S1 needed a tighter contract.
 - **The rename merged** as PR #48 (`ea2e4a4`), after independent review at `2eaae3e` and green required checks (CI run `44326706062`: `engine` 51/51; `database` 42/42 pgTAP and 12/12 API; `browser` 208/208, on the merge commit `8429bc7`).
 - **Step 2** stays recorded as done early by the owner, not independently inspected.
 - **Step 3 passed** on 2026-11-18, as reported by the owner: session kept, and a dashboard reset link worked end to end on `monstraregna.com`. Sign-up confirmation isn't tested: "Confirm email" has been off since the first setup, and turning it on waits for an email provider.
-- **Next:** step 4. The record is `docs/monstra-regna-b1-report.md`, section 3.
+- **Step 4 passed** on 2026-11-18: the owner's browser check and Claude's read-only requests (titles, manifest, and `monstraregna.com` canonical and `og:url` on news pages, from both hosts).
+- **Next:** the announcement (QB-2), then step 5. The record is `docs/monstra-regna-b1-report.md`, section 3.
 
 ### Unchanged through the migration
 
