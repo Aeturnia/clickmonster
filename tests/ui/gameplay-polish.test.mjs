@@ -37,9 +37,13 @@ const calls = (backend, action) => backend.calls.filter((c) => c.action === acti
 const tap = async (page, sel) => { await page.waitForTimeout(270); await page.click(sel); await settle(page); };
 const monsterId = (page, name) => page.evaluate((n) => Object.values(window.clickmonster.MONSTERS).find((m) => m.name === n)?.id, name);
 // Choose a monster in the drop-down and press Fight.
+// (It also drives the old monster rows, so a test can be run against the old version with
+// UI_PUBLIC_DIR to show that it detects the old defect.)
 async function fightNamed(page, name) {
-  await page.selectOption('#mon-select', await monsterId(page, name));
-  await page.click('#main [data-a="fight"]'); await settle(page);
+  const id = await monsterId(page, name);
+  if (await page.$('#mon-select')) { await page.selectOption('#mon-select', id); await page.click('#main [data-a="fight"]'); }
+  else await page.click(`#main [data-a="fight"][data-v="${id}"]`);
+  await settle(page);
   await page.waitForTimeout(270);
 }
 async function finish(page, max = 60) {
@@ -76,15 +80,32 @@ test('GP-A1 after an XP gain, regeneration ticks leave the XP meter in place, an
   await fightNamed(page, 'Garden Snake');
   await finish(page);
   assert.equal((await battle(page)).over, 'victory');
+  // While the "+XP" chip shows (DELTA_MS, 2.6 s), watch the XP meter through any HP change. The
+  // chip's removal is itself a change to the XP meter, so the meter may be redrawn then; that
+  // redraw starts no cue (the gain class goes with it).
+  const during = await page.evaluate(() => new Promise((resolve) => {
+    const meter = document.querySelector('#top .meter.xp');
+    const hp0 = window.clickmonster.char.hp;
+    let hpChanged = false; let keptThroughHp = true;
+    const t = setInterval(() => {
+      const chip = document.querySelector('#top .meter.xp .delta');
+      if (chip && window.clickmonster.char.hp !== hp0) { hpChanged = true; if (!meter.isConnected) keptThroughHp = false; }
+      if (!chip) { clearInterval(t); resolve({ hpChanged, keptThroughHp }); }
+    }, 50);
+  }));
+  if (during.hpChanged) assert.equal(during.keptThroughHp, true, 'an HP change while the chip showed did not recreate the XP meter');
+  const anims = await page.evaluate(() => window.__anims);
+  assert.deepEqual(anims.filter((a) => a === 'xp-glow'), ['xp-glow'], `the glow started once: ${anims.join(', ')}`);
+  assert.deepEqual(anims.filter((a) => a === 'delta'), ['delta'], `the +XP chip started once: ${anims.join(', ')}`);
+  // Then, with the chip gone, the next HP change leaves the XP meter in place. (On the old code,
+  // any HP change rebuilt the whole hero bar.)
   const xpMeter = await page.$('#top .meter.xp');
   const hp = await page.evaluate(() => window.clickmonster.char.hp);
   // Regeneration: 1% of max HP every 3 seconds, drawn by the one-second tick.
   await page.waitForFunction((h) => window.clickmonster.char.hp > h, hp, { timeout: 8000 });
   await page.waitForTimeout(300);
   assert.equal(await xpMeter.evaluate((el) => el.isConnected), true, 'the XP meter was not recreated by the HP change');
-  const anims = await page.evaluate(() => window.__anims);
-  assert.deepEqual(anims.filter((a) => a === 'xp-glow'), ['xp-glow'], `the glow started once: ${anims.join(', ')}`);
-  assert.deepEqual(anims.filter((a) => a === 'delta'), ['delta'], `the +XP chip started once: ${anims.join(', ')}`);
+  assert.deepEqual((await page.evaluate(() => window.__anims)).filter((a) => a === 'xp-glow'), ['xp-glow'], 'no cue restarted');
   await done(ctx);
 });
 

@@ -142,6 +142,17 @@ Each test was run against the old code where the scope asks for it.
 
 **The earlier head, `a060d0b`** (run `44373672791`), failed responsive AC-1 on Windows: the wrapped picker was out of view at 320x640. That was fixed in `0dcfb5a` (deviation 4).
 
+**Later runs, after `main` was merged in** (PR #52, scope amendment 1; no code change):
+- **`b60c6ae`** (run `44410857655`): `R1-02 an expired link (error_code only)…` failed.
+  - **The cause, from `diag.json`:** the request for `/js/data/items.js` failed with `net::ERR_NO_BUFFER_SPACE`, a Windows socket-buffer error on the runner.
+  - **Not GP-1's:** GP-1 doesn't touch that file. It is recorded in `docs/backlog.md`.
+- **`ff8581a`** (run `44412658529`): **GP-A1 failed, a timing gap in that test, not in the fix.**
+  - **What happened:** the test held the XP meter, then waited for the next HP regeneration tick. Regeneration ticks every 3 s, but the "+XP" chip is removed after 2.6 s, and removing it is itself a change to the XP meter (it is redrawn, with no cue). On the Windows runner the chip's removal came before the HP tick, so the test saw a new meter.
+  - **The correction:**
+    - while the chip shows, any HP change must leave the meter in place, and the cue must start once;
+    - then, with the chip gone, a fresh hold of the meter must survive the next HP tick.
+  - **Results:** the corrected test passed 3 of 3 runs locally. Against `main` (through `UI_PUBLIC_DIR`) it still fails: "an HP change while the chip showed did not recreate the XP meter". To make that old-code run possible, the test's fight helper now also drives the old monster rows.
+
 ## 7. Not verified
 
 - Real phones and tablets, and the native picker on iOS and Android (the harness emulates touch in Chromium only).
