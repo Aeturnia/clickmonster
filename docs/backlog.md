@@ -111,7 +111,7 @@ A separate staging Supabase project is dropped. The live sign-in session above c
   - Normal operation writes exactly one entry per change.
   - Guaranteeing the entry (the change and its log in one transaction, for example through a database function) would be a change across every admin action. It needs its own decision.
 
-- **The entrance's startup budget** (landing LAC-2) was revised to 32,000 decoded bytes in the L-4 review. The first paint is 31,112 bytes after L-4. Comments are not to be stripped to meet it (the owner's direction).
+- **The entrance's startup budget** (landing LAC-2) is 34,000 decoded bytes. It was revised to 32,000 in the L-4 review, then to 34,000 by the owner for password recovery (2026-11-17). The first paint is 33,987 bytes with R-1. Comments are not to be stripped to meet it (the owner's direction).
 
 - **Queued battle effects across an account change** (from the L-1 final review).
   - `playEffects()` in `main.js` schedules battle animations with `setTimeout`. The timers aren't tied to the game session (`gameGen`).
@@ -205,9 +205,7 @@ Netlify posts no deploy status for `main`, so this confirms that a deploy landed
 
 ## Password recovery
 
-Raised in the landing-page scope review (2026-11-13, Q14). It is tracked separately from that milestone, as a higher-priority account-reliability item, and is not yet scheduled.
-
-**Being scoped:** `docs/password-recovery-scope.md` (draft, 2026-11-17). It isn't authorized for implementation.
+Raised in the landing-page scope review (2026-11-13, Q14). It is tracked separately from that milestone, as a higher-priority account-reliability item.
 
 - **Today:** there is no way to reset a forgotten password. A player who forgets it loses access to their hero.
 - **Needs:**
@@ -216,6 +214,19 @@ Raised in the landing-page scope review (2026-11-13, Q14). It is tracked separat
   - a page to set the new password;
   - tests on the fake backend.
 - **Fits with the entrance** (L-1), but isn't part of it unless the owner schedules it.
+- **Status (2026-11-17):**
+  - **Scoped and accepted** in `docs/password-recovery-scope.md` (PR #44, merged as `031a026`).
+  - **R-1 implemented** in its own PR: built and tested locally, with "Forgot your password?" switched off (`RECOVERY_REQUESTS`). See `docs/password-recovery-r1-report.md`.
+- **Production activation** is not authorized. The checklist is in the R-1 report, section 7:
+  1. a Resend account;
+  2. a verified sending domain the owner controls;
+  3. Resend's SMTP in Supabase;
+  4. approved Monstra Regna templates;
+  5. the Site URL and the allow-list, production origin only;
+  6. expiry, password policy and rate limits;
+  7. real delivery tests;
+  8. the owner's live test;
+  9. switching the request on.
 
 ## News and updates on the sign-in page
 

@@ -30,7 +30,7 @@ Read these first:
     - **What it covers:** the entrance's news and maintenance line (`js/entry-news.js`, loaded after the first paint) and the article pages (`netlify/edge-functions/news.js`).
     - **Findings:** L4-01 (the maintenance notice expires while the page is open), L4-02 (405 headers) and L4-03 (an open-ended notice under way comes first) are closed.
   - **Final baseline** on `main` at `d754dad`: engine 47/47 and browser 178/178, in each of 3 runs.
-  - **The entrance's startup budget** (LAC-2) is 32,000 decoded bytes, revised in the L-4 review. It is 31,112 after L-4. Don't strip comments to meet it.
+  - **The entrance's startup budget** (LAC-2) is 34,000 decoded bytes: revised to 32,000 in the L-4 review, then to 34,000 by the owner for password recovery (2026-11-17). It is 33,987 with R-1. Don't strip comments to meet it.
   - **Still open:**
     - the backlog's release checks: before release, sign-in on the live site and unpublishing; after release, the live maintenance line and the rest;
     - `/news` pagination (a follow-up);
@@ -143,6 +143,13 @@ Read these first:
   - **Pages:** no script, a strict policy, `no-store`, and the canonical address from `public/js/site.js` (`SITE_ORIGIN`, which also holds `SITE_NAME`).
   - **Tests:** the handler is tested in Node (`tests/news-pages.test.mjs`), and the harness serves `/news` through it.
   - **The entrance's news** (`js/entry-news.js`) loads only after the first contentful paint, and failures show nothing.
+- **Password recovery** (R-1, `docs/password-recovery-r1-report.md`; scope `docs/password-recovery-scope.md`, PR #44):
+  - **The guard** is in `entry.js`, in the first paint. A reset link, its error, a `PASSWORD_RECOVERY` event, or the `clickmonster.recovery` marker for the saved session's user holds the game back: no start and no preload. It is a UI guard, not server-enforced.
+  - **The rest** is lazily loaded: `js/entry-recover.js`.
+  - **`entry.js` stays the only auth listener;** the module gets sessions through hooks.
+  - **The release switch:** "Forgot your password?" is off until `RECOVERY_REQUESTS` in `entry.js` is set to `true` in a reviewed PR. Arriving from a link is handled regardless.
+  - **Tests:** `tests/ui/password-recovery.test.mjs` (`recoveryUrl()` and `recoveryRequestsOn()` in the harness), `tests/db/password-recovery.test.mjs` (local GoTrue and Mailpit), and `tools/recovery-local-check.mjs` (end to end through the entrance, local only).
+  - **Production activation is not authorized.** Its checklist is in the report, section 7.
 - **Supabase edge functions import shared code only from `js/engine/` and `js/data/`,** because `tools/deploy-functions.mjs` uploads only those; `tests/news.test.mjs` checks this.
 - **Admin requests are single-flight** (Phase 4 review, P4-01 to P4-04). `st.pendingForms` holds one key per request in flight:
   - a form id;
@@ -165,8 +172,8 @@ Read these first:
 
 ```
 npm test                 # engine, entrance file checks, the startup budget, news rules and the news page handler (48)
-npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (178)
-npm run test:db          # database (pgTAP, 42) and API/function tests (9) on the LOCAL Supabase stack
+npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (202)
+npm run test:db          # database (pgTAP, 42) and API/function/recovery tests (12) on the LOCAL Supabase stack, with Mailpit
 npx playwright install chromium   # once
 ```
 
@@ -189,12 +196,12 @@ npx playwright install chromium   # once
   - **Every test** also writes resource measurements (duration, Node event-loop delay and CPU, machine CPU, memory) to `tests/ui/artifacts/metrics/`. CI uploads them on every run as `browser-metrics-attempt-<n>`.
   - **The trace has no screenshots,** to reduce load on the two-core runner. `UI_TRACE_SCREENSHOTS=1` turns them back on, for comparison only.
   - **Reading the event-loop delay on Windows:** an idle process reads about 31 ms.
-- **The startup budget** is now a test (`tests/entrance-budget.test.mjs`): the document plus every stylesheet and script `index.html` loads, counted as LF, at most 32,000 bytes.
+- **The startup budget** is now a test (`tests/entrance-budget.test.mjs`): the document plus every stylesheet and script `index.html` loads, counted as LF, at most 34,000 bytes.
 
 **The local Supabase stack** (landing L-3) runs in Docker Desktop. The pinned CLI is a dev dependency.
 - **Start it:**
   ```
-  npx supabase start -x studio,imgproxy,storage-api,logflare,vector,supavisor,mailpit,realtime,postgres-meta
+  npx supabase start -x studio,imgproxy,storage-api,logflare,vector,supavisor,realtime,postgres-meta
   ```
   This applies every migration to a fresh local database. Then run `npm run test:db`.
 - **`npx supabase db reset`** re-applies the migrations from scratch. **`npx supabase stop`** stops it.

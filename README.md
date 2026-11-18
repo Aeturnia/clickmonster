@@ -106,7 +106,7 @@ contact the live Supabase project: every request is answered by a fake backend i
 
 ```
 npm test        # run engine tests
-npm run test:db # database and API tests on the local Supabase stack (Docker; see CLAUDE.md)
+npm run test:db # database, API and password-recovery tests on the local Supabase stack, with Mailpit (Docker; see CLAUDE.md)
 npm run sim     # print balance tables (win rates, fight length by build/level)
 npm run test:ui            # browser UI tests (Playwright + axe-core) against a fake backend
 node tools/ui-metrics.mjs out.json   # responsive layout measurements (UI_PUBLIC_DIR=<dir> to measure another checkout)

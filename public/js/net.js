@@ -41,10 +41,11 @@ export function client() {
 }
 
 // Sign out because the player asked to. The entrance tells this apart from a session that ended.
+// Everywhere by default; { scope: 'local' } ends only this browser's session (cancelling a reset).
 let userSignOut = false;
-export async function signOut() {
+export async function signOut(options) {
   userSignOut = true;
-  try { await sb?.auth.signOut(); } catch { /* the session is cleared locally either way */ }
+  try { await sb?.auth.signOut(options); } catch { /* the session is cleared locally either way */ }
 }
 export function takeUserSignOut() { const was = userSignOut; userSignOut = false; return was; }
 

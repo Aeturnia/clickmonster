@@ -98,6 +98,27 @@ export function savedSession(acct, expiresIn = 3600) {
   };
 }
 
+// The address a password-reset email's link returns to (implicit flow): the recovery session in
+// the fragment, as Supabase sends it (docs/password-recovery-scope.md). With `error`, the fragment of
+// an expired or used link instead.
+export function recoveryUrl(base, acct, { error = false } = {}) {
+  if (error) return `${base}/#error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired`;
+  const s = savedSession(acct);
+  return `${base}/#access_token=${s.access_token}&expires_at=${s.expires_at}&expires_in=${s.expires_in}&refresh_token=${s.refresh_token}&token_type=bearer&type=recovery`;
+}
+
+// Turns on "Forgot your password?" for this page only, as releasing it will (entry.js
+// RECOVERY_REQUESTS). Test-only: it rewrites the served entry.js, and fails if the switch is missing.
+export async function recoveryRequestsOn(page) {
+  await page.route('**/js/entry.js', async (route) => {
+    const res = await route.fetch();
+    const text = await res.text();
+    const on = text.replace('const RECOVERY_REQUESTS = false;', 'const RECOVERY_REQUESTS = true;');
+    if (on === text) throw new Error('entry.js has no RECOVERY_REQUESTS switch to turn on');
+    await route.fulfill({ response: res, body: on });
+  });
+}
+
 // ---------------------------------------------------------------- fake backend
 export class FakeBackend {
   // worldEvents: timed events in world_config (e.g. { id, name, until, xp: 2 }); activeHunts:
@@ -126,6 +147,17 @@ export class FakeBackend {
     this.sockets = [];
     this.revoked = new Set(); // refresh tokens the auth server refuses
     this.authCalls = []; // grant types requested from /auth/v1/token, in order
+    // Password recovery: reset requests ({ email, redirectTo }), changed passwords by user id, password
+    // updates and sign-out scopes, in order. recoverStatus = 429 refuses a reset request;
+    // failUserUpdate = <status> refuses the update; failOthersLogout = n fails the next n "sign out
+    // the other devices".
+    this.recoverRequests = [];
+    this.passwords = {};
+    this.passwordUpdates = [];
+    this.logouts = [];
+    this.recoverStatus = 200;
+    this.failUserUpdate = 0;
+    this.failOthersLogout = 0;
     // The real board depends on the hour; tests that need a quest pass a fixed one (fixedQuest()).
     this.quests = quests || generateQuests(hourBucket()).map((q, i) => ({ ...q, id: `quest-${i}`, completedBy: null }));
   }
@@ -567,14 +599,38 @@ export async function attach(context, backend, baseUrl) {
         // Refresh tokens are refresh-<account id>; anything else (or a revoked one) is refused.
         const acct = url.searchParams.get('grant_type') === 'refresh_token'
           ? (backend.revoked.has(body.refresh_token) ? null : Object.values(ACCOUNTS).find((x) => body.refresh_token === `refresh-${x.id}`))
-          : Object.values(ACCOUNTS).find((x) => x.email === body.email && x.password === body.password);
+          : Object.values(ACCOUNTS).find((x) => x.email === body.email && (backend.passwords[x.id] ?? x.password) === body.password);
         backend.authCalls.push(url.searchParams.get('grant_type') || 'password');
         if (!acct && url.searchParams.get('grant_type') === 'refresh_token') return json(route, 400, { error: 'invalid_grant', error_description: 'Invalid Refresh Token: Refresh Token Not Found', msg: 'Invalid Refresh Token: Refresh Token Not Found', code: 'refresh_token_not_found' });
         if (!acct) return json(route, 400, { error: 'invalid_grant', error_description: 'Invalid login credentials', msg: 'Invalid login credentials' });
         return json(route, 200, savedSession(acct));
       }
+      // Password recovery (docs/password-recovery-scope.md). A changed password is kept per backend
+      // (backend.passwords), never in the shared ACCOUNTS.
+      if (p === '/auth/v1/user' && req.method() === 'PUT') {
+        if (!user) return json(route, 401, { msg: 'no user' });
+        const body = JSON.parse(req.postData() || '{}');
+        if (backend.failUserUpdate) return json(route, backend.failUserUpdate, { msg: 'Could not update the user' });
+        if (typeof body.password === 'string') {
+          if (body.password.length < 6) return json(route, 422, { code: 'weak_password', msg: 'Password should be at least 6 characters.', weak_password: { reasons: ['length'] } });
+          backend.passwords[user.id] = body.password;
+          backend.passwordUpdates.push(user.id);
+        }
+        return json(route, 200, { id: user.id, email: user.email, aud: 'authenticated', role: 'authenticated' });
+      }
       if (p === '/auth/v1/user') return user ? json(route, 200, { id: user.id, email: user.email, aud: 'authenticated', role: 'authenticated' }) : json(route, 401, { msg: 'no user' });
-      if (p === '/auth/v1/logout') return route.fulfill({ status: 204 });
+      if (p === '/auth/v1/logout') {
+        const scope = url.searchParams.get('scope') || 'global';
+        backend.logouts.push(scope);
+        if (scope === 'others' && backend.failOthersLogout > 0) { backend.failOthersLogout--; return json(route, 500, { msg: 'Internal server error' }); }
+        return route.fulfill({ status: 204 });
+      }
+      if (p === '/auth/v1/recover') {
+        const body = JSON.parse(req.postData() || '{}');
+        backend.recoverRequests.push({ email: body.email, redirectTo: url.searchParams.get('redirect_to') });
+        if (backend.recoverStatus === 429) return json(route, 429, { code: 'over_email_send_rate_limit', msg: 'email rate limit exceeded' });
+        return json(route, 200, {}); // the same for every address, as the real server answers
+      }
       // Sign-up with email confirmation on (as the live project): a user, no session yet.
       if (p === '/auth/v1/signup') {
         const body = JSON.parse(req.postData() || '{}');
