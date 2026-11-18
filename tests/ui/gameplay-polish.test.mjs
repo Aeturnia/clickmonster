@@ -39,9 +39,13 @@ const calls = (backend, action) => backend.calls.filter((c) => c.action === acti
 const tap = async (page, sel) => { await page.waitForTimeout(270); await page.click(sel); await settle(page); };
 const monsterId = (page, name) => page.evaluate((n) => Object.values(window.clickmonster.MONSTERS).find((m) => m.name === n)?.id, name);
 // Choose a monster in the drop-down and press Fight.
+// (It also drives the old monster rows, so a test can be run against the old version with
+// UI_PUBLIC_DIR to show that it detects the old defect.)
 async function fightNamed(page, name) {
-  await page.selectOption('#mon-select', await monsterId(page, name));
-  await page.click('#main [data-a="fight"]'); await settle(page);
+  const id = await monsterId(page, name);
+  if (await page.$('#mon-select')) { await page.selectOption('#mon-select', id); await page.click('#main [data-a="fight"]'); }
+  else await page.click(`#main [data-a="fight"][data-v="${id}"]`);
+  await settle(page);
   await page.waitForTimeout(270);
 }
 async function finish(page, max = 60) {
@@ -78,6 +82,22 @@ test('GP-A1 after an XP gain, regeneration ticks leave the XP meter in place, an
   await fightNamed(page, 'Garden Snake');
   await finish(page);
   assert.equal((await battle(page)).over, 'victory');
+  // While the XP bar glows (the gain class, DELTA_MS, 2.6 s), watch the XP meter through any HP
+  // change. The gain class's removal is itself a change to the XP meter, so the meter may be
+  // redrawn then; that redraw starts no glow (CI run 44412658529 found the gap on Windows).
+  const during = await page.evaluate(() => new Promise((resolve) => {
+    const meter = document.querySelector('#top .meter.xp');
+    const hp0 = window.clickmonster.char.hp;
+    let hpChanged = false; let keptThroughHp = true;
+    const t = setInterval(() => {
+      const gain = document.querySelector('#top .meter.xp.gain');
+      if (gain && window.clickmonster.char.hp !== hp0) { hpChanged = true; if (!meter.isConnected) keptThroughHp = false; }
+      if (!gain) { clearInterval(t); resolve({ hpChanged, keptThroughHp }); }
+    }, 50);
+  }));
+  if (during.hpChanged) assert.equal(during.keptThroughHp, true, 'an HP change while the bar glowed did not recreate the XP meter');
+  // Then, with the glow over, the next HP change leaves the XP meter in place. (On the old code,
+  // any HP change rebuilt the whole hero bar.)
   const xpMeter = await page.$('#top .meter.xp');
   const hp = await page.evaluate(() => window.clickmonster.char.hp);
   // Regeneration: 1% of max HP every 3 seconds, drawn by the one-second tick.

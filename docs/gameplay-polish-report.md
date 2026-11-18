@@ -143,6 +143,17 @@ Each test was run against the old code where the scope asks for it.
 
 **The earlier head, `a060d0b`** (run `44373672791`), failed responsive AC-1 on Windows: the wrapped picker was out of view at 320x640. That was fixed in `0dcfb5a` (deviation 4).
 
+**Later runs, after `main` was merged in** (PR #52, scope amendment 1; no code change):
+- **`b60c6ae`** (run `44410857655`): `R1-02 an expired link (error_code only)…` failed.
+  - **The cause, from `diag.json`:** the request for `/js/data/items.js` failed with `net::ERR_NO_BUFFER_SPACE`, a Windows socket-buffer error on the runner.
+  - **Not GP-1's:** GP-1 doesn't touch that file. It is recorded in `docs/backlog.md`.
+- **`ff8581a`** (run `44412658529`): **GP-A1 failed, a timing gap in that test, not in the fix.**
+  - **What happened:** the test held the XP meter, then waited for the next HP regeneration tick. Regeneration ticks every 3 s, but the "+XP" chip is removed after 2.6 s, and removing it is itself a change to the XP meter (it is redrawn, with no cue). On the Windows runner the chip's removal came before the HP tick, so the test saw a new meter.
+  - **The correction:**
+    - while the chip shows, any HP change must leave the meter in place, and the cue must start once;
+    - then, with the chip gone, a fresh hold of the meter must survive the next HP tick.
+  - **Results:** the corrected test passed 3 of 3 runs locally. Against `main` (through `UI_PUBLIC_DIR`) it still fails: "an HP change while the chip showed did not recreate the XP meter". To make that old-code run possible, the test's fight helper now also drives the old monster rows.
+
 ## 7. Not verified
 
 - Real phones and tablets, and the native picker on iOS and Android (the harness emulates touch in Chromium only). **Amendment 1's iPhone check** is the owner's, after this push (section 9.6).
@@ -190,6 +201,7 @@ The new tests were run against this PR's previous head, `59da88f`, through `UI_P
 
 **Changed:**
 - **GP-A1, GP-B1, GP-B2, GP-B3, GP-B5:** as in section 2.
+- **GP-A1 also takes the correction made in parallel on this branch** (`05c9665`, section 6: on the Windows runner, the chip's removal at 2.6 s redrew the XP meter before the next HP tick). With the chip gone, the same gap is the glow's: removing the `gain` class at 2.6 s redraws the meter. So the test now watches the meter through any HP change while the bar glows, then holds a fresh meter across the next HP tick. It still fails on `main` at `9827ce1` ("an HP change while the bar glowed did not recreate the XP meter"). The merged branch's test file passed 40 of 40 in each of three runs.
 - **GP-A2:** its test never read the fight's HP bar, so it is unchanged. As the scope asks, your HP during a fight is now checked in the hero bar: GP-H1 checks it shows your current HP after the rounds. HP doesn't regenerate during a fight, so it changes with the hits taken.
 - **The Phase 3 feedback test** reads the floating cues through the harness's new `watchCues()` instead of the chips, and its reduced-motion check uses a `.cue`.
 
@@ -228,7 +240,7 @@ The fake backend's win gives +71 XP, not the +767 the owner saw live, so the cue
 
 ### 9.5 Runs and CI
 
-**Local:** three full runs on `8bb120f` (the code and tests as pushed), on the owner's Windows laptop.
+**Local:** three full runs on `8bb120f`, on the owner's Windows laptop. The merge of the parallel commits that followed changed only GP-A1 and the test file's fight helper, and that file was run three more times on the merge (40 of 40 each); CI runs the full suites on the pushed head.
 
 | Run | Engine and file tests | Browser |
 |---|---|---|
