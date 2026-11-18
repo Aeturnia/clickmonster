@@ -20,7 +20,8 @@ const incoming = (id, text, channel = 'global') => ({
 });
 
 async function open(w, h, opts = {}) {
-  const backend = new FakeBackend({ hero: opts.hero || makeHero(), chat: structuredClone(CHAT), worldEvents: opts.worldEvents, activeHunts: opts.activeHunts });
+  // One step out of town, where monsters roam (gameplay polish F2).
+  const backend = new FakeBackend({ hero: opts.hero || makeHero({ y: 4 }), chat: structuredClone(CHAT), worldEvents: opts.worldEvents, activeHunts: opts.activeHunts });
   const ctx = await env.page({ backend, viewport: { width: w, height: h }, mobile: !!opts.touch });
   await signIn(ctx.page, env.url, 'player');
   await ctx.page.waitForSelector('[data-a="move"]', { timeout: 15000 });
@@ -177,7 +178,7 @@ test('D-2 moving between panel and drawer keeps the draft, channel, unread count
   await page.setViewportSize({ width: 1240, height: 900 });
   await page.waitForFunction(() => document.getElementById('app').dataset.chat === 'drawer');
   assert.equal((await chatState(page)).drawerOpen, false, 'the drawer does not open by itself');
-  assert.equal((await focusInfo(page)).a, 'fight', 'focus stays on the monster row');
+  assert.equal((await focusInfo(page)).a, 'fight', 'focus stays on the Fight button');
   await page.click('.chatbar');
   await page.waitForSelector('#chat[open] #chat-input');
   assert.equal(await page.inputValue('#chat #chat-input'), 'On my way', 'the draft is still there');
@@ -412,7 +413,7 @@ test('D2-02 a failed send comes back without taking focus from the game', async 
   release();
   await page.waitForSelector('#chatpanel #chat-error');
   assert.equal(await page.inputValue('#chatpanel #chat-input'), 'Keep this', 'the text is back in the box');
-  assert.equal((await focusInfo(page)).a, 'fight', 'focus stays on the monster row');
+  assert.equal((await focusInfo(page)).a, 'fight', 'focus stays on the Fight button');
   await page.click('#chatpanel #chat-input');
   await page.keyboard.press('Enter'); // retry
   await inPanel(page, 'Keep this');

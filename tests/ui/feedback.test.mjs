@@ -223,7 +223,9 @@ test('admin zones: a delete the server would refuse is explained, not asked; res
 
 async function intoFight(page, foe = 'Bog Hag') {
   await tap(page, '[data-a="move"][data-v="n"]');
-  await page.locator('#main [data-a="fight"]', { hasText: foe }).click(); await settle(page);
+  // The monster drop-down (gameplay polish F1): choose, then Fight.
+  await page.selectOption('#mon-select', await page.evaluate((n) => Object.values(window.clickmonster.MONSTERS).find((m) => m.name === n).id, foe));
+  await page.click('#main [data-a="fight"]'); await settle(page);
   await page.waitForTimeout(270);
 }
 
@@ -280,7 +282,7 @@ test('battle log: turns are grouped, the current turn stands out, the outcome li
     turns: [...document.querySelectorAll('#log .turn')].map((t) => t.querySelector('.turn-label').textContent),
     current: document.querySelectorAll('#log .turn.current').length,
     latestInCurrent: !!document.querySelector('#log .turn.current p.latest'),
-    olderOutside: [...document.querySelectorAll('#log .turn:not(.current) p:not(.turn-label)')].every((p) => p.classList.contains('older')),
+    olderOutside: [...document.querySelectorAll('#log .turn:not(.current) p:not(.turn-label):not(.turn-gain)')].every((p) => p.classList.contains('older')),
   }));
   assert.deepEqual(log.turns, ['Turn 1', 'Turn 2']);
   assert.equal(log.current, 1);

@@ -89,6 +89,8 @@ for (const [w, h] of sizes) {
     await page.waitForSelector('#dock .dock-explore', { timeout: 15000 });
     await settle(page);
     const explore = await page.evaluate(EXPLORE);
+    // Gameplay polish F2: monsters roam outside the village, so the fight starts one step north.
+    await page.click('[data-a="move"][data-v="n"]'); await settle(page);
     await page.click('#main [data-a="fight"]');
     await page.waitForSelector('.dock-battle', { timeout: 10000 });
     await settle(page);

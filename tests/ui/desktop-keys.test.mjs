@@ -35,7 +35,8 @@ const sent = (backend, action) => backend.calls.filter((c) => c.action === actio
 const noAxe = async (page, label) => assert.deepEqual((await axe(page, { minImpact: 'minor' })).map((v) => `${v.id}:${v.impact}`), [], label);
 async function press(page, key) { await page.waitForTimeout(270); await page.keyboard.press(key); await settle(page); }
 // A hero who hits softly and lasts, so a fight lasts several turns.
-function enduringHero() { const c = makeHero(); c.stats.str = 1; c.stats.vit = 400; c.hp = maxHp(c); return c; }
+// One step out of town, where monsters roam (gameplay polish F2).
+function enduringHero() { const c = makeHero({ y: 4 }); c.stats.str = 1; c.stats.vit = 400; c.hp = maxHp(c); return c; }
 
 // ---------------------------------------------------------------- the shortcuts
 
@@ -53,8 +54,9 @@ test('D-3 number keys switch screens, and the tabs announce their keys', async (
 test('D-3 battle keys: M, C and F press Melee, Cast and Flee', async () => {
   const ctx = await open(1440, 900, { hero: enduringHero() });
   const { page, backend } = ctx;
-  const strongest = await page.evaluate(() => [...document.querySelectorAll('#main [data-a="fight"]')].at(-1).dataset.v);
-  await page.click(`#main [data-a="fight"][data-v="${strongest}"]`);
+  const strongest = await page.$eval('#mon-select', (s) => s.options[s.options.length - 1].value);
+  await page.selectOption('#mon-select', strongest);
+  await page.click('#main [data-a="fight"]');
   await settle(page);
   await page.evaluate(() => document.activeElement?.blur());
   const marks = await page.evaluate(() => ['melee', 'cast', 'flee'].map((a) => document.querySelector(`#dock [data-a="${a}"]`).getAttribute('aria-keyshortcuts')));
@@ -70,7 +72,7 @@ test('D-3 battle keys: M, C and F press Melee, Cast and Flee', async () => {
 });
 
 test('D-3 Enter fights again, but a focused button keeps its own Enter', async () => {
-  const ctx = await open(1440, 900);
+  const ctx = await open(1440, 900, { y: 4 });
   const { page, backend } = ctx;
   await page.click('#main [data-a="fight"]'); // the Garden Snake: two hits
   await settle(page);
@@ -92,7 +94,7 @@ test('D-3 Enter fights again, but a focused button keeps its own Enter', async (
 
 test('D-3 "/" goes to the chat box and Escape comes back, in the panel and in the drawer', async () => {
   for (const [w, mode] of [[1440, 'panel'], [1240, 'drawer']]) {
-    const ctx = await open(w, 900);
+    const ctx = await open(w, 900, { y: 4 });
     const { page } = ctx;
     await page.focus('#main [data-a="fight"]');
     const from = (await focusInfo(page)).v;
@@ -102,7 +104,7 @@ test('D-3 "/" goes to the chat box and Escape comes back, in the panel and in th
     assert.deepEqual(r, mode === 'panel' ? { host: 'chatpanel', value: '', drawer: false } : { host: 'chat', value: '', drawer: true }, `${w}: the ${mode} message box, empty`);
     await page.keyboard.press('Escape');
     await page.waitForFunction(() => !document.activeElement?.closest('#chatpanel, #chat'));
-    assert.deepEqual([(await focusInfo(page)).a, (await focusInfo(page)).v], ['fight', from], `${w}: Escape returns to the monster row`);
+    assert.deepEqual([(await focusInfo(page)).a, (await focusInfo(page)).v], ['fight', from], `${w}: Escape returns to the Fight button`);
     await done(ctx);
   }
 });

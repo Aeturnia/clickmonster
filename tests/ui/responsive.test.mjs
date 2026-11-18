@@ -54,13 +54,15 @@ test('AC-1 320x640: compact HUD and dock leave room for the monster list', async
   const town = await page.evaluate(PAGE_METRICS);
   sound(town, 'town');
   assert.ok(town.mainH >= 300, `town content ${town.mainH}px (before: 224)`);
-  assert.ok(town.visibleRows >= 1, `town shows ${town.visibleRows} monster rows (before: 0)`);
+  // Gameplay polish F2: no roaming monsters in town, so the town says so instead of listing them.
+  assert.ok(town.calmVisible, 'town shows the town message');
   assert.ok(town.hudH <= 72, `HUD is ${town.hudH}px (before: 95)`);
   await step(page, '[data-a="move"][data-v="n"]');
   const openGround = await page.evaluate(PAGE_METRICS);
   sound(openGround, 'open ground');
   assert.ok(openGround.mainH >= 351, `open ground content ${openGround.mainH}px (before: 276)`);
-  assert.ok(openGround.visibleRows >= 2, `open ground shows ${openGround.visibleRows} rows (before: 0)`);
+  // Gameplay polish F1: the monster list is one drop-down and a Fight button, fully in view.
+  assert.ok(openGround.pickVisible, 'open ground shows the monster drop-down and Fight');
   await done(ctx);
 });
 
@@ -91,7 +93,7 @@ test('AC-2 375 to 430 wide: more content height than before, no fewer rows', asy
     const m = await ctx.page.evaluate(PAGE_METRICS);
     sound(m, `${w}px`);
     assert.ok(m.mainH >= before[w][0] + 30, `${w}px: content ${m.mainH}px (before: ${before[w][0]})`);
-    assert.ok(m.visibleRows >= before[w][1], `${w}px: ${m.visibleRows} rows (before: ${before[w][1]})`);
+    assert.ok(m.pickVisible, `${w}px: the monster drop-down and Fight are in view (gameplay polish F1; before: ${before[w][1]} rows)`);
     await done(ctx);
   }
 });
@@ -103,7 +105,7 @@ test('AC-3 phone landscape 844x390: exploring and fighting fit', async () => {
   const m = await page.evaluate(PAGE_METRICS);
   sound(m, 'landscape');
   assert.ok(m.mainH >= 250, `content ${m.mainH}px (before: 106)`);
-  assert.ok(m.visibleRows >= 2, `${m.visibleRows} rows (before: 0)`);
+  assert.ok(m.pickVisible, 'the monster drop-down and Fight are in view (gameplay polish F1)');
   // Side column: the actions sit to the right of the screen, not below it.
   const side = await page.evaluate(() => [document.getElementById('dock').getBoundingClientRect().left, document.getElementById('main').getBoundingClientRect().right]);
   assert.ok(side[0] >= side[1] - 1, 'dock is in the side column');
@@ -210,7 +212,7 @@ test('AC-6 tablet and desktop: two columns, long lists and a tall battle log', a
     await step(page, '[data-a="move"][data-v="n"]');
     const m = await page.evaluate(PAGE_METRICS);
     sound(m, `${w}px`);
-    assert.ok(m.visibleRows >= 8, `${w}px: ${m.visibleRows} rows (before: ${w === 1024 ? 4 : 6})`);
+    assert.ok(m.pickVisible, `${w}px: the monster drop-down and Fight are in view (gameplay polish F1)`);
     await step(page, '#main [data-a="fight"]');
     await step(page, '[data-a="melee"]');
     const b = await battleMetrics(page);
@@ -227,13 +229,14 @@ test('AC-7 200% text at 390px: nothing overlaps or scrolls sideways, and the lis
   const m = await page.evaluate(PAGE_METRICS);
   sound(m, '200% text');
   assert.ok(m.mainH >= 247, `content ${m.mainH}px (before: 138)`);
+  await step(page, '[data-a="move"][data-v="n"]'); // gameplay polish F2: the monsters are outside the town
   const reach = await page.evaluate(() => {
-    const row = document.querySelector('#main .row[data-a="fight"]');
+    const row = document.getElementById('mon-pick');
     row.scrollIntoView({ block: 'nearest' });
     const r = row.getBoundingClientRect(); const main = document.getElementById('main').getBoundingClientRect();
     return r.top >= main.top - 1 && r.bottom <= main.bottom + 1;
   });
-  assert.ok(reach, 'the first monster scrolls fully into view inside the screen area');
+  assert.ok(reach, 'the monster drop-down scrolls fully into view inside the screen area');
   await done(ctx);
 });
 
