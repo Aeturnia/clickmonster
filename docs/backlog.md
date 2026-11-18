@@ -205,9 +205,7 @@ Netlify posts no deploy status for `main`, so this confirms that a deploy landed
 
 ## Password recovery
 
-Raised in the landing-page scope review (2026-11-13, Q14). It is tracked separately from that milestone, as a higher-priority account-reliability item, and is not yet scheduled.
-
-**Being scoped:** `docs/password-recovery-scope.md` (draft, 2026-11-17). It isn't authorized for implementation.
+Raised in the landing-page scope review (2026-11-13, Q14). It is tracked separately from that milestone, as a higher-priority account-reliability item.
 
 - **Today:** there is no way to reset a forgotten password. A player who forgets it loses access to their hero.
 - **Needs:**
@@ -217,7 +215,7 @@ Raised in the landing-page scope review (2026-11-13, Q14). It is tracked separat
   - tests on the fake backend.
 - **Fits with the entrance** (L-1), but isn't part of it unless the owner schedules it.
 - **Status (2026-11-17):**
-  - **Scoped** in `docs/password-recovery-scope.md` (PR #44).
+  - **Scoped and accepted** in `docs/password-recovery-scope.md` (PR #44, merged as `031a026`).
   - **R-1 implemented** in its own PR: built and tested locally, with "Forgot your password?" switched off (`RECOVERY_REQUESTS`). See `docs/password-recovery-r1-report.md`.
 - **Production activation** is not authorized. The checklist is in the R-1 report, section 7:
   1. a Resend account;
