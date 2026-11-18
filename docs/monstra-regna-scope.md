@@ -1,6 +1,6 @@
 # Monstra Regna: identity, homepage and realm status (scope)
 
-**Status: revised after the scope review of `a873e9d` (section 9). Awaiting re-review. Scope only: no code, and no production reads or changes.**
+**Status: the owner's answers to section 7 are recorded (section 10), with the sign-out and cleanup changes they bring. Awaiting the scope's acceptance. Scope only: no code, and no production reads or changes.**
 - **Three milestones are scoped together,** so their shared parts are agreed once. Each is implemented and reviewed on its own, starting with MR-B1, and each needs its own authorization:
   - **MR-B1, identity and domain;**
   - **MR-B2, homepage and navigation;**
@@ -18,7 +18,7 @@
 | D5 | **One online player is one distinct authenticated account.** Several tabs, characters or connections of the same account count once. "Online" means a **recently verified authenticated presence**, not "has signed in" or "a character updated in the last ten minutes" |
 | D6 | **The interface label is "Players Online"** |
 | D7 | **Legal documents** (Privacy Policy, Terms of Service) are **their own reviewed milestone,** with real documents that accurately describe the game's services and data. **No empty placeholders** stand in for them |
-| D8 | **The contact address** (for example `support@monstraregna.com`) is published only once the owner has arranged for its mail to reach a monitored inbox. Forwarding is enough. Incoming mail stays separate from Resend, which only sends automated mail |
+| D8 | **The contact address is `support@monstraregna.com`** (the owner, 2026-11-17). It is published, with the Contact link and page, only once the owner has **verified that its mail reaches a monitored inbox.** Forwarding is enough. Incoming mail stays separate from Resend, which only sends automated mail |
 | D9 | **Discord** appears only once there's a permanent invite. No dead link |
 | D10 | **The homepage has a "Skip to sign in" link,** visible on focus, so the menu can come before the form |
 | D11 | **The performance contract replaces the 34,000-byte hard limit** (section 4.5): a 48,000-byte CI tripwire, a 40,000-byte review threshold, and separate structural and measured requirements |
@@ -296,14 +296,19 @@ All of these are lab figures under our profile, not Google's 75th-percentile fie
 - **When it sends:** once on entering the game, then every 60 s, **only while the tab is visible** (Page Visibility).
   - **Background tabs send nothing.** On becoming visible, a tab sends at once if its last send was over 45 s ago.
   - So usually only the tab in front sends.
-- **Sign-out:** heartbeats stop. A best-effort `heartbeat` with `leave: true` deletes the row before the session ends. If it doesn't arrive, the row ages out after 150 s.
+- **Sign-out:** heartbeats stop, and **nothing is deleted.** The row expires at the end of the window (150 s).
+  - **Why:** the row belongs to the account, not the device. A player signed in on a computer and a phone who signs out on the phone must stay counted while the computer plays (D5).
+  - **Leaving immediately** would need per-session presence. That is out of scope for MR-S1, and can be considered later if immediate departures matter.
 - **A closed tab, a lost connection, or a sleeping device:** no heartbeats, so the account stops counting at the end of the window.
 - **Failures** are ignored silently. A heartbeat never shows an error to the player or affects play.
 - **Account changes:** heartbeats belong to the game session (`gameGen`), so a stale timer never sends for the previous account (L-1's isolation rule).
 
 **Retention (privacy):**
 - **The table holds only** `user_id` and the latest `last_seen`, with no history.
-- **Rows are deleted** once they are older than **1 hour**, by the aggregate function as it runs (a bounded `delete … where last_seen < now() - interval '1 hour'`), so nothing lingers about accounts that have left.
+- **Rows are deleted** once they are older than **1 hour**, so nothing lingers about accounts that have left.
+  - **Where it runs:** inside **`touch_presence`**, the authenticated, throttled write path. Each accepted write also removes a bounded number of rows older than an hour (`delete … where last_seen < now() - interval '1 hour'`, limited per call).
+  - **Not in the public status path:** an anonymous status request never triggers database maintenance. The public aggregate is **read-only.**
+  - **If nobody plays for a while,** old rows wait until the next heartbeat. They are at most one row per account, with no history.
 - **RLS:** no direct reads or writes for `anon` or `authenticated`.
 
 ### 5.4 The public answer, privileges and caching (S1-03)
@@ -354,12 +359,12 @@ All of these are lab figures under our profile, not Google's 75th-percentile fie
 | S1-1 | **Several tabs or devices of one account count once;** two accounts count two. An account without a hero, or a banned one, isn't counted. An account stops counting once its heartbeat is older than the window |
 | S1-2 | **The heartbeat needs a valid session,** takes the account from it, and ignores any account named in the request. It runs **no game initialization** (shown by a test that fails if `loadWorld` is reached) |
 | S1-3 | **Writes are throttled:** at most one write per account per 45 s, whatever the number of tabs (a local-stack test sending many heartbeats) |
-| S1-4 | **The client sends** only while visible, sends at once when it becomes visible, stops on sign-out (best-effort delete), and never sends for a previous account after a switch |
+| S1-4 | **The client sends** only while visible, sends at once when it becomes visible, stops on sign-out **without deleting anything,** and never sends for a previous account after a switch. A player signed out on one device but playing on another stays counted |
 | S1-5 | **Readiness (5.2):** each state is produced by the right evidence. Online: all pass. Degraded: a failure that passed on retry, or slow twice. Offline: failed twice. Maintenance: a notice under way, which takes precedence. Each check's failure is simulated locally. A single slow attempt alone isn't Degraded |
 | S1-6 | **The public answer** matches the schema exactly, with no identities, locations or check details. The page rejects off-schema or stale answers as "Status unavailable", with "—" for the count |
 | S1-7 | **Privileges:** only the publishable key at the edge; `touch_presence` callable by `service_role` only; `presence` unreadable to `anon` and `authenticated` |
 | S1-8 | **Caching is proved:** the same `as_of` within 30 s, the upstream checks run once per window, fresh after expiry, failures cached briefly. If a shared cache isn't available, that's reported, not claimed |
-| S1-9 | **Retention:** rows older than 1 hour are deleted as the aggregate runs, and no history is kept |
+| S1-9 | **Retention:** rows older than 1 hour are deleted by `touch_presence` (the authenticated write path), never by the public status request. The public aggregate is read-only. No history is kept |
 | S1-10 | **The entrance:** after first paint, no supabase-js for visitors, about one refresh a minute while visible and none while hidden, state changes announced, and a status failure never delaying sign-in. The performance contract (4.5) holds |
 | S1-11 | **Local stack tests** cover the migration, RLS, the functions, throttling, the window boundary and the readiness states. The production migration and the `game` function deploy each need their own authorization, as in L-3 |
 
@@ -436,7 +441,7 @@ MR-B1 and MR-B2 were accepted in principle. MR-S1 needed a tighter contract.
 - **Defined behaviour** for:
   - visible-only sending;
   - background tabs;
-  - sign-out (a best-effort delete);
+  - sign-out (heartbeats stop, and the row expires; changed in section 10);
   - lost connections;
   - account switches (`gameGen`);
   - accounts without a hero (not counted, QS-5);
@@ -451,4 +456,27 @@ MR-B1 and MR-B2 were accepted in principle. MR-S1 needed a tighter contract.
 - **Retention:** rows older than 1 hour are deleted; no history.
 
 **The answers recommended in the review** are reflected in section 7, as recommendations for the owner: QB-1 to QB-4, and QS-1 to QS-5.
+
+## 10. The owner's answers to section 7 (2026-11-17)
+
+**Decided:**
+- **QB-1:** the manifest's `short_name` is **"Monstra Regna"**. Truncation on some home screens is accepted rather than inventing an abbreviation.
+- **QB-2:** a news article announces the move, the new address and the possible one-time sign-in. It is published **before** the old-domain redirect (between cutover steps 4 and 5).
+- **QB-3, pending setup:** the address is **`support@monstraregna.com`** (D8). The address, the Contact link and `/contact` are published only once the owner has verified that mail reaches a monitored inbox.
+- **QB-4, pending:** there is **no Discord invite yet.** The icon and link are left out until a permanent invite exists (D9).
+- **QS-1, approved for testing:** a 60 s heartbeat, a 150 s presence window and a 45 s server-side write throttle. **Changed:** sign-out stops heartbeats and deletes nothing; the row expires (5.3).
+- **QS-2, approved for testing, explicitly provisional:** limits of 2 s for Auth, 2 s for the database and 3 s for the game preflight, with one retry.
+- **QS-3, approved in principle:**
+  - the heartbeat goes through the authenticated `game` function, on a dedicated path before `handle()`;
+  - public reads go through a separate Netlify `/api/status`.
+- **QS-4, approved:** 30 s for successful answers and at most 10 s for failures, with actual shared-cache behaviour verified.
+- **QS-5, approved:** count distinct authenticated accounts that have a hero and no active ban.
+
+**Changes these bring to MR-S1:**
+- **Sign-out:** no immediate deletion (5.3, S1-4). Deleting the account's single row would drop a player who is still playing on another device, contradicting D5.
+- **Clean-up moved off the public path** (5.3, S1-9):
+  - stale rows are removed by `touch_presence`, the authenticated, throttled write;
+  - the public status endpoint and its aggregate are read-only, so anonymous requests can't trigger database maintenance.
+
+**Implementation order is unchanged:** MR-B1 can proceed once authorized; MR-B2's Contact and Discord items, and MR-S1, wait at their own gates.
 
