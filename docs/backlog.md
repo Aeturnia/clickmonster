@@ -216,7 +216,8 @@ Raised in the landing-page scope review (2026-11-13, Q14). It is tracked separat
 - **Fits with the entrance** (L-1), but isn't part of it unless the owner schedules it.
 - **Status (2026-11-17):**
   - **Scoped and accepted** in `docs/password-recovery-scope.md` (PR #44, merged as `031a026`).
-  - **R-1 implemented** in its own PR: built and tested locally, with "Forgot your password?" switched off (`RECOVERY_REQUESTS`). See `docs/password-recovery-r1-report.md`.
+  - **R-1 is implemented and accepted, pending production activation.** It was merged as PR #45 (`48be811`), with "Forgot your password?" switched off (`RECOVERY_REQUESTS = false`). See `docs/password-recovery-r1-report.md`.
+  - **Startup budget:** the first paint is 33,987 of 34,000 bytes, so any change to `entry.js`, `index.html` or `entry.css` has only 13 bytes of room.
 - **Production activation** is not authorized. The checklist is in the R-1 report, section 7:
   1. a Resend account;
   2. a verified sending domain the owner controls;
