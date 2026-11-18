@@ -1,6 +1,6 @@
 # Gameplay polish: scope
 
-**Status: scope accepted (2026-11-18).** The final independent scope review accepted the reviewed commit `9882a02`, after the corrections from the review of `8e82297` (section 13). All three required CI jobs passed on it (run `44364332056`).
+**Status: scope accepted (2026-11-18). Amendment 1 (section 14), from the owner's iPhone testing of GP-1, is proposed and awaits scope review.** The final independent scope review accepted the reviewed commit `9882a02`, after the corrections from the review of `8e82297` (section 13). All three required CI jobs passed on it (run `44364332056`).
 - **Not authorized by this acceptance:** implementing GP-1, or deploying the functions. Each needs its own owner authorization; the F2 redeploy's is obtained before the implementation merge is scheduled (section 7).
 - **How to read GP-F5 and GP-F5b together:** GP-F5 forbids Fight controls on an ordinary town tile; GP-F5b allows the lair boss's Fight control on a tile that is both town and lair.
 
@@ -394,3 +394,142 @@ Each criterion has a test that fails on `main` at `9827ce1`, run against the old
 | 3 | **Server enforcement starts at the redeploy.** F2 isn't enforced by the live server until the authorized function redeploy succeeds. The redeploy authorization is obtained before the merge is scheduled, and the redeploy follows Netlify's deploy immediately; the production authorization gate is kept | Section 7 |
 | 4 | **Outcome filtering after a reload.** A finished fight restored after a reload has no known last round, so nothing is filtered: every stored line is shown, ungrouped, in "Before this page loaded", with the outcome card beneath. The full log is unchanged | 5D, section 6; GP-D5 |
 | Q1–Q3 | The owner's answers: R2-a, with ungrouped lines labelled by line count and never as rounds; the narrative outcome lines kept (victory, defeat and duel); the town message "No roaming monsters can be fought in town. Move to another tile to hunt." | 5C, 5D, 5F2, section 6, section 12; GP-C4, GP-D1, GP-D2 |
+
+## 14. Amendment 1: the iPhone finding, floating cues, and fights without HP bars (proposed)
+
+**Status: proposed, for scope review.** Documentation only. Nothing here is implemented, GP-1 (PR #51) is unchanged at `59da88f`, and nothing is deployed. Line references are from `59da88f`, the GP-1 head.
+
+### 14.1 What the owner found
+
+- **In play-testing GP-1's deploy preview on an iPhone,** the XP bar's text was cut off after a win: level 62 at 23,516 / 29,514 XP, then a Fire Elemental for "+767 XP". It happened with the short numbers too ("25.3K / 29.5K"), so the number length alone wasn't the cause.
+- **The browser suite didn't see it.** In Chromium, the same bar fits at every width from 320 to 440 px, with the same numbers and a "+767 XP" cue (a sweep on the fake backend, 2026-11-18).
+
+### 14.2 How the cause was found
+
+- **A check page,** opened by the owner on the same phone, measured copies of the hero bar made from GP-1's own `meter()`, `fitMeters()` and meter CSS. The page isn't in the repository.
+  - **The phone:** an iPhone, iOS 18.2, 390 x 844 CSS px, with default text size. The page was opened in the Claude app's browser. Every browser on iOS uses Apple's WebKit engine, so the finding applies to all of them.
+  - **Version 1 measured the bar; version 2 tested the cause and two fixes.**
+- **The results, all at the hero bar's width on that phone** (162 px of room for the text in the XP meter):
+
+| Case | Result on the iPhone |
+|---|---|
+| As GP-1 is now, "+767 XP" | Two lines; **the label is cut off by 15 px.** The label's box stays 74 px wide; its text is 89 px |
+| The same two-line bar, set from the start (no switch from one line) | Fits: the box is 89 px |
+| Fix A: on two lines, the label and the numbers take the bar's full width | Fits |
+| Fix B: two lines made by wrapping instead of a column | Fits |
+| The planned design (14.4): no cue in the bar, so the label is only "Lv 62" | **Fits on one line,** with the full numbers "23,516 / 29,514" |
+| The planned design with fix A, on a bar 110 px wide (forcing two lines, as large text would) | Fits |
+
+**The cause has two parts:**
+1. **The iPhone's system font is wider.** The short numbers measure 82 px there, against 72 px in the test browser. So on that phone, "Lv 62 +767 XP" and the numbers never fit on one line, and `fitMeters()` (`main.js:142`) correctly switches the bar to two lines (`.stack`).
+2. **WebKit keeps the label's one-line width after the switch.** `fitMeters()` measures the bar on one line first, then adds `.stack`. On the iPhone, the label's box stays at the width the one-line layout gave it: 74 px, which is 162 px of room minus 82 px of numbers and 6 px of gap. So the label and the cue are cut off on a bar that has room for them. Chromium recalculates the width, which is why no test failed.
+
+The second part also applies without the cue: any meter that switches to two lines on an iPhone (large text, a narrow column) cuts its label off the same way.
+
+### 14.3 The owner's decisions (2026-11-18)
+
+| Item | Decision |
+|---|---|
+| G1 | **The "+XP" and "+gold" cues float,** like the damage numbers in a fight: they appear over what they belong to, rise, and go. They no longer sit inside the bar or the gold line, taking space |
+| G2 | **No HP bars on the fight screen.** Your HP is in the hero bar, which stays on screen during a fight, and players don't need the monster's HP. **The damage numbers stay** |
+| G3 | **The world boss's Shared HP bar stays** |
+
+### 14.4 Proposed design
+
+#### G1. Floating cues
+
+- **What changes:** `deltaChip()` (`main.js:330`) is no longer drawn inside the XP meter's label or before the gold amount (`main.js:347`, `349`). The XP meter's label is only "Lv N", and the gold line is only the amount.
+- **The cue:** an overlay positioned over what it belongs to, taking no layout space:
+  - **"+767 XP"** is centred over the XP bar;
+  - **"+244"** sits over the gold amount, aligned to its right edge.
+- **Its look:** the damage numbers' style (bold, on a dark backing so it stays readable over the bar and the text beneath it), at a smaller size suited to the hero bar.
+- **Its motion:** it rises a short distance (about 0.5rem), holds, and is removed. It doesn't fade: animating opacity fails the contrast check mid-fade (`CLAUDE.md`, pitfalls), and the current chip already doesn't fade (`style.css:748`). It shows for about 1.6 s (Q4).
+- **Plays once per gain (A):** the cue is created once when the gain happens, in a container that redraws don't replace (as `floatText()` does in a fight, `main.js:1329`), and removed by its own timer. A regeneration tick can't restart it, whatever it repaints.
+- **The XP bar's glow stays** as the second signal (`.meter.xp.gain`, `style.css:749`), with its existing timing.
+- **Reduced motion:** the cue appears without moving and is removed at the same time. The glow is replaced by the static outline, as now.
+- **Screen readers:** unchanged. The cue is `aria-hidden`, as the chip is now; the battle log, the Victory card and the existing announcements carry the same news (D, R-3).
+- **The bar can't be cut off by the cue,** because the cue isn't in it. On the owner's iPhone, "Lv 62" with "23,516 / 29,514" fits on one line (14.2).
+
+#### Fix A. Two-line meters on WebKit
+
+- **CSS:** on a two-line meter (`.meter.stack`), the label and the numbers each take the bar's full width (`align-self: stretch`), instead of a width the browser may carry over from the one-line layout. On the world boss's bar, which reads from the right (`style.css:161`), the text is right-aligned.
+- **Measuring:** `fitMeters()` measures each part's text by its own width (a `Range` over its contents) instead of `scrollWidth`. `scrollWidth` is never less than the box, so a box kept wide from the two-line layout could make a bar that fits on one line look too wide, for example when the phone is turned. The text's own width doesn't depend on the box.
+- **Kept:** the order of the fits (full numbers, then short numbers, then two lines), the classes, and that only classes change, so the meter isn't recreated (A).
+- **Why fix A over fix B:** both fit on the iPhone. Fix A is one rule on the existing column layout; fix B changes how the two-line form is laid out.
+
+#### G2. The fight screen without HP bars
+
+- **Removed:**
+  - the "you" HP meter, in every fight: ordinary, duel and world-boss hunt (`main.js:689`);
+  - the monster's HP meter in an ordinary fight (`main.js:702`).
+
+  A duel already shows no opponent HP.
+- **Kept:**
+  - the two sides, with their names and sub-lines (your level; the monster's level, difficulty and element; a duel's result; the boss's line);
+  - the world boss's Shared HP bar (G3, `main.js:681`);
+  - the damage numbers, misses and critical hits (`playEffects()`, `main.js:1363`), the shake and the flash.
+- **Where the damage numbers float:** over each side, as now. Each side keeps a strip about the height of the old bar (1.5rem) below its sub-line, empty except while a number shows (Q5).
+  - **Why:** the numbers keep the place players know, they never cover the names (the current rule, `style.css:276`), and the area doesn't change height between an ordinary fight and a hunt, which has the Shared HP bar on one side.
+- **The battle data is unchanged:** the server still sends the monster's HP. Hiding it is a presentation choice, not a rule; someone could still read it with the browser's tools.
+- **Screen readers:** your HP stays readable in the hero bar. The monster's HP, previously in the meter's text, is no longer shown or read; the battle log's damage lines are unchanged.
+- **R-4 still holds:** a regeneration tick updates the hero bar's HP, the Heal price and the Hero screen; there's no longer a battle meter to update.
+
+### 14.5 Changes to the accepted sections
+
+- **5A:** "the 'you' HP meter in a battle" leaves the list of HP displays; the gold and XP cues are the floating cues of G1.
+- **5B:**
+  - **Which meters change:** the hero bar's HP and XP meters, and the world boss's Shared HP. The two battle sides have no meters (G2).
+  - **The "+XP" chip beside the label** is replaced by the floating cue (G1).
+  - **The two-line fallback** gets fix A.
+- **8:** the criteria change as in 14.6.
+- **9, Evidence:** the screenshots add a win with the cue showing (390 and 1440), and an ordinary fight, a duel and a hunt without HP bars.
+- **GP-1's report:** deviation 2's "battle sides wrap" rule is reviewed, since the sides no longer hold meters. It stays only if the names and sub-lines still need it at 200% text.
+
+### 14.6 Acceptance criteria
+
+**New.** Each fails on GP-1 at `59da88f`, except where stated:
+
+| ID | Criterion | Test |
+|---|---|---|
+| GP-B6 | A gain's cue takes no space in the bar: while it shows, the XP meter's label is only "Lv N", and the meter's fit (one line, short numbers or two lines) is the same as with no cue | Browser: win at 390 with five-digit XP; compare the meter's label text and classes with and without the cue |
+| GP-B7 | The cue appears once per gain, is `aria-hidden`, rises without fading, and is gone after its time; a regeneration tick in between doesn't restart it | Browser: as GP-A1, holding the cue element across three ticks; `animationstart` once; computed opacity 1 throughout |
+| GP-B8 | The gold cue behaves the same over the gold amount, and the gold line's width doesn't change while it shows | Browser |
+| GP-B9 | On a two-line meter, the label and the numbers each span the bar's full text width | Browser: force two lines (200% text at 320); each part's box equals the bar's text width. Fails on `59da88f`, where each box is its text's width |
+| GP-H1 | An ordinary fight shows no HP meter on either side; damage numbers and misses still appear over the sides and don't overlap the names | Browser: one round; no `.meter` in `#versus`; a float's box doesn't intersect `.side-name` |
+| GP-H2 | A world-boss hunt shows the Shared HP bar and no "you" meter | Browser |
+| GP-H3 | A duel shows no meters | Browser |
+
+**Changed:**
+- **GP-A2:** the battle's "you" meter leaves the list; the hero bar's HP is checked during a fight instead.
+- **GP-B1 and GP-B2:** the meters checked are the hero bar's and the world boss's Shared HP.
+- **GP-B3:** the foe colour is checked on the Shared HP bar in a hunt.
+- **GP-B5:** the cues appear without moving under reduced motion.
+- **The existing feedback test** (`tests/ui/feedback.test.mjs:276`), which reads the chips inside the hero bar, reads the floating cues instead.
+
+**Can't be tested in CI:** the WebKit behaviour itself. The suites run only in Chromium, where the old code also measures correctly. GP-B9 checks fix A's effect in Chromium; the iPhone result is checked by the owner (14.7).
+
+### 14.7 Verification on the owner's iPhone
+
+After the GP-1 correction is pushed:
+1. **The check page** is updated to GP-1's corrected `meter()`, `fitMeters()` and meter CSS, and the owner runs it again on the same phone. It measures the bar rather than relying on a look.
+2. **On the PR's deploy preview, on the same phone:**
+   - win a fight: the cue floats over the XP bar and nothing in the bar is cut off;
+   - the fight screen shows no HP bars, and the damage numbers still float;
+   - turn the phone to landscape and back: the bar's text still fits.
+
+The report records the results as reported by the owner. **Not covered:** Android, other iPhone sizes, and Safari outside the Claude app's browser (the same engine, not separately checked).
+
+### 14.8 Questions for the scope review
+
+1. **Q4, the cue's timing:** about 1.6 s, rising then removed without fading. The current chip shows for 2.6 s (`DELTA_MS`); a floating number reads faster, and the damage numbers last 0.8 s.
+2. **Q5, the space where the bars were:** keep a strip of about 1.5rem on each side for the damage numbers (proposed), or let the sides shrink and float the numbers over the names and sub-lines.
+
+### 14.9 Phasing
+
+- **Where it's done:** on the GP-1 branch (PR #51), as a correction pass, once this amendment is accepted.
+  - The branch takes this amendment by merging `main`, with no rebase.
+  - It keeps its one PR, with the corrections in their own commits.
+  - The report gains a "Review corrections" section.
+- **Everything else in sections 7 and 10 stands:** GP-1 ends at the review gate, and the function redeploy for F2 still needs its own authorization before the merge is scheduled.
+- **Backlog:** CI part 2 (Firefox and WebKit) gains this finding as a reason (`docs/backlog.md`).
+
