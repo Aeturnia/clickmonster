@@ -263,6 +263,9 @@ This is a UI gate, not a security boundary. Supabase's public recovery endpoint 
 **Results:**
 - **Local:**
   - the recovery file passed 30/30 in each of 2 runs;
-  - the full suites: RESULTS_FULL.
+  - **engine and browser,** on the branch reconciled with `main` after PR #44: engine **48/48** and browser **208/208** (202 plus 6), in each of 3 runs (417–423 s).
+  - **Not re-run locally after the corrections:**
+    - **the database suite and `tools/recovery-local-check.mjs`:** the memory monitor stopped the run while the local stack was starting. They passed at `cbddd42` (42 + 12 ×3; 8 of 8 steps), and the corrections don't touch the database tests.
+    - **CI's database job** runs the database suite on this head.
 - **CI:** linked in the PR.
 
