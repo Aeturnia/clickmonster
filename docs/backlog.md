@@ -104,6 +104,15 @@ A separate staging Supabase project is dropped. The live sign-in session above c
   - **Keep the tests:** the thresholds and assertions stay as they are. Any fix is to the layout, not the tests, and only once scoped.
   - **This is not authorized:** neither a CSS change nor the investigation as a milestone.
 
+- **An intermittent timeout in `PR-4a a second tab with the saved session also shows the form`** (`tests/ui/password-recovery.test.mjs:265`), seen twice on 2026-11-18.
+  - **The failure:** the second tab's `untilHeading(…, 'Choose a new password')` times out after 15 s.
+  - **Where it happened:**
+    - CI run `44368408591` on PR #50's docs-only commit `2cef100`, Windows (passed on its one re-run);
+    - local run 2 of 3 for GP-1, Linux. Runs 1 and 3 passed, and so did CI on PR #51.
+  - **Not GP-1's:** it fails without any game change, and GP-1 doesn't touch the entrance or `entry-recover.js`.
+  - **Root cause not established.** It shouldn't be treated as a flake, and the test and its timeout stay as they are.
+  - **Next step, when authorized:** run it repeatedly with `UI_DIAGNOSTICS=1` to capture the trace and the second tab's DOM when it times out.
+
 - **Pagination of `/news`** (from the L-4 review). The public list (`netlify/edge-functions/news.js`, `LIST_LIMIT = 100`) shows the 100 newest published articles. Older ones stay reachable by their address but drop off the list. Add pages (for example `/news?page=2`, or a link to older articles) before there are 100.
 
 - **Audit entries are best effort** (from the L-3 review).

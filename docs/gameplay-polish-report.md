@@ -102,7 +102,7 @@ Each test was run against the old code where the scope asks for it.
   The fake backend runs the real engine, so it now refuses town fights as the redeployed server will.
 - **Tools:** `tools/desktop-metrics.mjs` starts its fight one step north of the village; its explore numbers are still measured in the village. `tools/ui-states.mjs` uses the drop-down.
 
-**Runs:** three full runs of each suite, results in section 6.
+**Runs:** three full runs of each suite; the results are in section 6.
 
 ## 5. Deviations from the scope
 
@@ -121,7 +121,26 @@ Each test was run against the old code where the scope asks for it.
 
 ## 6. Runs and CI
 
-Filled in below once the runs are complete.
+**Local:** three full runs on `0dcfb5a`, in this Linux container.
+
+| Run | Engine and file tests | Browser |
+|---|---|---|
+| 1 | 63 of 63 | 238 of 238 |
+| 2 | 63 of 63 | 237 of 238: `PR-4a a second tab with the saved session also shows the form` timed out (see below) |
+| 3 | 63 of 63 | 238 of 238 |
+
+**The run 2 failure isn't GP-1's, but its cause isn't established.**
+- **The failure:** the password-recovery test's second tab waited 15 s for "Choose a new password", and timed out.
+- **Not GP-1's:** GP-1 doesn't touch the entrance or the recovery code. The same test timed out on PR #50's docs-only commit too (CI run `44368408591`, which passed on its one re-run).
+- **Not dismissed as a flake:** it is recorded as a follow-up in `docs/backlog.md`, and the test is unchanged.
+- **Every GP-1 test passed in all three runs.**
+
+**CI:** run `44376183579`, head `0dcfb5a`, tested merge commit `16ea0cd`. These counts come from the job logs.
+- `engine`: 63 of 63.
+- `database`: 42 of 42 pgTAP, and 13 of 13 API tests, including GP-F6 against the real `game` function.
+- `browser` (Windows Chromium): 238 of 238.
+
+**The earlier head, `a060d0b`** (run `44373672791`), failed responsive AC-1 on Windows: the wrapped picker was out of view at 320x640. That was fixed in `0dcfb5a` (deviation 4).
 
 ## 7. Not verified
 
