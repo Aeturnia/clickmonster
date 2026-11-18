@@ -1,10 +1,21 @@
 # Password recovery, R-1: implementation report
 
-**Status: the review corrections R1-01 and R1-02 are made (section 8). Awaiting independent re-review. Not merged.**
-- **Authorized** by the owner on 2026-11-17, for local development and testing, under the scope at `43327bd` (PR #44, with PR-S01 and PR-S02).
-- **The base** is `main` at `752e25a`.
-- **PR #44** (the scope itself) is still open. Merging it, and updating its status line to "approved, R-1 authorized", is an outstanding administrative step for the owner. This branch doesn't include the scope document.
-- **No production reads or changes.** The public "Forgot your password?" is **off** (section 3).
+**Status: the independent technical review is accepted (re-review of `adb99bc`, 2026-11-17). R1-01, R1-02 and the release-switch hardening are accepted. Approved to merge once the required checks pass on the final head.** After the merge, R-1 is implemented and accepted, pending production activation (section 7).
+- **Authorized** by the owner on 2026-11-17, for local development and testing, under the accepted scope (`docs/password-recovery-scope.md`, PR #44, with PR-S01 and PR-S02).
+- **The base:**
+  - first `main` at `752e25a`;
+  - then reconciled with `main` at `031a026`, the merge of PR #44, whose scope records the owner's later decisions in its section 10.
+- **PR #44 is merged** (`031a026`), as the review required before this one.
+- **No production reads or changes.** The public "Forgot your password?" stays **off** (`RECOVERY_REQUESTS = false`, section 3).
+- **The evidence for the final code:**
+  - **CI run `44216331895`,** on `adb99bc` tested as merge `0a0fd60`: engine 48, browser 208, database 42 pgTAP + 12, all on the first attempt;
+  - **locally:** engine 48 and browser 208, ×3.
+- **Evidence from the earlier head `cbddd42` only, not repeated:**
+  - the local database runs;
+  - the end-to-end check through the real entrance, `tools/recovery-local-check.mjs` (8 of 8 steps).
+
+  The memory monitor stopped that stage after the corrections, and the review accepted relying on CI's database job instead (section 8).
+- **The startup budget:** 33,987 of 34,000 bytes, which leaves **13 bytes**. Any later change to `entry.js`, `index.html` or `entry.css` must account for that.
 
 ## 1. Files changed
 
@@ -267,5 +278,6 @@ This is a UI gate, not a security boundary. Supabase's public recovery endpoint 
   - **Not re-run locally after the corrections:**
     - **the database suite and `tools/recovery-local-check.mjs`:** the memory monitor stopped the run while the local stack was starting. They passed at `cbddd42` (42 + 12 ×3; 8 of 8 steps), and the corrections don't touch the database tests.
     - **CI's database job** runs the database suite on this head.
-- **CI:** linked in the PR.
+- **CI:** [run `44216331895`](https://github.com/Aeturnia/clickmonster/actions/runs/44216331895), on `adb99bc` (merge `0a0fd60`): engine 48/48, browser 208/208, database 42 + 12, all green on the first attempt.
+- **The re-review** (of `adb99bc`) accepted R1-01, R1-02 and the hardening, accepted CI's database job in place of the local rerun, and approved the merge after this documentation correction.
 
