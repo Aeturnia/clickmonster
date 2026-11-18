@@ -189,7 +189,7 @@ Raised by the owner on 2026-11-14. **Part 1 is scoped:** `docs/ci-scope.md`, app
 - **When:** nightly or on demand, to keep PR runs fast and within the free minutes.
 - **What it covers:** part of the "after release" browser list. It isn't real devices or screen readers.
 - **Expect fixes first:** the suite has only ever run in Chromium.
-- **Raised again by GP-1 (2026-11-18):** on the owner's iPhone, a meter that switched to two lines kept its one-line width and cut its label off. Chromium measured it correctly, so the suite couldn't see it (`docs/gameplay-polish-scope.md`, section 14). A WebKit run would have.
+- **Raised again by GP-1 (2026-11-18):** on the owner's iPhone, a meter that switched to two lines kept its one-line width and cut its label off. Chromium measured it correctly, so the suite couldn't see it (`docs/gameplay-polish-scope.md`, section 14). A WebKit run might expose problems like this, but Playwright's WebKit isn't Safari on iOS and font metrics differ between systems, so it doesn't replace checking on the affected device.
 
 **3. Live-site checks after each merge to `main`, and daily.** These repeat, with reads only, the checks made by hand in the L-4 report's section 9:
 - the live files match `main`;

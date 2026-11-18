@@ -1,6 +1,6 @@
 # Gameplay polish: scope
 
-**Status: scope accepted (2026-11-18). Amendment 1 (section 14), from the owner's iPhone testing of GP-1, is proposed and awaits scope review.** The final independent scope review accepted the reviewed commit `9882a02`, after the corrections from the review of `8e82297` (section 13). All three required CI jobs passed on it (run `44364332056`).
+**Status: scope accepted (2026-11-18). Amendment 1 (section 14), from the owner's iPhone testing of GP-1, was corrected after its scope review (14.10) and awaits final acceptance.** The final independent scope review accepted the reviewed commit `9882a02`, after the corrections from the review of `8e82297` (section 13). All three required CI jobs passed on it (run `44364332056`).
 - **Not authorized by this acceptance:** implementing GP-1, or deploying the functions. Each needs its own owner authorization; the F2 redeploy's is obtained before the implementation merge is scheduled (section 7).
 - **How to read GP-F5 and GP-F5b together:** GP-F5 forbids Fight controls on an ordinary town tile; GP-F5b allows the lair boss's Fight control on a tile that is both town and lair.
 
@@ -397,7 +397,7 @@ Each criterion has a test that fails on `main` at `9827ce1`, run against the old
 
 ## 14. Amendment 1: the iPhone finding, floating cues, and fights without HP bars (proposed)
 
-**Status: proposed, for scope review.** Documentation only. Nothing here is implemented, GP-1 (PR #51) is unchanged at `59da88f`, and nothing is deployed. Line references are from `59da88f`, the GP-1 head.
+**Status: corrected after the scope review of `ecb5941` (14.10); awaiting final acceptance.** Documentation only. Nothing here is implemented, GP-1 (PR #51) is unchanged at `59da88f`, and nothing is deployed. Line references are from `59da88f`, the GP-1 head.
 
 ### 14.1 What the owner found
 
@@ -406,8 +406,9 @@ Each criterion has a test that fails on `main` at `9827ce1`, run against the old
 
 ### 14.2 How the cause was found
 
-- **A check page,** opened by the owner on the same phone, measured copies of the hero bar made from GP-1's own `meter()`, `fitMeters()` and meter CSS. The page isn't in the repository.
-  - **The phone:** an iPhone, iOS 18.2, 390 x 844 CSS px, with default text size. The page was opened in the Claude app's browser. Every browser on iOS uses Apple's WebKit engine, so the finding applies to all of them.
+- **A check page,** opened by the owner on the same phone, measured copies of the hero bar made from GP-1's own `meter()`, `fitMeters()` and meter CSS. The page isn't in the repository, so the measurements below are the owner's reported results; a reviewer can't reproduce them from this PR.
+  - **The phone:** an iPhone, iOS 18.2, 390 x 844 CSS px, with default text size. The page was opened in the Claude app's browser, which uses Apple's WebKit engine.
+  - **Other iPhone browsers:** they use WebKit too, except where Apple allows other engines for eligible browser apps in the EU. So the finding probably applies to most iPhone browsers, but only the Claude app's browser was measured.
   - **Version 1 measured the bar; version 2 tested the cause and two fixes.**
 - **The results, all at the hero bar's width on that phone** (162 px of room for the text in the XP meter):
 
@@ -441,12 +442,13 @@ The second part also applies without the cue: any meter that switches to two lin
 - **What changes:** `deltaChip()` (`main.js:330`) is no longer drawn inside the XP meter's label or before the gold amount (`main.js:347`, `349`). The XP meter's label is only "Lv N", and the gold line is only the amount.
 - **The cue:** an overlay positioned over what it belongs to, taking no layout space:
   - **"+767 XP"** is centred over the XP bar;
-  - **"+244"** sits over the gold amount, aligned to its right edge.
+  - **a gold change** sits over the gold amount, aligned to its right edge.
+- **Gold goes both ways, as now** (`deltaChip()` shows both): a gain floats as "+244" and a loss or spend (healing, buying, a defeat) as "-120". They're told apart as the chips are now: the gain in the light green, the loss in the muted colour, each at least 4.5:1 on the dark backing. XP only ever shows a gain (`main.js:1304` keeps it at 0 or more).
 - **Its look:** the damage numbers' style (bold, on a dark backing so it stays readable over the bar and the text beneath it), at a smaller size suited to the hero bar.
-- **Its motion:** it rises a short distance (about 0.5rem), holds, and is removed. It doesn't fade: animating opacity fails the contrast check mid-fade (`CLAUDE.md`, pitfalls), and the current chip already doesn't fade (`style.css:748`). It shows for about 1.6 s (Q4).
+- **Its motion:** it rises a short distance (about 0.5rem), holds, and is removed. It doesn't fade: animating opacity fails the contrast check mid-fade (`CLAUDE.md`, pitfalls), and the current chip already doesn't fade (`style.css:748`). It shows for 1.6 s (Q4, approved).
 - **Plays once per gain (A):** the cue is created once when the gain happens, in a container that redraws don't replace (as `floatText()` does in a fight, `main.js:1329`), and removed by its own timer. A regeneration tick can't restart it, whatever it repaints.
-- **The XP bar's glow stays** as the second signal (`.meter.xp.gain`, `style.css:749`), with its existing timing.
-- **Reduced motion:** the cue appears without moving and is removed at the same time. The glow is replaced by the static outline, as now.
+- **The XP bar's glow stays** as a separate signal (`.meter.xp.gain`, `style.css:749`), with its existing timing, independent of the cue's 1.6 s.
+- **Reduced motion:** the cue appears without moving, stays for the same 1.6 s, and is removed. The glow is replaced by the static outline, as now.
 - **Screen readers:** unchanged. The cue is `aria-hidden`, as the chip is now; the battle log, the Victory card and the existing announcements carry the same news (D, R-3).
 - **The bar can't be cut off by the cue,** because the cue isn't in it. On the owner's iPhone, "Lv 62" with "23,516 / 29,514" fits on one line (14.2).
 
@@ -468,7 +470,8 @@ The second part also applies without the cue: any meter that switches to two lin
   - the two sides, with their names and sub-lines (your level; the monster's level, difficulty and element; a duel's result; the boss's line);
   - the world boss's Shared HP bar (G3, `main.js:681`);
   - the damage numbers, misses and critical hits (`playEffects()`, `main.js:1363`), the shake and the flash.
-- **Where the damage numbers float:** over each side, as now. Each side keeps a strip about the height of the old bar (1.5rem) below its sub-line, empty except while a number shows (Q5).
+- **Where the damage numbers float:** over each side, as now. Each side keeps a strip of about 1.5rem below its name and sub-line, empty except while a number shows (Q5, approved).
+  - **Its size:** at least what the largest indicator needs (a critical hit, at 1.75rem text) and a miss, without clipping and without overlapping the name or sub-line. It's sized in rem, so it grows with the text, including at 200%.
   - **Why:** the numbers keep the place players know, they never cover the names (the current rule, `style.css:276`), and the area doesn't change height between an ordinary fight and a hunt, which has the Shared HP bar on one side.
 - **The battle data is unchanged:** the server still sends the monster's HP. Hiding it is a presentation choice, not a rule; someone could still read it with the browser's tools.
 - **Screen readers:** your HP stays readable in the hero bar. The monster's HP, previously in the meter's text, is no longer shown or read; the battle log's damage lines are unchanged.
@@ -492,10 +495,11 @@ The second part also applies without the cue: any meter that switches to two lin
 | ID | Criterion | Test |
 |---|---|---|
 | GP-B6 | A gain's cue takes no space in the bar: while it shows, the XP meter's label is only "Lv N", and the meter's fit (one line, short numbers or two lines) is the same as with no cue | Browser: win at 390 with five-digit XP; compare the meter's label text and classes with and without the cue |
-| GP-B7 | The cue appears once per gain, is `aria-hidden`, rises without fading, and is gone after its time; a regeneration tick in between doesn't restart it | Browser: as GP-A1, holding the cue element across three ticks; `animationstart` once; computed opacity 1 throughout |
-| GP-B8 | The gold cue behaves the same over the gold amount, and the gold line's width doesn't change while it shows | Browser |
+| GP-B7 | The cue appears once per gain, is `aria-hidden`, and rises without fading; while it shows, a regeneration tick neither replaces it nor restarts its animation; it's removed at 1.6 s; later ticks don't recreate it | Browser: gain XP with HP below full; hold the cue element through the first tick (still attached, `animationstart` once, computed opacity 1); it's gone after 1.6 s; after two more ticks no cue is present |
+| GP-B8 | Gold cues float in both directions: a gain shows "+N" and a loss or spend shows "-N", told apart by colour, each at least 4.5:1 on its backing; the gold line's width doesn't change while either shows | Browser: a win (gain) and a Heal (spend); the cue's text and colour in each case, and the gold line's width with and without the cue |
 | GP-B9 | On a two-line meter, the label and the numbers each span the bar's full text width | Browser: force two lines (200% text at 320); each part's box equals the bar's text width. Fails on `59da88f`, where each box is its text's width |
-| GP-H1 | An ordinary fight shows no HP meter on either side; damage numbers and misses still appear over the sides and don't overlap the names | Browser: one round; no `.meter` in `#versus`; a float's box doesn't intersect `.side-name` |
+| GP-H1 | An ordinary fight shows no HP meter on either side; damage numbers and misses still appear over the sides | Browser: one round; no `.meter` in `#versus`; a float appears in each side |
+| GP-H4 | The damage numbers, critical hits and misses don't overlap the names or sub-lines and aren't clipped, at normal and 200% text | Browser, at 390 and at 320 with 200% text: a critical hit and a miss; each float's box doesn't intersect `.side-name` or `.side-sub`, and lies within the strip's visible area |
 | GP-H2 | A world-boss hunt shows the Shared HP bar and no "you" meter | Browser |
 | GP-H3 | A duel shows no meters | Browser |
 
@@ -506,7 +510,7 @@ The second part also applies without the cue: any meter that switches to two lin
 - **GP-B5:** the cues appear without moving under reduced motion.
 - **The existing feedback test** (`tests/ui/feedback.test.mjs:276`), which reads the chips inside the hero bar, reads the floating cues instead.
 
-**Can't be tested in CI:** the WebKit behaviour itself. The suites run only in Chromium, where the old code also measures correctly. GP-B9 checks fix A's effect in Chromium; the iPhone result is checked by the owner (14.7).
+**Can't be tested in CI:** the WebKit behaviour itself. The suites run only in Chromium, where the old code also measures correctly. GP-B9 checks fix A's effect in Chromium. A Playwright WebKit run might expose the problem, but it isn't Safari on iOS, and font metrics differ between systems, so it wouldn't replace a check on the affected iPhone. The iPhone result is checked by the owner (14.7), and that check is an acceptance gate for GP-1.
 
 ### 14.7 Verification on the owner's iPhone
 
@@ -519,10 +523,10 @@ After the GP-1 correction is pushed:
 
 The report records the results as reported by the owner. **Not covered:** Android, other iPhone sizes, and Safari outside the Claude app's browser (the same engine, not separately checked).
 
-### 14.8 Questions for the scope review
+### 14.8 Questions for the scope review (answered)
 
-1. **Q4, the cue's timing:** about 1.6 s, rising then removed without fading. The current chip shows for 2.6 s (`DELTA_MS`); a floating number reads faster, and the damage numbers last 0.8 s.
-2. **Q5, the space where the bars were:** keep a strip of about 1.5rem on each side for the damage numbers (proposed), or let the sides shrink and float the numbers over the names and sub-lines.
+1. **Q4, the cue's timing: 1.6 s, approved.** The cue rises without fading and is removed; under reduced motion it stays still for the same time. The XP bar's glow keeps its own timing.
+2. **Q5, the space where the bars were: the strip of about 1.5rem, approved.** It holds the damage numbers, critical hits and misses without overlapping the names or sub-lines, at 200% text too (GP-H4).
 
 ### 14.9 Phasing
 
@@ -531,5 +535,16 @@ The report records the results as reported by the owner. **Not covered:** Androi
   - It keeps its one PR, with the corrections in their own commits.
   - The report gains a "Review corrections" section.
 - **Everything else in sections 7 and 10 stands:** GP-1 ends at the review gate, and the function redeploy for F2 still needs its own authorization before the merge is scheduled.
-- **Backlog:** CI part 2 (Firefox and WebKit) gains this finding as a reason (`docs/backlog.md`).
+- **Backlog:** CI part 2 (Firefox and WebKit) notes this finding (`docs/backlog.md`).
+
+### 14.10 Scope review corrections (review of `ecb5941`)
+
+**Disposition:** minor documentation corrections requested; the amendment is accepted in principle. Documentation only: PR #51 is unchanged and nothing is deployed.
+
+| # | Correction | Where |
+|---|---|---|
+| 1 | **Negative gold kept.** Gold cues float for losses and spending as well as gains, told apart by colour; GP-B8 tests both directions | 14.4 G1; GP-B8 |
+| 2 | **GP-B7's timing.** A 1.6 s cue can't last three one-second ticks: the test holds it through the first tick without a restart, checks its removal at expiry, and that later ticks don't recreate it | GP-B7 |
+| 3 | **The WebKit statements.** A WebKit run might expose such a problem but isn't a substitute for the affected iPhone. Not every iOS browser uses WebKit: Apple allows other engines for eligible browser apps in the EU. The check page's results are recorded as the owner's, not reproducible from the PR | 14.2, 14.6; `docs/backlog.md` |
+| Q4, Q5 | **Answered:** 1.6 s, stationary for the same time under reduced motion, with the glow's timing separate; the 1.5rem strip, with a new criterion that the indicators don't overlap the names or sub-lines, at 200% text too | 14.4 G1 and G2, 14.8; GP-H4 |
 
