@@ -1,11 +1,15 @@
 # MR-B1: identity and domain (report)
 
-**Status: cutover step 1 implemented, for review.** Authorized by the owner on 2026-11-18.
+**Status: cutover step 1 complete** (2026-11-18). Authorized by the owner on 2026-11-18; independently reviewed at `2eaae3e` and approved to merge after green CI; merged as PR #48 (`ea2e4a4`).
+- **Step 3: the applicable checks passed** under the current production authentication configuration (owner-reported, 2026-11-18): session restore and the password-reset link on `monstraregna.com`. **Sign-up confirmation was not performed:** email confirmation is off in production, and the check is deferred until email confirmation and delivery are separately authorized and configured.
+- **Step 4 passed** (2026-11-18): the public pages, checked by the owner in a browser and independently by Claude with authorized read-only requests (section 3). **Next:** the announcement article (QB-2), published by the owner before the redirect; then the redirect PR (step 5), which needs its own go-ahead. The redirect (step 5) and removing the Netlify origin from the allow-list (step 7) are **not** done and not authorized here. MR-B2 and MR-S1 are not started.
+- **Unchanged:** public password-reset requests stay off (`RECOVERY_REQUESTS = false`).
 - **Scope:** `docs/monstra-regna-scope.md`, section 3, with the owner's decisions (section 1, D1–D3) and answers (section 10, QB-1).
 - **Base:** `main` at `9a9887f` (PR #47).
-- **This PR is step 1 only:** the rename and `SITE_ORIGIN`, **without** the old-address redirect. Both addresses keep serving the site after it merges.
+- **Step 1's implementation is PR #48** (merged as `ea2e4a4`): the rename and `SITE_ORIGIN`, **without** the old-address redirect. Both addresses keep serving the site.
+- **PR #49 records the cutover evidence after it:** the merge and CI results, and steps 2–4.
 - **The redirect (step 5)** is prepared as its own commit on `claude/mr-b1-redirect` (`b00a5c7`). It has no PR yet and is not to be merged until steps 1–4 are verified (section 4).
-- **No production reads or changes by Claude,** and no gameplay change.
+- **PR #48 made no production reads or changes,** and no gameplay change. The only production access since is step 4's authorized read-only requests (section 3).
 
 ## 1. What changed
 
@@ -41,16 +45,16 @@
 | B1-4b | After the authorized deployment, on the real old host: 301, path and query kept, no loop, previews reachable | **After step 5,** read-only requests |
 | B1-4c | Authentication links issued before the move arrive on the new domain with their fragment, and R-1's guard handles them | **After step 5** |
 | B1-5 | Cutover steps 2–7 recorded with their results | **Started:** section 3. Completed in a later docs PR |
-| B1-6 | Every suite green, no gameplay change | **Local:** engine and file tests 51 of 51 (48 before, plus the 3 identity tests); browser 208 of 208 in each of 3 consecutive full runs. **Database:** not run here (no Docker in this environment); CI's `database` job runs it on the PR. No gameplay files changed except the two headings in `main.js` |
+| B1-6 | Every suite green, no gameplay change | **Met.** **Local** (head `2eaae3e`): engine and file tests 51 of 51 (48 before, plus the 3 identity tests); browser 208 of 208 in each of 3 consecutive full runs. **CI** run `44326706062`, head `2eaae3e`, tested merge commit `8429bc7`: `engine` 51 of 51; `database` 42 of 42 pgTAP and 12 of 12 API, function and recovery tests; `browser` (Windows Chromium) 208 of 208. Counts read from the job logs. No gameplay files changed except the two headings in `main.js` |
 
 ## 3. Cutover record (section 3.2 of the scope)
 
 | Step | Who | Status |
 |---|---|---|
-| 1. Merge the rename, without the redirect | Owner merges this PR | **This PR** |
-| 2. Supabase Auth: Site URL `https://monstraregna.com`; allow-list `https://monstraregna.com/**`, keeping the Netlify origin until step 7; no preview wildcard | Owner | **Done early by the owner, 2026-11-17** (scope, section 11). Not read or verified by Claude |
-| 3. On the new domain: sign-up confirmation lands on `monstraregna.com`; sign-in and session restore; a reset email from the dashboard opens "Choose a new password", not the game, with "Forgot your password?" still off | Owner | After the merge |
-| 4. Public pages on the new domain: `/news` and `/news/<slug>` with canonical and `og:url` on `monstraregna.com`; the manifest and titles | Owner, or read-only requests by Claude if authorized | After the merge |
+| 1. Merge the rename, without the redirect | Owner merges this PR | **Done, 2026-11-18:** PR #48 merged as `ea2e4a4` after independent review (approved at `2eaae3e`) and green required checks (CI run `44326706062`: engine, database and browser all passed on the merge commit `8429bc7`) |
+| 2. Supabase Auth: Site URL `https://monstraregna.com`; allow-list `https://monstraregna.com/**`, keeping the Netlify origin until step 7; no preview wildcard | Owner | **Done early by the owner, 2026-11-17** (scope, section 11), and treated as completed configuration. Not read or independently inspected by Claude; its behaviour is tested by the owner in step 3 |
+| 3. On the new domain: sign-up confirmation lands on `monstraregna.com`; sign-in and session restore; a reset email from the dashboard opens "Choose a new password", not the game, with "Forgot your password?" still off | Owner | **The applicable checks passed under the current production authentication configuration, 2026-11-18, as reported by the owner** (not independently inspected):<br>- **Session:** sign-in on `monstraregna.com` stayed signed in.<br>- **Reset link:** a dashboard reset email to the owner's own account worked end to end on `monstraregna.com`, with "Forgot your password?" still off.<br>**Not performed: the sign-up confirmation check.** A new account on `monstraregna.com` went straight to character creation and into the game, with no confirmation email, because "Confirm email" was switched off in the dashboard at the project's first setup (there was no email provider then). The check is **deferred** until email confirmation and delivery are separately authorized and configured; Supabase's built-in sender only reaches organization members, so real players couldn't confirm. Email confirmation was **not** enabled as part of this record. The current setting was not read by Claude. |
+| 4. Public pages on the new domain: `/news` and `/news/<slug>` with canonical and `og:url` on `monstraregna.com`; the manifest and titles | Owner, or read-only requests by Claude if authorized | **Passed, 2026-11-18.** Checked by the owner in a browser, then by Claude with read-only GET requests (authorized; no credentials, nothing sent):<br>- `https://monstraregna.com/`: 200, `<title>Monstra Regna</title>`, heading "Monstra Regna"; byte-identical to `main`'s `public/index.html`.<br>- `/news`: 200, title "News · Monstra Regna", canonical and `og:url` `https://monstraregna.com/news`, `og:site_name` "Monstra Regna".<br>- `/news/under-construction`: 200, `no-store`, title "Under Construction · Monstra Regna", canonical and `og:url` `https://monstraregna.com/news/under-construction`.<br>- `/manifest.webmanifest`: 200, `name` and `short_name` "Monstra Regna".<br>- `/admin.html`: 200, title "Monstra Regna Admin".<br>- **The old host, before the redirect:** `https://clickmonsters.netlify.app/` serves the same `index.html` (200), and its `/news/under-construction` also gives `https://monstraregna.com/...` as canonical and `og:url` (B1-2, live). |
 | QB-2. Publish the announcement article (the move, the new address, the possible one-time sign-in) | Owner, in the admin console | Between steps 4 and 5 |
 | 5. Turn on the redirect | Owner merges the redirect PR | Prepared (`b00a5c7`), not opened |
 | 6. Verify the redirect (B1-4b, B1-4c) | Read-only requests, if authorized; the owner's own old email if one exists | After step 5 |

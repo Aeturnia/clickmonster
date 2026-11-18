@@ -45,8 +45,12 @@ Read these first:
     - **Accepted:** CI-A and CI-1a are complete; the record was merged as PR #42 (`a0d5629`).
     - **Required checks** are ready for the owner to configure: `engine`, `browser` and `database`, on PRs into `main` (Q2). Don't change branch protection yourself.
   - **Not authorized:** parts 2 and 3.
-- **MR-B1, identity and domain** (`docs/monstra-regna-scope.md`, section 3), authorized by the owner on 2026-11-18. The implementation PR is cutover step 1 only: the rename and `SITE_ORIGIN`, **without** the old-address redirect. See `docs/monstra-regna-b1-report.md`.
-  - **Step 2** (Supabase Auth URLs) was done early by the owner. **Steps 3–7** are the owner's, or need authorization, after the merge; the redirect is its own commit, merged only after steps 1–4 are verified.
+- **MR-B1, identity and domain** (`docs/monstra-regna-scope.md`, section 3), authorized by the owner on 2026-11-18. See `docs/monstra-regna-b1-report.md`.
+  - **Step 1 (the rename and `SITE_ORIGIN`, without the redirect) is complete:** merged as PR #48 (`ea2e4a4`) after independent review and green CI.
+  - **Step 2** (Supabase Auth URLs) was done early by the owner; it is recorded as such, not independently inspected.
+  - **Step 3: the applicable checks passed** under the current production authentication configuration (owner-reported, 2026-11-18): session kept and the reset link worked end to end on `monstraregna.com`. **Sign-up confirmation was not performed:** email confirmation is off in production (since the first setup). It is deferred until email confirmation and delivery are separately authorized and configured; don't enable it as part of other work.
+  - **Step 4 passed** (2026-11-18): titles, manifest, and news canonical and `og:url` on `monstraregna.com`, checked by the owner and independently by authorized read-only requests.
+  - **Next gate: the announcement (QB-2)**, published by the owner before the redirect; then the redirect PR (step 5), which needs its own go-ahead. Don't open or merge the redirect (prepared on `claude/mr-b1-redirect`, `b00a5c7`), and don't touch the Supabase allow-list, without authorization.
   - **MR-B2 and MR-S1** each need their own authorization.
 - **Development moved to the owner's Windows laptop.** `npm run deploy:functions` now runs from any shell (PR #15) and needs `SUPABASE_ACCESS_TOKEN` set in the environment.
 - **Don't start another milestone, or make gameplay or server changes,** until the owner approves it.
