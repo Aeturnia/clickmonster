@@ -1,6 +1,6 @@
 # Gameplay polish: scope
 
-**Status: scope accepted (2026-11-18).** The final independent scope review accepted the reviewed commit `9882a02`, after the corrections from the review of `8e82297` (section 13). All three required CI jobs passed on it (run `44364332056`).
+**Status: scope accepted (2026-11-18) and merged as PR #50 (`cc736b5`).** The final independent scope review accepted the reviewed commit `9882a02`, after the corrections from the review of `8e82297` (section 13). All three required CI jobs passed on it (run `44364332056`), and on the merged head `2cef100` (run `44368408591`; its browser job passed on its one re-run after a timeout in `PR-4a a second tab…`, a test this documentation change doesn't touch). GP-1 implementation was then authorized by the owner; see `docs/gameplay-polish-report.md`.
 - **Not authorized by this acceptance:** implementing GP-1, or deploying the functions. Each needs its own owner authorization; the F2 redeploy's is obtained before the implementation merge is scheduled (section 7).
 - **How to read GP-F5 and GP-F5b together:** GP-F5 forbids Fight controls on an ordinary town tile; GP-F5b allows the lair boss's Fight control on a tile that is both town and lair.
 
