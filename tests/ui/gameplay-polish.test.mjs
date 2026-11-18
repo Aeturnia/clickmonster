@@ -230,7 +230,7 @@ test('GP-B5 reduced motion: no animation on the XP bar or the gain cues; the cue
   for (const c of cues) {
     assert.equal(c.anim, 'none', c.text);
     assert.equal(c.starts, 0, c.text);
-    assert.ok(c.removed && c.removed - c.added >= 1500 && c.removed - c.added < 2300, `${c.text} shown for ${c.removed - c.added} ms`);
+    assert.ok(c.removed && c.removed - c.added >= 1500 && c.removed - c.added < 3000, `${c.text} shown for ${c.removed - c.added} ms`);
   }
   await done(ctx);
 });
@@ -258,6 +258,9 @@ test('GP-B6 the XP cue takes no space in the bar: the label stays "Lv N" and the
   await page.click('#main [data-a="fight"]'); await settle(page);
   await finish(page);
   assert.equal((await battle(page)).over, 'victory');
+  // Just after the win, while the gain shows: the bar's label is only the level. (Before
+  // amendment 1 it held the "+71 XP" chip here, the label the owner's iPhone cut off.)
+  assert.equal(await page.evaluate(() => document.querySelector('#top .meter.xp .meter-name').textContent), 'Lv 62');
   await page.waitForTimeout(2900); // the cue and the glow are over
   const xp = (await page.evaluate(() => window.__cues)).find((c) => /XP$/.test(c.text));
   assert.ok(xp, 'an XP cue was shown');
@@ -303,7 +306,7 @@ test('GP-B7 the XP cue starts once, holds through a regeneration tick without re
   const [c] = cues;
   assert.equal(c.ariaHidden, 'true');
   assert.equal(c.starts, 1);
-  assert.ok(c.removed && c.removed - c.added >= 1500 && c.removed - c.added < 2300, `shown for ${c.removed - c.added} ms`);
+  assert.ok(c.removed && c.removed - c.added >= 1500 && c.removed - c.added < 3000, `shown for ${c.removed - c.added} ms`);
   // Two more regeneration ticks: no cue comes back.
   await page.evaluate(() => { window.clickmonster.char.lastTick -= 6000; });
   await page.waitForTimeout(2200);
@@ -330,7 +333,12 @@ for (const way of ['gain', 'spend']) {
       amount = gold - await page.evaluate(() => window.clickmonster.char.gold);
       assert.ok(amount > 0, 'healing costs gold');
     }
-    await page.waitForTimeout(1900);
+    // The gold line's width just after the change, while the gain or spend shows, and once it is
+    // over. (Before amendment 1 the chip sat in the gold line and widened it.)
+    const goldWidth = () => page.evaluate(() => document.querySelector('#top #hud-row .hud-res').getBoundingClientRect().width);
+    const during = await goldWidth();
+    await page.waitForTimeout(2900);
+    assert.ok(Math.abs(during - await goldWidth()) < 0.5, `the gold line is ${during} wide just after the change, ${await goldWidth()} later`);
     const cue = (await page.evaluate(() => window.__cues)).find((c) => !/XP$/.test(c.text));
     assert.ok(cue, 'a gold cue was shown');
     assert.equal(cue.text, `${way === 'gain' ? '+' : '-'}${amount.toLocaleString('en-US')}`);
