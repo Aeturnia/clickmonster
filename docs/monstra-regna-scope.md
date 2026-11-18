@@ -1,6 +1,9 @@
 # Monstra Regna: identity, homepage and realm status (scope)
 
-**Status: the owner's answers to section 7 are recorded (section 10), with the sign-out and cleanup changes they bring. Awaiting the scope's acceptance. Scope only: no code, and no production reads or changes.**
+**Status: accepted in review (2026-11-17), with the owner's answers in section 10.**
+- **Cutover step 2** (the Supabase URL settings) was done by the owner ahead of the planned order (section 11).
+- **No implementation is authorized:** MR-B1, MR-B2 and MR-S1 each need their own authorization.
+- **No production reads or changes by Claude.**
 - **Three milestones are scoped together,** so their shared parts are agreed once. Each is implemented and reviewed on its own, starting with MR-B1, and each needs its own authorization:
   - **MR-B1, identity and domain;**
   - **MR-B2, homepage and navigation;**
@@ -479,4 +482,25 @@ MR-B1 and MR-B2 were accepted in principle. MR-S1 needed a tighter contract.
   - the public status endpoint and its aggregate are read-only, so anonymous requests can't trigger database maintenance.
 
 **Implementation order is unchanged:** MR-B1 can proceed once authorized; MR-B2's Contact and Discord items, and MR-S1, wait at their own gates.
+
+## 11. Cutover progress (MR-B1, section 3.2)
+
+### Step 2 was done early, by the owner (2026-11-17)
+
+**What happened:** the owner updated the production Supabase Auth URL settings **before step 1** (the rename merge), which hasn't been implemented or authorized yet. This is safe: `monstraregna.com` already serves exactly the same site as the Netlify address (section 2).
+
+**The settings applied,** as Claude described them to the owner and as the owner reports doing. They were **not read or verified by Claude,** and no credentials are involved:
+- **Site URL:** `https://monstraregna.com`.
+- **Redirect URLs:**
+  - `https://monstraregna.com/**` added;
+  - any existing `https://clickmonsters.netlify.app` entry **kept**, until step 7, so emails issued before the move still return;
+  - **no** preview wildcard (`deploy-preview-*`).
+- **The values before the change:** not recorded by Claude. The owner was asked to note them.
+
+**Don't repeat this step.** MR-B1's implementation starts at step 1 (the rename, without the redirect). Then it goes on to the step 3 checks: sign-up confirmation landing on `monstraregna.com`; sign-in and session restore there; and a valid reset link opening "Choose a new password". After that come steps 4–7. Confirming the settings with a read-only inspection would need the owner's authorization.
+
+### Unchanged through the migration
+
+- **`RECOVERY_REQUESTS` stays `false`.** The migration verifies that incoming reset links work on the new domain (R-1's guard). It doesn't switch on public password-reset requests; that belongs to the separate activation milestone.
+- **The support mailbox is independent of authentication email.** The DNS setup for `support@monstraregna.com` (up to 72 hours) gates only the Contact link and page (D8, QB-3). It doesn't hold up MR-B1 or the step 3 checks. Supabase's built-in sender mails the owner's existing address, as a member of the project's organization.
 
