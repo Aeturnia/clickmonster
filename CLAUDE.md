@@ -48,7 +48,8 @@ Read these first:
 - **MR-B1, identity and domain** (`docs/monstra-regna-scope.md`, section 3), authorized by the owner on 2026-11-18. See `docs/monstra-regna-b1-report.md`.
   - **Step 1 (the rename and `SITE_ORIGIN`, without the redirect) is complete:** merged as PR #48 (`ea2e4a4`) after independent review and green CI.
   - **Step 2** (Supabase Auth URLs) was done early by the owner; it is recorded as such, not independently inspected.
-  - **Next gate: the owner's checks in steps 3 and 4** on `monstraregna.com`. Don't open or merge the redirect (prepared on `claude/mr-b1-redirect`, `b00a5c7`), and don't touch the Supabase allow-list, without authorization.
+  - **Step 3 passed** (owner-reported, 2026-11-18): session kept and the reset link worked end to end on `monstraregna.com`. Sign-up confirmation is off in production (since the first setup), so its check waits for an email provider.
+  - **Next gate: step 4** (public pages on `monstraregna.com`), then the announcement (QB-2). Don't open or merge the redirect (prepared on `claude/mr-b1-redirect`, `b00a5c7`), and don't touch the Supabase allow-list, without authorization.
   - **MR-B2 and MR-S1** each need their own authorization.
 - **Development moved to the owner's Windows laptop.** `npm run deploy:functions` now runs from any shell (PR #15) and needs `SUPABASE_ACCESS_TOKEN` set in the environment.
 - **Don't start another milestone, or make gameplay or server changes,** until the owner approves it.
