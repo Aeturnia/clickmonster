@@ -1,6 +1,6 @@
 # Monstra Regna: identity, homepage and realm status (scope)
 
-**Status: draft for review (2026-11-17). Scope only: no code, and no production reads or changes.**
+**Status: revised after the scope review of `a873e9d` (section 9). Awaiting re-review. Scope only: no code, and no production reads or changes.**
 - **Three milestones are scoped together,** so their shared parts are agreed once. Each is implemented and reviewed on its own, starting with MR-B1, and each needs its own authorization:
   - **MR-B1, identity and domain;**
   - **MR-B2, homepage and navigation;**
@@ -88,7 +88,7 @@
 - **The redirect from the old address,** prepared in `netlify.toml` as a host-based permanent redirect: `https://clickmonsters.netlify.app/*` goes to `https://monstraregna.com/:splat` (301, forced).
   - **Deploy previews** (`deploy-preview-<n>--clickmonsters.netlify.app`) are different hosts and stay reachable.
   - **It goes live only in step 5 of the cutover (3.2),** not with the rename. It sits in its own commit, merged only once steps 1–4 are verified.
-  - **Netlify's exact behaviour** is verified on a deploy preview before it's relied on.
+  - **A deploy preview proves only that previews stay reachable and that the configuration is valid.** It runs under a different host, so it says nothing about how the real `clickmonsters.netlify.app` host behaves. That is verified on the real old host after the authorized deployment (B1-4b).
 
 ### 3.2 The cutover sequence
 
@@ -110,7 +110,9 @@ Each production step is the owner's action, or needs the owner's explicit author
    - old bookmarks and news links redirect, keeping the path;
    - deploy previews still work;
    - a player with a saved session on the old address signs in again on the new one. **Browser storage belongs to each address,** so this is expected; accounts and heroes are untouched.
-   - **Optional:** a news article announcing the move and the one-time sign-in.
+   - **Authentication links issued before the move:** confirmation and reset emails sent earlier still return to the old host. They go through Supabase's verify step to `clickmonsters.netlify.app/#access_token=…` or `#error…`.
+     - **Browsers keep a URL fragment across a redirect** whose target has none, so such a link should arrive on `monstraregna.com` with its fragment. That origin then holds the session, and R-1's guard shows "Choose a new password" for a reset link.
+     - **This is verified, not assumed** (B1-4c).
 7. **Remove the Netlify origin** from the Supabase allow-list.
 
 ### 3.3 Acceptance criteria
@@ -120,7 +122,9 @@ Each production step is the owner's action, or needs the owner's explicit author
 | B1-1 | No "ClickMonster" is left in anything players see; the remaining uses are technical identifiers only (listed) | A test that searches `public/` (except the vendored library and the storage keys), plus the report's list |
 | B1-2 | News pages give `https://monstraregna.com` as their canonical and `og:url` address, never the request's host | `tests/news-pages.test.mjs` (updated literal; the forwarded-host check kept) |
 | B1-3 | The storage keys are unchanged, so signing in on one address keeps working there | A file test |
-| B1-4 | The redirect sends the old host, with its path, to the new domain, and leaves deploy previews alone | Checked on a deploy preview, then live after step 5 (read-only requests) |
+| B1-4a | **Before the redirect merges:** the `netlify.toml` rule is valid, and a deploy preview stays reachable and isn't redirected | The preview, with read-only requests |
+| B1-4b | **After the authorized deployment, on the real old host:**<br>- a **301** to `https://monstraregna.com`;<br>- the **path and query string** kept (for example `/news/<slug>?x=1`);<br>- **no redirect loop** (the new domain answers 200, not another redirect);<br>- deploy previews still reachable | Read-only requests to the live hosts |
+| B1-4c | **Authentication links issued before the move:** a link to `clickmonsters.netlify.app/#…type=recovery…` arrives on `monstraregna.com` **with its fragment.** A real but old or used reset link shows R-1's "Reset link not valid", and a test fragment shows the matching panel; neither starts the game | A browser following the redirect after step 5, with test fragments that hold no real tokens, plus the owner's own old email if one exists |
 | B1-5 | Cutover steps 2–7 are recorded with their results, including the recovery link on the new domain showing the password form with the request switched off | The report, from the owner's checks and read-only requests |
 | B1-6 | Every suite stays green, with no gameplay change | CI and local runs |
 
@@ -138,7 +142,7 @@ Each production step is the owner's action, or needs the owner's explicit author
 1. **"Skip to sign in"** (D10), visible on focus, moving focus to the email field;
 2. the title, **"Monstra Regna"**, with no kicker or subtitle;
 3. **the menu** (4.2);
-4. **the status line,** a slot that MR-S1 fills; B2 adds no status markup;
+4. **the status line:** MR-B2 reserves its place in the layout (a named grid area, and a note in the HTML where MR-S1 will add the element), but **adds no element and shows no empty space.** An area with no element collapses. MR-S1 adds the element there without disturbing the layout;
 5. **the sign-in panel,** unchanged;
 6. **Latest News,** unchanged loading (after paint, failure-isolated) and hidden while empty;
 7. **the footer** (4.3).
@@ -220,7 +224,7 @@ All of these are lab figures under our profile, not Google's 75th-percentile fie
 | ID | Criterion |
 |---|---|
 | B2-1 | The layout as in 4.1 at 320, 390, 768, 1024 and 1440. The sign-in panel is above the fold at 320×640. The removed sections are gone; the news takes their area on desktop |
-| B2-2 | **"Skip to sign in"** is the first Tab stop and moves focus to the email field. It is visible on focus |
+| B2-2 | **"Skip to sign in"** is the first Tab stop and is visible on focus. It moves focus into whatever the sign-in panel is showing:<br>- the email field on the normal form;<br>- the panel's heading (`#gate-h`) while a saved session is being restored ("Returning to the realm");<br>- the first control of the password-recovery panel while a reset is under way.<br>Each of the three states is tested |
 | B2-3 | **The menu:** real links only; `aria-current` on Home; Contact and Discord appear only when their conditions hold |
 | B2-4 | **The footer** on every public page (entrance, news, static pages), with the copyright line and no dead links. The same copyright appears in the game's Settings |
 | B2-5 | **The static pages** answer 200 with the menu and footer, no script, and the agreed headers |
@@ -230,70 +234,151 @@ All of these are lab figures under our profile, not Google's 75th-percentile fie
 
 ## 5. MR-S1: realm status and presence
 
-**Goal:** a small, truthful status line on the homepage, such as "Realm Online · 24 Players Online". It's backed by a verified, privacy-safe count of distinct online accounts (D4, D5).
+**Goal:** a small, truthful status line on the homepage, such as "Realm Online · 24 Players Online". "Online" must mean the game can actually be entered and played. The count must be distinct accounts with a verified, recent presence (D4, D5), published only as an aggregate.
 
 ### 5.1 Definitions, fixed before design
 
-- **One player is one authenticated account** (D5).
-- **Online:** the account's client has sent a verified presence signal within the **presence window**. The proposal is a heartbeat every **60 s** and a window of **150 s** (QS-1). It's verified because the heartbeat is accepted only with a valid session; the server takes the account from the session, never from the request.
-- **Statuses shown:**
+- **One player is one authenticated account that has a hero** (D5, and QS-5).
+  - Accounts still at character creation aren't counted.
+  - Neither are accounts that are banned at the time of counting.
+- **Online (presence):** the account's game sent a heartbeat that the server accepted with a valid session, within the **presence window**.
+  - **Initial test parameters, not settled production values (QS-1):** a heartbeat every **60 s**, and a window of **150 s**.
+  - The server takes the account from the session, never from the request.
+- **The realm's states.** **Online** means a server-side readiness check confirms the services needed to enter and play are available (5.2). The public endpoint merely answering is not proof.
 
   | State | Meaning |
   |---|---|
-  | **Online** | The status service answered normally, within its time limit |
-  | **Degraded** | It answered, but reported a problem, for example a slow database (threshold, QS-2) |
-  | **Maintenance** | A published maintenance notice is under way. This reuses the news table's maintenance window, the same data as the entrance's maintenance line |
-  | **Status unavailable** | The browser couldn't get an answer (a timeout, an error or bad data) |
+  | **Online** | All readiness checks pass within their limits |
+  | **Degraded** | The checks pass, but with **repeated** evidence of a problem: a check failed once and then passed on its retry, or a check was over its time limit on both attempts (5.2). One slow request alone doesn't count |
+  | **Offline** | A required check **failed on both attempts.** This is a server-verified fact, so the word is safe here |
+  | **Maintenance** | A published maintenance notice is under way: the news table's maintenance window, the same data as the entrance's line. It is shown in place of the other three |
+  | **Status unavailable** | **The browser** couldn't get a valid, fresh answer (a timeout, an error, bad data, or a stale `as_of`). The browser can't tell "the game is down" from "the status check failed", so it never says Offline itself |
 
-  **"Offline" isn't shown as a guess.** If the browser can't reach the service, it can't tell "the game is down" from "the status check failed", so it says "Status unavailable".
-- **The count is never invented:** if unavailable, it shows "—", never 0.
+- **The count is never invented:** it shows "—" when unavailable, never 0.
 
-### 5.2 Proposed design (for review; alternatives in 5.4)
+### 5.2 Readiness: what "Online" checks (S1-01)
 
-- **Presence:**
-  - **Where:** a small table, `presence(user_id primary key, last_seen timestamptz)`.
-  - **What writes it:** the signed-in game sends the heartbeat through the existing `game` function, as a new action, or through a narrowly granted database function (QS-3).
-  - **Rules:**
-    - one row per account, so several tabs collapse to one;
-    - the server sets `last_seen = now()`;
-    - RLS: no direct reads or writes for `anon` or `authenticated`.
-- **The public aggregate:**
-  - **What:** a function that returns **only** `{ state, players_online, as_of }`, counting rows with `last_seen` inside the window.
-  - **Where:** a `SECURITY DEFINER` SQL function granted to `anon`, or a public `status` edge function (QS-3). The edge function would also measure the database's response time for "Degraded".
-  - **Leaks nothing else:** no ids, names, zones or emails.
-- **Caching:** the public answer may be cached for about 30 s (QS-4), so a busy homepage costs at most a few queries a minute.
-- **On the entrance:**
-  - **when it loads:** after the first paint, like the news;
-  - **how:** with plain `fetch` and the publishable key, **never loading supabase-js** for an anonymous visitor;
-  - **refresh:** every 60 s while the page is visible (Page Visibility), and none while hidden;
-  - **announcements:** status changes are announced politely; minute-by-minute count changes are not;
-  - **failure:** "Status unavailable" and "—", with nothing else affected.
-- **Small counts:** an exact count is shown, even 1. It reveals that someone is online, but not who.
+**One public endpoint runs these checks server-side.** Each is read-only and side-effect free, and none exposes an authenticated game action:
 
-### 5.3 Acceptance criteria
+| Check | What it proves | How |
+|---|---|---|
+| **Auth** | Players can sign in and keep a session | GoTrue's health endpoint (`/auth/v1/health`) with the publishable key |
+| **Game function** | The `game` function is deployed, its worker boots, and its imports (the shared engine) load | A CORS preflight (`OPTIONS`) to `/functions/v1/game`. The function answers it before authentication, with no game code run and nothing written (`index.ts`, `Deno.serve`) |
+| **Database, as the game needs it** | The reads every game request starts with work: `world_config` and the zones (`handle()` → `loadWorld()`, `loadWorldZones()`) | A `SECURITY DEFINER` SQL function that reads them and returns only `true`/`false`, plus the aggregate count below. It is granted to `anon`, and returns no rows or ids |
+
+**Attempts and time limits.**
+- **Each check runs once.** A check that fails, or is over its limit, is **retried once**, about 1 s later.
+- **Online:** both attempts aren't needed.
+- **Degraded:** a failure that passed on its retry, or over the limit on both attempts.
+- **Offline:** failed on both attempts.
+- **Time limits, initial test parameters (QS-2):**
+  - Auth: 2 s;
+  - database: 2 s;
+  - the game function's preflight: 3 s, which allows for a cold start.
+
+**Its limits, stated:**
+- **The preflight proves the function boots, not that every action works.** A bug inside a specific action wouldn't show.
+- **The retry is within one evaluation,** a few seconds, not a long-term measurement. With caching (5.4), the checks run at most about twice a minute while someone is watching, and not at all otherwise.
+- **No history is kept.** That avoids a writable table the public could feed.
+
+### 5.3 Presence: a lightweight heartbeat (S1-02)
+
+**The server: a dedicated path in the `game` function.**
+- **Where it sits:** after authentication, and **before `handle()`**, so it never runs `loadWorld()`, `loadWorldZones()` or anything else of the game's.
+- **What it does:** `action: 'heartbeat'` calls one SQL function, `touch_presence(user_id)`, which only the service role may execute.
+- **Write throttling, server-side:** an upsert that writes only if the stored time is older than **45 s** (`… on conflict (user_id) do update set last_seen = now() where presence.last_seen < now() - interval '45 seconds'`).
+  - However many tabs or devices send, an account causes **at most one write every 45 s**.
+  - One row per account (`user_id` primary key) means it's **counted once.**
+- **The answer:** `204`, with nothing in the body.
+- **Players without a hero** may send heartbeats, but aren't counted (5.1). Counting joins `presence` to `characters` at read time, so there's no extra query per heartbeat.
+
+**The client (the signed-in game, `main.js`):**
+- **When it sends:** once on entering the game, then every 60 s, **only while the tab is visible** (Page Visibility).
+  - **Background tabs send nothing.** On becoming visible, a tab sends at once if its last send was over 45 s ago.
+  - So usually only the tab in front sends.
+- **Sign-out:** heartbeats stop. A best-effort `heartbeat` with `leave: true` deletes the row before the session ends. If it doesn't arrive, the row ages out after 150 s.
+- **A closed tab, a lost connection, or a sleeping device:** no heartbeats, so the account stops counting at the end of the window.
+- **Failures** are ignored silently. A heartbeat never shows an error to the player or affects play.
+- **Account changes:** heartbeats belong to the game session (`gameGen`), so a stale timer never sends for the previous account (L-1's isolation rule).
+
+**Retention (privacy):**
+- **The table holds only** `user_id` and the latest `last_seen`, with no history.
+- **Rows are deleted** once they are older than **1 hour**, by the aggregate function as it runs (a bounded `delete … where last_seen < now() - interval '1 hour'`), so nothing lingers about accounts that have left.
+- **RLS:** no direct reads or writes for `anon` or `authenticated`.
+
+### 5.4 The public answer, privileges and caching (S1-03)
+
+**The endpoint:** a **Netlify Edge Function at `/api/status`** on `monstraregna.com`, built like the news pages (`netlify/edge-functions/news.js`).
+- **The checks:** it runs the readiness checks (5.2), and reads the maintenance window from the public news table.
+- **The key:** it uses **only the publishable key**, never a service-role or other privileged key.
+- **Same origin:** the entrance's request goes to the site's own address, with no cross-origin setup.
+- **No new Supabase function deploy is needed:** the production steps are the migration and the `game` function's heartbeat path.
+
+**Privileges:**
+- the readiness and count SQL function is granted to `anon` and returns only the readiness booleans and the count;
+- `touch_presence` is executable by `service_role` only, so only the `game` function can call it;
+- the `presence` table has RLS with no policies for `anon` or `authenticated`.
+- **Direct calls** to the anon function (bypassing the cache) return the same aggregate and cost one indexed count. That's accepted.
+
+**The response,** exact and validated on both ends:
+
+```json
+{ "state": "online" | "degraded" | "offline" | "maintenance", "players_online": 0..n | null, "as_of": "<ISO-8601 server time>" }
+```
+
+- **No other fields:** no ids, names, emails, zones or check details. Details go only to the server log.
+- **`players_online` is `null`** if the count couldn't be read. The page then shows "—".
+- **The endpoint's own failure** (an exception, or Supabase unreachable from the edge): `503` with the same shape, `state` `"offline"` only if the checks themselves showed it, and otherwise no body. The page then shows "Status unavailable".
+- **The page rejects** any response off this shape, or with `as_of` older than **120 s** (cache plus slack), as "Status unavailable".
+
+**Caching, target 30 s (QS-4), to be proved rather than assumed:**
+- **The design:** Netlify's CDN cache for edge-function responses, set in the edge function (Netlify's documented response caching, with a 30 s shared lifetime). Whether it is truly shared across visitors, and its exact headers, is **verified in implementation.**
+- **The tests:**
+  - repeated requests within 30 s return the **same `as_of`**, and the upstream checks are recorded as running once;
+  - after 30 s, a fresh `as_of`;
+  - a failed evaluation isn't cached for long (`503` cached 10 s at most, QS-4).
+- **If Netlify can't provide a shared cache this way,** the implementation reports it and proposes the alternative. It doesn't claim the 30 s figure.
+
+**On the entrance:**
+- **Loading:** after the first paint (like the news), with a plain `fetch('/api/status')`. **supabase-js is never loaded** for anonymous visitors.
+- **Refresh:** every 60 s while the page is visible, and none while hidden.
+- **Display:** "Realm Online · 24 Players Online", in the area MR-B2 reserved.
+- **Announcements:** state changes are announced politely; count changes aren't.
+- **Failure:** "Status unavailable · —", with nothing else affected (LAC-21). Shown in place, not as an empty box before the first answer.
+- **Small counts:** an exact count, even 1. It reveals that someone is online, not who.
+
+### 5.5 Acceptance criteria
 
 | ID | Criterion |
 |---|---|
-| S1-1 | **Several tabs or devices of one account count once.** Two accounts count two. An account stops counting once its heartbeat is older than the window |
-| S1-2 | **The heartbeat needs a valid session.** The account is taken from the session, and a request naming another account has no effect |
-| S1-3 | **The public answer contains only state, count and time,** with no identities or locations. `anon` can't read the presence table |
-| S1-4 | **Each state is shown correctly:** Online, Degraded, Maintenance (a notice under way) and Status unavailable (timeout, error or bad data). The count shows "—" when unavailable |
-| S1-5 | **It loads after first paint, with no supabase-js for anonymous visitors.** A status failure never delays or blocks sign-in (LAC-21) |
-| S1-6 | **Refresh** about once a minute while visible and none while hidden. Status changes are announced; counts are not |
-| S1-7 | **Local stack tests:** the migration, RLS, the aggregate, the heartbeat's account binding, and the window boundary. The production migration and deploy each need their own authorization, as in L-3 |
-| S1-8 | **The performance contract (4.5) still holds** |
+| S1-1 | **Several tabs or devices of one account count once;** two accounts count two. An account without a hero, or a banned one, isn't counted. An account stops counting once its heartbeat is older than the window |
+| S1-2 | **The heartbeat needs a valid session,** takes the account from it, and ignores any account named in the request. It runs **no game initialization** (shown by a test that fails if `loadWorld` is reached) |
+| S1-3 | **Writes are throttled:** at most one write per account per 45 s, whatever the number of tabs (a local-stack test sending many heartbeats) |
+| S1-4 | **The client sends** only while visible, sends at once when it becomes visible, stops on sign-out (best-effort delete), and never sends for a previous account after a switch |
+| S1-5 | **Readiness (5.2):** each state is produced by the right evidence. Online: all pass. Degraded: a failure that passed on retry, or slow twice. Offline: failed twice. Maintenance: a notice under way, which takes precedence. Each check's failure is simulated locally. A single slow attempt alone isn't Degraded |
+| S1-6 | **The public answer** matches the schema exactly, with no identities, locations or check details. The page rejects off-schema or stale answers as "Status unavailable", with "—" for the count |
+| S1-7 | **Privileges:** only the publishable key at the edge; `touch_presence` callable by `service_role` only; `presence` unreadable to `anon` and `authenticated` |
+| S1-8 | **Caching is proved:** the same `as_of` within 30 s, the upstream checks run once per window, fresh after expiry, failures cached briefly. If a shared cache isn't available, that's reported, not claimed |
+| S1-9 | **Retention:** rows older than 1 hour are deleted as the aggregate runs, and no history is kept |
+| S1-10 | **The entrance:** after first paint, no supabase-js for visitors, about one refresh a minute while visible and none while hidden, state changes announced, and a status failure never delaying sign-in. The performance contract (4.5) holds |
+| S1-11 | **Local stack tests** cover the migration, RLS, the functions, throttling, the window boundary and the readiness states. The production migration and the `game` function deploy each need their own authorization, as in L-3 |
 
-### 5.4 Alternatives considered
+### 5.6 Alternatives considered
 
-- **Supabase Realtime Presence:** it tracks connections, but a public total would need a server-side subscriber to aggregate it, because anonymous visitors mustn't join the presence channel themselves. That adds moving parts. It stays an option if the heartbeat proves costly (QS-3).
-- **`updated_at` on characters:** it doesn't meet D5. It measures activity, not presence, and is per character.
+- **Supabase Realtime Presence:** a public total would need a server-side subscriber to aggregate it, and anonymous visitors mustn't join the channel. That adds moving parts; it stays an option if heartbeats prove costly.
+- **The heartbeat through `handle()`:** rejected. It would load the world and zones every minute for every player (S1-02).
+- **A Supabase `status` edge function:** a possible host for 5.4. A Netlify edge function is preferred because it is same-origin, has the news pages' existing pattern, needs no new Supabase deploy, and can use Netlify's cache.
+- **A probe-history table for "Degraded":** rejected for now. It would need public writes or a privileged key; the retry within an evaluation is used instead.
+- **`updated_at` on characters:** it doesn't meet D5.
 
 ## 6. Phasing and gates
 
 1. **This scope:** review, then the owner's answers to section 7.
 2. **MR-B1:** implementation PR, then review and merge (the rename, without the redirect). Then cutover steps 2–7, each owner-controlled or authorized, recorded in a docs PR.
 3. **MR-B2:** implementation PR (after authorization), then review and merge. Each conditional link appears only when its condition holds.
-4. **MR-S1:** implementation PR on the local stack (after authorization), then review. The production migration, then the function deploy (each authorized), then the merge, then live checks.
+4. **MR-S1:** implementation PR on the local stack (after authorization), then review.
+   - **Production, each step authorized:** the migration (the `presence` table and the two functions), then the `game` function deploy (the heartbeat path), then the merge. The merge deploys `/api/status` with the site.
+   - **Then:** live checks, read-only.
 5. **The legal milestone (D7)** is scoped separately; it can run alongside.
 
 ## 7. Open questions for the owner
@@ -301,17 +386,69 @@ All of these are lab figures under our profile, not Google's 75th-percentile fie
 | Q | Question | Recommendation |
 |---|---|---|
 | QB-1 | **Manifest `short_name`:** "Monstra Regna" (13 characters), or shorter for home-screen icons? | "Monstra Regna". Most platforms show about 12 characters before truncating, so check on your phone |
-| QB-2 | **An announcement article** for the domain move and the one-time sign-in? | Yes, a short news post at step 5 |
+| QB-2 | **An announcement article** for the domain move and the one-time sign-in? | Yes, published **before** the redirect is switched on (between steps 4 and 5) |
 | QB-3 | **The contact address and its delivery** (D8). Until it works, B2 ships without the Contact link and page | Tell us when `support@monstraregna.com`, or another address, reaches you |
 | QB-4 | **The Discord invite** (D9) | Send it when ready; the link waits until then |
-| QS-1 | **The presence window:** a 60 s heartbeat and a 150 s window? | Yes. Shorter windows cost more requests; longer ones count leavers longer |
-| QS-2 | **The "Degraded" threshold**, for example a database response over 1 s | 1 s, measured by the status function |
-| QS-3 | **Heartbeat and aggregate:** through the `game` function and a SQL function, or a new public `status` edge function? | A `game` action for the heartbeat, which already authenticates, and a public `status` edge function for the aggregate, which can time the database for "Degraded" |
-| QS-4 | **Cache the public status** for about 30 s? | Yes |
+| QS-1 | **The presence window:** a 60 s heartbeat and a 150 s window, with the 45 s write throttle? | Yes, as **initial test parameters,** reviewed with local and live measurements before being treated as final |
+| QS-2 | **Readiness rules and time limits** (5.2): Auth 2 s, database 2 s, game preflight 3 s; one retry; Degraded only on repeated evidence | As proposed, as initial test parameters |
+| QS-3 | **Where things run:** the heartbeat as a dedicated path in `game` (before `handle()`), and the public answer from a Netlify edge function at `/api/status` | As proposed (5.3, 5.4) |
+| QS-4 | **Caching:** 30 s for good answers, at most 10 s for failures, proved in implementation | Yes |
+| QS-5 | **Who counts:** accounts with a hero that aren't banned, or every signed-in account? | Accounts with a hero that aren't banned, since "Players Online" means people in the world |
 
 ## 8. Not verified by this scope
 
 - **The production Supabase Auth settings:** none were read.
-- **Netlify's host redirect, and its interaction with deploy previews:** to be verified on a preview in B1.
+- **Netlify's host redirect:** a preview shows only that previews are unaffected. The real old host is verified after deployment (B1-4b, B1-4c).
+- **Netlify's shared response caching for edge functions:** to be proved in MR-S1 (S1-8).
 - **How "Monstra Regna" displays** as an installed app's name on real phones (QB-1).
 - **All performance figures for B2:** they're estimates until measured.
+
+## 9. Scope review corrections (review of `a873e9d`)
+
+**The review accepted:**
+- the three-milestone structure;
+- D1–D12;
+- the revised performance contract;
+- the production authorization boundaries.
+
+MR-B1 and MR-B2 were accepted in principle. MR-S1 needed a tighter contract.
+
+**B1, redirect evidence.**
+- **What a deploy preview proves:** only that previews stay reachable and the configuration is valid. B1-4 is split:
+  - **B1-4a:** before the merge;
+  - **B1-4b:** the real old host after the authorized deployment, covering the 301, the path and query string, no loop, and previews;
+  - **B1-4c:** authentication links issued before the move, with their fragment kept across the redirect and R-1's guard on the new domain.
+- **The seven-step order is kept.** The announcement (QB-2) is now before the redirect.
+
+**B2.**
+- **The status area:** reserved as a named grid area and a note in the HTML, with **no element and no empty space** until MR-S1.
+- **The skip link** is tested in three states: the normal form, a saved session being restored, and a password reset under way.
+
+**S1-01, real availability (5.2).**
+- **"Online"** is now a server-side readiness check of Auth (health), the `game` function (a preflight, proving it boots, run before authentication and side-effect free), and the database reads every game request starts with. A working status endpoint alone is no longer enough.
+- **Degraded** needs repeated evidence: a failure that passed on retry, or slow on both attempts. **Offline** means failed on both, verified server-side.
+- **The limits are stated:** the preflight doesn't prove every action, and no history is kept.
+
+**S1-02, the heartbeat (5.3).**
+- **A dedicated authenticated path before `handle()`,** so there's no world or zone loading.
+- **Server-side throttle:** one write per account per 45 s.
+- **One row per account,** so it's counted once.
+- **Defined behaviour** for:
+  - visible-only sending;
+  - background tabs;
+  - sign-out (a best-effort delete);
+  - lost connections;
+  - account switches (`gameGen`);
+  - accounts without a hero (not counted, QS-5);
+  - banned accounts (not counted).
+- **60 s / 150 s** are initial test parameters.
+
+**S1-03, the public answer and caching (5.4).**
+- **The exact response schema,** validated at both ends, with stale results rejected.
+- **The endpoint:** Netlify `/api/status`, using only the publishable key.
+- **Privileges:** the anon function returns only booleans and the count; `touch_presence` is service-role only; RLS locks the table.
+- **The 30 s cache** must be **proved** (the same `as_of` and one upstream run per window, then fresh, with failures cached briefly), or the gap reported.
+- **Retention:** rows older than 1 hour are deleted; no history.
+
+**The answers recommended in the review** are reflected in section 7, as recommendations for the owner: QB-1 to QB-4, and QS-1 to QS-5.
+
