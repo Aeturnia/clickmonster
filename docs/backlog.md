@@ -112,6 +112,11 @@ A separate staging Supabase project is dropped. The live sign-in session above c
   - **Not GP-1's:** it fails without any game change, and GP-1 doesn't touch the entrance or `entry-recover.js`.
   - **Root cause not established.** It shouldn't be treated as a flake, and the test and its timeout stay as they are.
   - **Next step, when authorized:** run it repeatedly with `UI_DIAGNOSTICS=1` to capture the trace and the second tab's DOM when it times out.
+- **`net::ERR_NO_BUFFER_SPACE` on the Windows browser runner** (CI run `44410857655`, 2026-11-18, PR #51 at `b60c6ae`).
+  - **What happened:** `R1-02 an expired link (error_code only)…` failed when Chromium's request for `/js/data/items.js` from the harness's local server failed with a Windows socket-buffer error. The entrance showed "The game could not be loaded", as it should for a module that fails.
+  - **The diagnostics:** `diag.json` showed no page errors, no bad responses, and low CPU and memory.
+  - **The likely cause** is the runner's network stack under the suite's many short connections, after more than 200 tests. It isn't established.
+  - **Next step, when authorized:** see whether it recurs, and whether the harness's server should keep connections alive or the job should limit them. Unlike the `PR-4a` timeout above, this one has diagnostics; they are not known to share a cause.
 
 - **Pagination of `/news`** (from the L-4 review). The public list (`netlify/edge-functions/news.js`, `LIST_LIMIT = 100`) shows the 100 newest published articles. Older ones stay reachable by their address but drop off the list. Add pages (for example `/news?page=2`, or a link to older articles) before there are 100.
 
