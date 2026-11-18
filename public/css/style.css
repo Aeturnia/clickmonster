@@ -75,7 +75,7 @@ button { font: inherit; color: inherit; }
   height: 100dvh; max-width: 560px; margin: 0 auto;
   display: flex; flex-direction: column;
 }
-#top { flex: none; padding: calc(6px + env(safe-area-inset-top)) 16px 6px; border-bottom: 1px solid var(--line); background: var(--bg); }
+#top { position: relative; /* holds the floating gold and XP cues */ flex: none; padding: calc(6px + env(safe-area-inset-top)) 16px 6px; border-bottom: 1px solid var(--line); background: var(--bg); }
 #main { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 14px 16px 20px; }
 #main.fill { display: flex; flex-direction: column; overflow: hidden; padding-bottom: 10px; }
 #dock { flex: none; padding: 8px 12px; border-top: 1px solid var(--line); background: #191410; }
@@ -159,6 +159,10 @@ p { margin: 0 0 8px; }
 .meter.big.stack .meter-track { height: 2.3rem; }
 .meter.stack .meter-text { flex-direction: column; align-items: flex-start; justify-content: center; row-gap: 2px; }
 .side.foe .meter.stack .meter-text { flex-direction: column; align-items: flex-end; }
+/* On two lines, the label and the numbers each take the bar's full width (amendment 1, fix A).
+   Sized to their text, WebKit kept the label's one-line width after the switch and cut it off. */
+.meter.stack .meter-text > * { align-self: stretch; }
+.side.foe .meter.stack .meter-text > * { text-align: right; }
 
 /* ---------------------------------------------------------------- tabs */
 #nav .tabs { display: grid; grid-template-columns: repeat(4, 1fr); }
@@ -242,7 +246,7 @@ p { margin: 0 0 8px; }
 
 /* ---------------------------------------------------------------- battle */
 /* The two sides share a row while each has 7rem; with very large text on a phone the foe wraps
-   under you, so both bars keep room for their numbers (gameplay polish B). */
+   under you, so the names keep room, and a world boss's bar its numbers (gameplay polish B). */
 .versus { flex: none; display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; position: relative; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
 .versus > .side { flex: 1 1 7rem; }
 .versus > .vs { flex: none; }
@@ -251,6 +255,10 @@ p { margin: 0 0 8px; }
 .side-sub { font-size: 0.8125rem; color: var(--muted); margin-bottom: 6px; }
 .side.foe { text-align: right; }
 .side.foe .meter-text { flex-direction: row-reverse; }
+/* The strip under each side's name where the damage numbers float (amendment G2). It is as tall as
+   the largest one (a critical hit, 1.75rem) plus its rise, so they never cover the name or the
+   sub-line, at any text size. A world boss's Shared HP bar sits at its foot (G3). */
+.side-fx { position: relative; min-height: 2.25rem; display: flex; flex-direction: column; justify-content: flex-end; }
 .vs { font-family: Georgia, serif; color: var(--muted); font-style: italic; padding-bottom: 2px; }
 
 .summary { flex: none; display: flex; gap: 6px 16px; flex-wrap: wrap; padding: 10px 0; border-bottom: 1px solid var(--line); font-weight: 700; }
@@ -273,9 +281,10 @@ p { margin: 0 0 8px; }
 .log .info.fresh { color: #b9cdea; }
 
 .float {
-  /* Centred over the HP bar, where the meter label has a gap, so it never covers the names. */
-  position: absolute; bottom: 12px; left: 0; right: 0; margin: 0 auto; width: max-content; pointer-events: none; z-index: 3;
-  font-weight: 800; font-size: 1.375rem; font-variant-numeric: tabular-nums; white-space: nowrap;
+  /* Centred in its side's strip (.side-fx), rising to the strip's top edge, so it never covers the
+     name or the sub-line. line-height 1 keeps its box to its text. */
+  position: absolute; bottom: 0; left: 0; right: 0; margin: 0 auto; width: max-content; pointer-events: none; z-index: 3;
+  font-weight: 800; font-size: 1.375rem; line-height: 1; font-variant-numeric: tabular-nums; white-space: nowrap;
   padding: 0 6px; border-radius: 6px; background: rgba(13, 10, 8, .88); /* keeps the number readable over the bars */
   animation: float-up .8s ease-out forwards;
 }
@@ -283,7 +292,7 @@ p { margin: 0 0 8px; }
 .float.dmg-you { color: var(--bad); }
 .float.miss { color: var(--muted); font-size: 1rem; }
 .float.crit { font-size: 1.75rem; color: #ffd36b; }
-@keyframes float-up { from { transform: translateY(0); opacity: 1; } to { transform: translateY(-26px); opacity: 0; } }
+@keyframes float-up { from { transform: translateY(0); opacity: 1; } to { transform: translateY(-0.5rem); opacity: 0; } }
 .shake { animation: shake .28s; }
 @keyframes shake { 20% { transform: translateX(-5px); } 40% { transform: translateX(5px); } 60% { transform: translateX(-3px); } 80% { transform: translateX(2px); } }
 .flash { animation: flash .35s; }
@@ -739,17 +748,21 @@ label.field.confirm-field { display: flex; flex-direction: column; gap: 6px; mar
 .rewards .gold { color: var(--gold); }
 .rewards .relic, .rewards .level { color: #f0c04c; border-color: #6a5420; }
 
-/* HUD change cues: a short rise-and-fade chip; with reduced motion it just sits there, then goes. */
-.delta { display: inline-block; margin-right: 6px; font-size: 0.75rem; font-weight: 700; font-variant-numeric: tabular-nums; animation: delta .35s ease-out; }
-.delta.up { color: #a7e3ab; }
-.delta.down { color: var(--muted); }
-.meter-name .delta { margin: 0 0 0 6px; }
-.meter-name .delta.up { color: #fff; } /* on the bar: white, like its numbers */
-@keyframes delta { from { transform: translateY(5px); } to { transform: none; } } /* no fading: full contrast throughout; it is removed after DELTA_MS */
+/* Gold and XP cues (amendment G1): float over the XP bar or the gold, taking no space, rise a
+   little and are removed after CUE_MS (main.js). No fading: full contrast throughout. With reduced
+   motion they stay still for the same time. */
+.cue { position: absolute; z-index: 5; pointer-events: none; padding: 1px 6px; border-radius: 6px; background: rgba(13, 10, 8, .92);
+  font-size: 0.875rem; font-weight: 800; line-height: 1.2; font-variant-numeric: tabular-nums; white-space: nowrap;
+  animation: cue-rise .45s ease-out both; }
+.cue.centre { translate: -50% -50%; }
+.cue.right { translate: 0 -50%; }
+.cue.up { color: #a7e3ab; }
+.cue.down { color: var(--muted); }
+@keyframes cue-rise { from { transform: translateY(0.25rem); } to { transform: translateY(-0.25rem); } }
 .meter.xp.gain .meter-track { animation: xp-glow 1.2s ease-out; }
 @keyframes xp-glow { 0%, 60% { box-shadow: 0 0 0 1px var(--xp), 0 0 8px var(--xp); } 100% { box-shadow: none; } }
 @media (prefers-reduced-motion: reduce) {
-  .delta { animation: none !important; }
+  .cue { animation: none !important; }
   .meter.xp.gain .meter-track { animation: none !important; box-shadow: 0 0 0 1px var(--xp); }
 }
 .rewards.losses li { color: #f19a8c; border-color: #7d3a31; }

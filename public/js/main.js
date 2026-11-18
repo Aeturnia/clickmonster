@@ -72,6 +72,7 @@ const freshUi = () => ({
   hunts: [],
   turnLog: null, // the battle log's rounds, as this page saw them (logHtml)
   delta: null,
+  cues: null, // gold and XP changes waiting to float (showCues)
   losses: null,
   pickMonster: null, // the monster chosen in the drop-down (monsterPicker)
 });
@@ -139,6 +140,10 @@ function meter(label, cur, max, cls = '') {
 // Fits each bar's text: the full numbers beside the label if they fit; else the short numbers
 // (.compact); else, with very large text in a narrow column, the label above the numbers on a
 // taller bar (.stack).
+// Each part is measured by its text's own width, not its box: WebKit can keep a box's width from
+// the previous layout (one line or two), which made a label look narrower or wider than its text
+// (amendment 1, fix A, found on an iPhone).
+const textWidth = (el) => { const r = document.createRange(); r.selectNodeContents(el); return r.getBoundingClientRect().width; };
 function fitMeters() {
   for (const m of document.querySelectorAll('.meter')) {
     const text = m.querySelector('.meter-text');
@@ -147,8 +152,9 @@ function fitMeters() {
     const fits = (stacked) => {
       const cs = getComputedStyle(text);
       const room = text.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
-      const name = m.querySelector('.meter-name').scrollWidth;
-      const num = m.querySelector('.meter-num').scrollWidth;
+      const name = textWidth(m.querySelector('.meter-name'));
+      const shown = m.querySelector(m.classList.contains('compact') ? '.n-short' : '.n-full');
+      const num = shown.getBoundingClientRect().width;
       return (stacked ? Math.max(name, num) : name + num + parseFloat(cs.columnGap || 0)) <= room + 0.5;
     };
     if (fits(false)) continue;
@@ -324,16 +330,40 @@ const fighting = () => !!(char && char.battle && !char.battle.over);
 const locKey = () => `${char.loc.zone}:${char.loc.x}:${char.loc.y}`;
 
 // ---------------------------------------------------------------- HUD, tabs
-// Gold and XP changes from the last action show briefly in the HUD (decorative: the toast, battle
-// log and announcements already say it). DELTA_MS after the action they are gone.
+// An XP gain makes the XP bar glow for DELTA_MS after the action (.meter.xp.gain).
 const DELTA_MS = 2600;
-function deltaChip(n, unit) {
-  if (!n) return '';
-  return `<span class="delta ${n > 0 ? 'up' : 'down'}" aria-hidden="true">${n > 0 ? '+' : '-'}${short(Math.abs(n))}${unit ? ` ${unit}` : ''}</span>`;
+
+// Gold and XP changes float over what they changed, like the damage numbers in a fight
+// (gameplay polish amendment G1). They take no space in the hero bar, so they can't push its text
+// out. Each is created once per change, directly in #top, which redraws never replace, so a
+// regeneration tick can't restart it; it is removed after CUE_MS. Decorative: the toast, battle
+// log and announcements already say it.
+const CUE_MS = 1600;
+function showCues() {
+  const { gold, xp } = ui.cues;
+  ui.cues = null;
+  const top = document.getElementById('top');
+  if (!top || !char) return;
+  if (xp > 0) floatCue(top, top.querySelector('#hud-xp .meter-track'), `+${short(xp)} XP`, 'up', 'centre');
+  if (gold) floatCue(top, top.querySelector('#hud-row .hud-res b'), `${gold > 0 ? '+' : '-'}${short(Math.abs(gold))}`, gold > 0 ? 'up' : 'down', 'right');
+}
+function floatCue(top, anchor, text, cls, align) {
+  if (!anchor?.getClientRects().length) return;
+  const t = top.getBoundingClientRect();
+  const a = anchor.getBoundingClientRect();
+  const el = document.createElement('span');
+  el.className = `cue ${cls} ${align}`;
+  el.setAttribute('aria-hidden', 'true');
+  el.textContent = text;
+  el.style.top = `${a.top + a.height / 2 - t.top}px`;
+  if (align === 'right') el.style.right = `${t.right - a.right}px`;
+  else el.style.left = `${a.left + a.width / 2 - t.left}px`;
+  top.appendChild(el);
+  setTimeout(() => el.remove(), CUE_MS);
 }
 
 // The hero bar is painted as three regions (gameplay polish A), so that a regeneration tick,
-// which changes only HP, doesn't recreate the XP meter or the gold, and doesn't restart their cues.
+// which changes only HP, doesn't recreate the XP meter or the gold.
 const HUD_PARTS = { 'hud-row': 1, 'hud-hp': 1, 'hud-xp': 1 };
 const HUD_SHELL = '<div class="hud-row" id="hud-row"></div><div class="hud-bars"><div id="hud-hp"></div><div id="hud-xp"></div></div>';
 function viewTop() {
@@ -344,9 +374,9 @@ function viewTop() {
   // available to screen readers; the Hero and Gear tabs show them in full.
   return {
     'hud-row': `<span class="hud-name">${esc(char.name)}<span class="sr-only">, level ${char.level} ${esc(race.name)}</span></span>
-      <span class="hud-res">${deltaChip(d.gold)}${amount(char.gold, 'gold')}<span class="gems"> ${amount(gems, 'gems')}</span></span>`,
+      <span class="hud-res">${amount(char.gold, 'gold')}<span class="gems"> ${amount(gems, 'gems')}</span></span>`,
     'hud-hp': meter('HP', char.hp, maxHp(char)),
-    'hud-xp': meter(`Lv ${char.level}${deltaChip(d.xp, 'XP')}`, char.xp, xpToNext(char.level), `xp${d.xp > 0 ? ' gain' : ''}`),
+    'hud-xp': meter(`Lv ${char.level}`, char.xp, xpToNext(char.level), `xp${d.xp > 0 ? ' gain' : ''}`),
   };
 }
 
@@ -678,19 +708,23 @@ function viewHuntBattle(b, you) {
   return `<div class="versus" id="versus">${you}<div class="vs">vs</div>
       <div class="side foe" id="fx-foe"><div class="side-name elite-name">${esc(b.name)}</div>
         <div class="side-sub">World boss, level ${b.level}</div>
-        ${meter('Shared HP', b.hp, b.maxHp, 'foe big')}</div></div>
+        <div class="side-fx">${meter('Shared HP', b.hp, b.maxHp, 'foe big')}</div></div></div>
     <div class="summary"><span>Your damage: ${fmt(b.myDamage || 0)}</span>${ended ? '' : '<span class="faint">Every hunter shares the reward</span>'}</div>
     <div class="log" id="log" tabindex="0" role="log" aria-label="Battle log" aria-live="off">${logHtml(b)}</div>
     ${b.over === 'defeat' || b.over === 'fled' ? outcomeHtml(b) : ''}`;
 }
 
+// No HP bars in a fight (gameplay polish amendment G2): your HP is in the hero bar, and the
+// monster's isn't shown. Each side keeps a strip (.side-fx) for the damage numbers, under its name
+// and sub-line; a world boss's strip also holds the Shared HP bar (G3).
+const SIDE_FX = '<div class="side-fx"></div>';
 function viewBattle() {
   const b = char.battle;
-  const you = `<div class="side you" id="fx-you"><div class="side-name">${esc(char.name)}</div><div class="side-sub">Lv ${char.level}</div>${meter('HP', char.hp, maxHp(char), 'big')}</div>`;
+  const you = `<div class="side you" id="fx-you"><div class="side-name">${esc(char.name)}</div><div class="side-sub">Lv ${char.level}</div>${SIDE_FX}</div>`;
   if (b.hunt) return viewHuntBattle(b, you);
   if (b.pvp) {
     return `<div class="versus" id="versus">${you}<div class="vs">vs</div>
-        <div class="side foe" id="fx-foe"><div class="side-name">${esc(b.opponent)}</div><div class="side-sub">${b.over === 'victory' ? 'Defeated' : 'Victorious'}</div></div></div>
+        <div class="side foe" id="fx-foe"><div class="side-name">${esc(b.opponent)}</div><div class="side-sub">${b.over === 'victory' ? 'Defeated' : 'Victorious'}</div>${SIDE_FX}</div></div>
       <div class="log" id="log" tabindex="0" role="log" aria-label="Battle log" aria-live="off">${logHtml(b)}</div>
       ${outcomeHtml(b)}`;
   }
@@ -699,7 +733,7 @@ function viewBattle() {
   return `<div class="versus" id="versus">${you}<div class="vs">vs</div>
       <div class="side foe" id="fx-foe"><div class="side-name${b.variant ? ' elite-name' : ''}">${esc(mon.name)}</div>
         <div class="side-sub"><span class="${d.cls}">Lv ${mon.level} ${d.word}</span>${mon.element ? `, ${ELEMENT_LABEL[mon.element]}` : ''}</div>
-        ${meter('HP', b.hp, b.maxHp, 'foe big')}</div></div>
+        ${SIDE_FX}</div></div>
     <div class="log" id="log" tabindex="0" role="log" aria-label="Battle log" aria-live="off">${logHtml(b)}</div>
     ${outcomeHtml(b)}`;
 }
@@ -1258,6 +1292,7 @@ function render() {
   markPending();
   markShortcuts();
   fitMeters();
+  if (ui.cues) showCues();
 
   const viewKey = `${ui.phase}:${!!char}:${ui.tab}:${!!char?.battle}`;
   const viewChanged = viewKey !== lastView;
@@ -1302,6 +1337,7 @@ function trackChanges(action, before) {
   if (mark) mark.gains = mastery; // listed under the round that raised it
   if (!gold && !xp) return;
   ui.delta = { gold, xp: Math.max(0, xp), at: Date.now() };
+  ui.cues = { gold, xp: Math.max(0, xp) }; // floated by the next render, from the hero bar it draws
   clearTimeout(ui.deltaTimer);
   ui.deltaTimer = setTimeout(render, DELTA_MS + 50);
 }
@@ -1333,7 +1369,7 @@ function floatText(sideId, text, cls) {
   el.className = `float ${cls}`;
   el.setAttribute('aria-hidden', 'true'); // decorative: the battle log and announcements carry the same news
   el.textContent = text;
-  side.appendChild(el);
+  (side.querySelector('.side-fx') || side).appendChild(el); // the strip under the name, clear of the text
   setTimeout(() => el.remove(), 900);
 }
 
