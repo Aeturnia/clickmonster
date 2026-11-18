@@ -1,6 +1,8 @@
 # Password recovery: scope
 
-**Status: revised after the scope review of `01a5b0f` (PR-S01, PR-S02 and refinements; section 9). Awaiting re-review. Not authorized for implementation.**
+**Status: accepted at `43327bd`, with the owner's later decisions recorded in section 10 (2026-11-17).**
+- **R-1 is authorized** for local development and testing, and is implemented in PR #45.
+- **Production activation is not authorized.**
 - **Backlog item:** "Password recovery" (`docs/backlog.md`), raised in the landing scope review (Q14) as a higher-priority account-reliability item.
 - **This scope adds no code.**
 - **It reads nothing from production.** One gate below asks for a read-only inspection of the production auth settings, which needs the owner's authorization.
@@ -219,4 +221,24 @@ The review accepted the design in principle, and requested these changes.
 - **P-1** only with the owner's explicit authorization, and no secret is ever disclosed.
 
 **The owner's note:** leaning towards Resend for production email; no account yet. This is recorded in Q1 and P-2, including the need for a sending domain the owner controls.
+
+## 10. Decisions after acceptance (2026-11-17)
+
+**R-1 authorized.** The owner authorized R-1 for local development and testing, without waiting for Resend, a domain, or production SMTP. Its implementation is PR #45, and its report is `docs/password-recovery-r1-report.md`.
+
+**Email provider: Resend** (the owner's choice; no account yet).
+- **Its prerequisites:** a sending domain the owner controls (P-2).
+- **A dedicated Monstra Regna website domain is not a prerequisite:** `https://clickmonsters.netlify.app` can stay until a separately approved domain move.
+
+**The public name.** "Monstra Regna" is the public-facing name, for new UI and email drafts. Technical identifiers may keep "ClickMonster".
+
+**The startup budget (LAC-2) is 34,000 decoded bytes,** the owner's exception for R-1.
+- **Why:** the guard can't fit in 32,000. It has to be in the first paint, to stop a returning player's game from preloading.
+- **Unchanged:** comments are not stripped; everything else for recovery loads lazily.
+- **This supersedes** the 32,000 in 3.3 and Q5.
+
+**Accepted in the R-1 review** (PR #45, review of `cbddd42`):
+- **Arriving from a reset link is handled even while asking is switched off.** It fixes the defect in 2.3, where a link entered the game, without depending on any email sender.
+- **The link returns to the requesting page's own origin** (`location.origin`), not `SITE_ORIGIN` (3.1). Supabase's allow-list, limited to the production origin (P-4), still decides where it may land.
+- **The release switch** (`RECOVERY_REQUESTS` in `entry.js`) is a UI gate, not a security boundary. Supabase's public recovery endpoint stays as Supabase provides it.
 
