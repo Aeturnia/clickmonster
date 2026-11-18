@@ -15,7 +15,11 @@
   - **The record:** accepted and merged as PR #33 (`8018bbb`).
   - **See:** `docs/landing-l4-report.md`, section 9.
 - **Final baseline** on `main` at `d754dad`: engine 47/47 and browser 178/178, in each of 3 runs.
-- **LAC-2's byte target is revised to 32,000 decoded bytes** (L-4 review, 2026-11-13). This is a scoped exception, decided by the reviewer and recorded here rather than counting the original 30 KB as met.
+- **LAC-2's byte target is revised again, to 34,000 decoded bytes,** by the owner on 2026-11-17, for password recovery (R-1).
+  - **Why:** the recovery guard must be in the first paint, to stop a returning player's game from preloading during an unfinished reset.
+  - **Measured:** 33,702 bytes with R-1 (33,481 at the decision). The additions are about 2,000 bytes of code and markup and 400 of comments; everything else for recovery loads lazily.
+  - **Comments** were not stripped. The metric and the other LAC-2 conditions are unchanged.
+- **LAC-2's byte target was revised to 32,000 decoded bytes** (L-4 review, 2026-11-13). This is a scoped exception, decided by the reviewer and recorded here rather than counting the original 30 KB as met.
   - **Why:** the news itself loads after the first paint, as the owner directed. Its two hooks (the hidden news markup in `index.html` and the after-paint loader in `entry.js`) bring the first paint to 31,112 bytes as served, against 29,800 after L-2.
   - **Unchanged:** the metric is still decoded bytes, measured as in L-1 and L-2, not compressed size. The other LAC-2 conditions also stand: three requests before the first paint, no game code or supabase-js for an anonymous visitor, and news loaded independently.
   - **Comments** were not stripped to fit.
@@ -410,7 +414,7 @@ These are measured with `tools/entry-metrics.mjs` (extended as needed) at the si
 | AC | Phase | Criterion | Before | Draft target |
 |---|---|---|---|---|
 | LAC-1 | L-1 | The identity and sign-in form are in the HTML, visible with scripts disabled (with a note that signing in needs JavaScript) | blank page | met |
-| LAC-2 | L-1 | Startup requests and decoded bytes by the time the sign-in form is visible, counted as the tool does (section 1). Render-blocking dependencies are checked separately by failure runs (LAC-21) | 36 requests, 415 KB, 26 game modules, import chain of 7 | at most 3 requests besides the icon and manifest (document, entry CSS, entry JS), at most 30 KB decoded; **revised to 32,000 decoded bytes for the completed entrance** in the L-4 review (see the status at the top), no game module and no supabase-js |
+| LAC-2 | L-1 | Startup requests and decoded bytes by the time the sign-in form is visible, counted as the tool does (section 1). Render-blocking dependencies are checked separately by failure runs (LAC-21) | 36 requests, 415 KB, 26 game modules, import chain of 7 | at most 3 requests besides the icon and manifest (document, entry CSS, entry JS), at most 30 KB decoded; **revised to 32,000 decoded bytes for the completed entrance** in the L-4 review, **then to 34,000** by the owner for password recovery (2026-11-17; see the status at the top), no game module and no supabase-js |
 | LAC-3 | L-1 | Throttled time to a visible form, same method | 2.6 s (underestimate) | at most 0.8 s, same method |
 | LAC-4 | L-1 | No third-party host on the path: from the first request through sign-in to the drawn hero, every request goes to our own site or to Supabase (the harness allows no CDN). The vendored supabase-js is verified self-contained, its licence notice kept, and its version and update steps documented | 7 requests to `cdn.jsdelivr.net`; with them failing, a blank page | met; tested |
 | LAC-5 | L-1 | Returning player: with a saved session, the game starts loading immediately, with no "Loading" screen; the entrance shows its in-place status until the hero is drawn | separate Loading screen, then the game | met; tested |

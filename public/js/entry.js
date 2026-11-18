@@ -75,6 +75,7 @@ function setMode(next) {
   submit.textContent = signup ? 'Create account' : 'Sign in';
   password.setAttribute('autocomplete', signup ? 'new-password' : 'current-password');
   modeBtn.textContent = signup ? 'I already have an account' : 'New here? Create an account';
+  $('forgot-row').hidden = signup || !RECOVERY_REQUESTS;
 }
 
 function setPending(on) {
@@ -137,6 +138,30 @@ function savedSession() {
   } catch { return false; }
 }
 
+// ---------------------------------------------------------------- password recovery
+// js/entry-recover.js (docs/password-recovery-scope.md). A reset link, its error, or a reset left
+// unfinished here (RECOVERY_KEY: the user, if the saved session is theirs) sets the guard: the
+// game neither starts nor preloads until the new password is saved. Asking for a reset is off
+// until it is released.
+const RECOVERY_REQUESTS = false;
+const RECOVERY_KEY = 'clickmonster.recovery';
+const clearMarker = () => { try { localStorage.removeItem(RECOVERY_KEY); } catch { /* none kept */ } };
+let recovering = /[#&](type=recovery|error=)/.test(location.hash) || (() => {
+  try { const id = localStorage.getItem(RECOVERY_KEY); if (id && JSON.parse(localStorage.getItem(AUTH_KEY))?.user?.id === id) return true; } catch { /* no storage */ }
+  clearMarker();
+  return false;
+})();
+let recovery = null;
+function recover(then) {
+  recovery ||= import('./entry-recover.js').then((m) => m.start({
+    loadNet, clearMarker, requests: RECOVERY_REQUESTS, signInHeading: () => setMode(mode),
+    unguard() { recovering = false; clearMarker(); }, // the password is changed
+    cancel: () => net?.signOut({ scope: 'local' }),
+    release(text) { if (current) enterGame(++gen); if (text) status.textContent = text; },
+  }));
+  recovery.then(then, () => { recovery = null; say('The password reset could not be loaded. Check your connection, then reload the page.', 'bad'); });
+}
+
 // ---------------------------------------------------------------- the interface choice (L-2)
 // Saved with the game's other device settings; the game applies it (layout.js). The entrance's own
 // layout never changes with it. The Desktop rule mirrors layout.js (75em wide and 75rem usable);
@@ -183,7 +208,10 @@ addEventListener('resize', refreshNote);
 // ---------------------------------------------------------------- the game
 function transition(event, session) {
   const uid = session?.user?.id || null;
+  if (event === 'PASSWORD_RECOVERY') recovering = true;
   if (!uid) {
+    if (recovering) { recovering = false; clearMarker(); }
+    recovery?.then((r) => r.signedOut());
     const wasPlaying = !!current;
     const resuming = root.classList.contains('resuming');
     const byPlayer = net?.takeUserSignOut();
@@ -193,6 +221,13 @@ function transition(event, session) {
     showEntrance(wasPlaying);
     if (byPlayer) say('You have signed out.');
     else if (wasPlaying || resuming) say('Your session has ended. Please sign in again.');
+    return;
+  }
+  if (recovering) { // the reset form, not the game, until the new password is saved
+    if (current?.uid !== uid) { game?.stop(); gen++; showEntrance(false); }
+    current = { uid, session };
+    try { localStorage.setItem(RECOVERY_KEY, uid); } catch { /* the guard lasts for this page */ }
+    recover((r) => r.session(uid));
     return;
   }
   if (current?.uid === uid) { current.session = session; return; } // refresh, user update, repeated sign-in
@@ -320,6 +355,8 @@ modeBtn.addEventListener('click', () => {
   clearMsg();
 });
 
+$('forgot').addEventListener('click', () => { interacted = true; recover((r) => r.request(email.value.trim())); });
+
 $('gate-retry').addEventListener('click', () => {
   interacted = true;
   // A module that failed to load stays failed for this page, so the retry is a reload (the saved
@@ -353,9 +390,15 @@ if (document.readyState === 'complete') afterPaint();
 else addEventListener('load', afterPaint, { once: true });
 
 syncChoice();
+setMode(mode);
 submit.disabled = false;
 modeBtn.disabled = false;
-if (root.classList.contains('resuming')) {
+// A reset link opened over this page changes only the fragment: reload, so the client reads it.
+addEventListener('hashchange', () => { if (/[#&](type=recovery|error=)/.test(location.hash)) location.reload(); });
+if (recovering) {
+  root.classList.remove('resuming');
+  recover((r) => r.arrived());
+} else if (root.classList.contains('resuming')) {
   if (savedSession()) {
     preloadGame();
     loadGameStyles().catch(() => { /* reported if the game starts */ });

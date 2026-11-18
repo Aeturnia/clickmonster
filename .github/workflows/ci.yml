@@ -144,7 +144,8 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
       - run: npm ci
       - name: Start the local Supabase stack (the same services as CLAUDE.md)
-        run: npx supabase start -x studio,imgproxy,storage-api,logflare,vector,supavisor,mailpit,realtime,postgres-meta
+        # Mailpit stays on: the password-recovery tests read the reset email from it (R-1).
+        run: npx supabase start -x studio,imgproxy,storage-api,logflare,vector,supavisor,realtime,postgres-meta
       - name: npm run test:db (pgTAP, then the API and function tests, on 127.0.0.1)
         run: mkdir -p ci-output && npm run test:db 2>&1 | tee ci-output/database.txt
       - name: Keep the output of a failed run
