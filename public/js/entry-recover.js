@@ -66,7 +66,9 @@ function cover() {
   for (const id of ['authform', 'iface']) $(id).hidden = true;
   $('authmode').parentElement.hidden = true;
 }
+// Leaving the panel always ends the guard: a reset still under way is never left behind it.
 function hide() {
+  h.unguard();
   state = 'idle';
   if (panel) { panel.hidden = true; panel.replaceChildren(); }
   for (const id of ['authform', 'iface']) $(id).hidden = false;
@@ -90,6 +92,7 @@ function pending(btn, on) {
 
 // ---------------------------------------------------------------- asking for a reset
 export function request(prefill = '') {
+  if (!h.requests) return; // released only by entry.js RECOVERY_REQUESTS; not a security boundary
   const send = el('button', { type: 'submit', className: 'e-btn', textContent: 'Send reset link' });
   const form = el('form', { id: 'recover-form', noValidate: false }, [
     el('p', { className: 'e-note', textContent: "Enter your account's email address. We'll send it a link to choose a new password." }),
@@ -141,16 +144,23 @@ export async function arrived() {
     }
   }
 }
+// An invalid link stays invalid: a session that turns up afterwards (one already saved in this
+// browser) never turns it into a password form (R-1 review, R1-02). With such a session the way
+// out is into the realm, as that session's own; without one, back to sign in.
+let expiredText = '';
 function expired(text = 'This reset link has expired or has already been used.') {
+  expiredText = text;
   const actions = [];
   if (h.requests) actions.push(button('Send a new link', false, () => request()));
-  actions.push(button('Back to sign in', true, hide));
+  actions.push(uid ? button('Continue to the realm', true, () => { hide(); h.release(); }) : button('Back to sign in', true, hide));
   show('expired', 'Reset link not valid', [el('div', { className: 'e-actions' }, actions)], { text, kind: 'bad' });
 }
 
-// entry.js: the recovery session is in place for this user (the guard holds the game back).
-export function session(id) {
+// entry.js: a session is in place for this user, and the guard holds the game back. `reset` is
+// false when it isn't a reset session (an invalid link with a session already saved here).
+export function session(id, reset = true) {
   uid = id;
+  if (state === 'expired' || !reset) { expired(expiredText || undefined); return; }
   if (state === 'choose' || state === 'partial') return;
   choose();
 }

@@ -408,6 +408,86 @@ test('PR-5 a link whose session the server refuses is reported as not valid', as
   await done(ctx);
 });
 
+// ---------------------------------------------------------------- R-1 review: R1-01, R1-02
+// An invalid link shows "Reset link not valid" and nothing else: no password form, no password
+// update and no game while it is shown, even when this browser already holds another valid session.
+async function invalidOnly(ctx, label) {
+  const { page, backend } = ctx;
+  await untilHeading(page, 'Reset link not valid');
+  await page.waitForTimeout(1200); // the client has restored (or dropped) the saved session by now
+  assert.equal(await heading(page), 'Reset link not valid', `${label}: still the invalid-link panel`);
+  assert.match(await page.textContent('#recover-msg'), /expired or has already been used|no longer valid/, `${label}: an accurate message`);
+  assert.equal(await page.locator('#new-password').count(), 0, `${label}: no password form`);
+  assert.deepEqual(backend.passwordUpdates, [], `${label}: no password update`);
+  assert.equal(await marker(page), null, `${label}: no recovery marker`);
+  await noGame(ctx, label);
+}
+
+test('R1-01 a link error given only as error_code: the invalid-link panel, the address cleaned, no game', async () => {
+  const ctx = await open();
+  await ctx.page.goto(`${env.url}/#error_code=otp_expired`);
+  await invalidOnly(ctx, 'error_code only');
+  assert.equal(await ctx.page.evaluate(() => location.hash), '', 'the address is cleaned');
+  await done(ctx);
+});
+
+test('R1-02 an expired link (error_code only) with another valid session saved: no form; Continue enters as that session', async () => {
+  const ctx = await open({ saved: savedSession(ACCOUNTS.player) });
+  const { page } = ctx;
+  await page.goto(`${env.url}/#error_code=otp_expired`);
+  await invalidOnly(ctx, 'saved session, error_code');
+  // That session is the player's own: the way out is into the realm, as it.
+  await page.getByRole('button', { name: 'Continue to the realm', exact: true }).click();
+  await inGame(page);
+  assert.deepEqual(ctx.backend.passwordUpdates, []);
+  assert.equal(await marker(page), null);
+  await done(ctx);
+});
+
+test('R1-02 an expired link (error and description) with another valid session saved: no form, no game', async () => {
+  const ctx = await open({ saved: savedSession(ACCOUNTS.player) });
+  await ctx.page.goto(recoveryUrl(env.url, ACCOUNTS.mod, { error: true }));
+  await invalidOnly(ctx, 'saved session, full error');
+  await done(ctx);
+});
+
+test('R1-02 a recovery token the server refuses, with another valid session saved: no form, no game', async () => {
+  const ctx = await open({ saved: savedSession(ACCOUNTS.player) });
+  const s = savedSession(ACCOUNTS.mod, -60); // already expired: the server refuses it
+  await ctx.page.goto(`${env.url}/#access_token=${s.access_token}&expires_at=${s.expires_at}&expires_in=3600&refresh_token=refresh-none&token_type=bearer&type=recovery`);
+  await invalidOnly(ctx, 'saved session, refused token');
+  await done(ctx);
+});
+
+test('R1-02 after an invalid link, Back to sign in and an ordinary sign-in go straight into the game', async () => {
+  const ctx = await open();
+  const { page } = ctx;
+  await page.goto(recoveryUrl(env.url, ACCOUNTS.player, { error: true }));
+  await untilHeading(page, 'Reset link not valid');
+  await page.getByRole('button', { name: 'Back to sign in', exact: true }).click();
+  await page.waitForSelector('#authform', { state: 'visible' });
+  await page.fill('#email', ACCOUNTS.player.email);
+  await page.fill('#password', ACCOUNTS.player.password);
+  await page.click('#authform [type=submit]');
+  await inGame(page);
+  assert.equal(await page.locator('#new-password').count(), 0, 'no password form for an ordinary sign-in');
+  assert.deepEqual(ctx.backend.passwordUpdates, []);
+  await done(ctx);
+});
+
+test('the release switch also guards the handler: a click on the hidden link does nothing', async () => {
+  const ctx = await open();
+  const { page } = ctx;
+  await page.goto(`${env.url}/`);
+  await page.waitForSelector('#authform [type=submit]:not([disabled])');
+  await page.evaluate(() => document.getElementById('forgot').click());
+  await page.waitForTimeout(600);
+  assert.deepEqual(ctx.log.filter((p) => p === '/js/entry-recover.js'), [], 'no recovery module');
+  assert.equal(await page.locator('#recover').count(), 0, 'no panel');
+  assert.equal(ctx.backend.recoverRequests.length, 0);
+  await done(ctx);
+});
+
 // ---------------------------------------------------------------- isolation and independence (PR-6, PR-7)
 
 test('PR-6 a reset link opened over a running game for another account replaces it cleanly', async () => {

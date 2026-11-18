@@ -146,7 +146,10 @@ function savedSession() {
 const RECOVERY_REQUESTS = false;
 const RECOVERY_KEY = 'clickmonster.recovery';
 const clearMarker = () => { try { localStorage.removeItem(RECOVERY_KEY); } catch { /* none kept */ } };
-let recovering = /[#&](type=recovery|error=)/.test(location.hash) || (() => {
+// A reset link or its error (error=, error_code=: R1-01); an invalid link is no reset (R1-02).
+const RESET_LINK = /[#&](type=recovery|error(_code)?=)/;
+const linkError = /[#&]error(_code)?=/.test(location.hash);
+let recovering = RESET_LINK.test(location.hash) || (() => {
   try { const id = localStorage.getItem(RECOVERY_KEY); if (id && JSON.parse(localStorage.getItem(AUTH_KEY))?.user?.id === id) return true; } catch { /* no storage */ }
   clearMarker();
   return false;
@@ -226,8 +229,9 @@ function transition(event, session) {
   if (recovering) { // the reset form, not the game, until the new password is saved
     if (current?.uid !== uid) { game?.stop(); gen++; showEntrance(false); }
     current = { uid, session };
-    try { localStorage.setItem(RECOVERY_KEY, uid); } catch { /* the guard lasts for this page */ }
-    recover((r) => r.session(uid));
+    const reset = event === 'PASSWORD_RECOVERY' || !linkError;
+    if (reset) try { localStorage.setItem(RECOVERY_KEY, uid); } catch { /* the guard lasts for this page */ }
+    recover((r) => r.session(uid, reset));
     return;
   }
   if (current?.uid === uid) { current.session = session; return; } // refresh, user update, repeated sign-in
@@ -355,7 +359,7 @@ modeBtn.addEventListener('click', () => {
   clearMsg();
 });
 
-$('forgot').addEventListener('click', () => { interacted = true; recover((r) => r.request(email.value.trim())); });
+$('forgot').addEventListener('click', () => { if (RECOVERY_REQUESTS) { interacted = true; recover((r) => r.request(email.value.trim())); } });
 
 $('gate-retry').addEventListener('click', () => {
   interacted = true;
@@ -394,7 +398,7 @@ setMode(mode);
 submit.disabled = false;
 modeBtn.disabled = false;
 // A reset link opened over this page changes only the fragment: reload, so the client reads it.
-addEventListener('hashchange', () => { if (/[#&](type=recovery|error=)/.test(location.hash)) location.reload(); });
+addEventListener('hashchange', () => { if (RESET_LINK.test(location.hash)) location.reload(); });
 if (recovering) {
   root.classList.remove('resuming');
   recover((r) => r.arrived());
