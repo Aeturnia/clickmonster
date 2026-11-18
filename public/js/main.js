@@ -13,7 +13,7 @@ import {
   applyRegen, healCost, findItem, equippedItem, meetsRequirements, NAME_RE, deathPenalty,
 } from './engine/character.js';
 import { ask, cancelAsk, onConfirmClose, setConfirmFallback } from './confirm.js';
-import { currentZone, featuresAt, inTown, monstersHere, directionTo } from './engine/world.js';
+import { currentZone, featuresAt, inTown, monstersHere, directionTo, TOWN_NO_MONSTERS } from './engine/world.js';
 import { monsterCombatant } from './engine/monster.js';
 import { meleeChance, spellChance, meleeBase, spellBase } from './engine/combat.js';
 import { shopItems, isEquipped, sellPrice } from './engine/inventory.js';
@@ -24,6 +24,7 @@ import { questTitle, canAccept } from './engine/quests.js';
 import { setWorld, activeEvents, MULT_LABEL, MULT_KEYS } from './engine/world-config.js';
 import { huntCombatant } from './engine/hunt.js';
 import { watchLayout, setLayoutPreference, layoutStatus, LAYOUT_CHOICES } from './layout.js';
+import { logGroups, cardLine, cardListsMastery } from './log-view.js';
 
 // The entrance (entry.js) imports this module only once net.js has created the Supabase client.
 if (!sb) throw new Error('main.js is started by entry.js, after the Supabase client is ready.');
@@ -69,6 +70,10 @@ const freshUi = () => ({
   createError: null,
   bankError: null,
   hunts: [],
+  turnLog: null, // the battle log's rounds, as this page saw them (logHtml)
+  delta: null,
+  losses: null,
+  pickMonster: null, // the monster chosen in the drop-down (monsterPicker)
 });
 const ui = freshUi();
 
@@ -112,10 +117,44 @@ const amount = (n, unit, quiet = false) => {
 const btn = (a, v, label, cls = '', disabled = false) =>
   `<button data-a="${a}"${v != null ? ` data-v="${esc(v)}"` : ''} class="btn ${cls}"${disabled ? ' disabled' : ''}>${label}</button>`;
 
+// The numbers on a bar, shortened from 10,000 when the full ones don't fit: 12,345 becomes 12.3K.
+function meterShort(n) {
+  const v = Math.round(n);
+  const a = Math.abs(v);
+  if (a < 10000) return v.toLocaleString();
+  const [d, s] = a < 1e6 ? [1e3, 'K'] : a < 1e9 ? [1e6, 'M'] : a < 1e12 ? [1e9, 'B'] : [1e12, 'T'];
+  const x = v / d;
+  return `${Math.abs(x) < 100 ? x.toFixed(1).replace(/\.0$/, '') : Math.round(x)}${s}`;
+}
+// A bar with its label and numbers on it (gameplay polish B). Both forms of the numbers are in
+// the markup; fitMeters() shows the short one only when the full one doesn't fit. Screen readers
+// always get the full numbers.
 function meter(label, cur, max, cls = '') {
   const w = max > 0 ? Math.max(0, Math.min(100, (cur / max) * 100)) : 0;
-  return `<div class="meter ${cls}"><div class="meter-label"><span>${label}</span><b>${fmt(cur)} / ${fmt(max)}</b></div>
-    <div class="meter-track"><i style="width:${w}%"></i></div></div>`;
+  const full = `${fmt(cur)} / ${fmt(max)}`;
+  const brief = `${meterShort(cur)} / ${meterShort(max)}`;
+  return `<div class="meter ${cls}"><div class="meter-track"><i style="width:${w}%"></i></div>
+    <div class="meter-text"><span class="meter-name">${label}</span><b class="meter-num"><span class="sr-only">${fmt(cur)} of ${fmt(max)}</span><span class="n-full" aria-hidden="true">${full}</span>${brief === full ? '' : `<span class="n-short" aria-hidden="true">${brief}</span>`}</b></div></div>`;
+}
+// Fits each bar's text: the full numbers beside the label if they fit; else the short numbers
+// (.compact); else, with very large text in a narrow column, the label above the numbers on a
+// taller bar (.stack).
+function fitMeters() {
+  for (const m of document.querySelectorAll('.meter')) {
+    const text = m.querySelector('.meter-text');
+    if (!text) continue;
+    m.classList.remove('compact', 'stack');
+    const fits = (stacked) => {
+      const cs = getComputedStyle(text);
+      const room = text.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+      const name = m.querySelector('.meter-name').scrollWidth;
+      const num = m.querySelector('.meter-num').scrollWidth;
+      return (stacked ? Math.max(name, num) : name + num + parseFloat(cs.columnGap || 0)) <= room + 0.5;
+    };
+    if (fits(false)) continue;
+    if (m.querySelector('.n-short')) { m.classList.add('compact'); if (fits(false)) continue; }
+    m.classList.add('stack');
+  }
 }
 
 // Standard empty and loading states: a short statement, then what to do about it.
@@ -293,18 +332,22 @@ function deltaChip(n, unit) {
   return `<span class="delta ${n > 0 ? 'up' : 'down'}" aria-hidden="true">${n > 0 ? '+' : '-'}${short(Math.abs(n))}${unit ? ` ${unit}` : ''}</span>`;
 }
 
+// The hero bar is painted as three regions (gameplay polish A), so that a regeneration tick,
+// which changes only HP, doesn't recreate the XP meter or the gold, and doesn't restart their cues.
+const HUD_PARTS = { 'hud-row': 1, 'hud-hp': 1, 'hud-xp': 1 };
+const HUD_SHELL = '<div class="hud-row" id="hud-row"></div><div class="hud-bars"><div id="hud-hp"></div><div id="hud-xp"></div></div>';
 function viewTop() {
-  if (!char) return '';
   const race = RACES[char.race];
   const gems = Object.values(char.gems).reduce((a, b) => a + b, 0);
   const d = ui.delta && Date.now() - ui.delta.at < DELTA_MS ? ui.delta : {};
   // One line for identity and wealth, one for the meters. Race and the full numbers stay
   // available to screen readers; the Hero and Gear tabs show them in full.
-  return `<div class="hud-row">
-      <span class="hud-name">${esc(char.name)}<span class="sr-only">, level ${char.level} ${esc(race.name)}</span></span>
-      <span class="hud-res">${deltaChip(d.gold)}${amount(char.gold, 'gold')}<span class="gems"> ${amount(gems, 'gems')}</span></span>
-    </div>
-    <div class="hud-bars">${meter('HP', char.hp, maxHp(char))}${meter(`Lv ${char.level}${deltaChip(d.xp, 'XP')}`, char.xp, xpToNext(char.level), `xp${d.xp > 0 ? ' gain' : ''}`)}</div>`;
+  return {
+    'hud-row': `<span class="hud-name">${esc(char.name)}<span class="sr-only">, level ${char.level} ${esc(race.name)}</span></span>
+      <span class="hud-res">${deltaChip(d.gold)}${amount(char.gold, 'gold')}<span class="gems"> ${amount(gems, 'gems')}</span></span>`,
+    'hud-hp': meter('HP', char.hp, maxHp(char)),
+    'hud-xp': meter(`Lv ${char.level}${deltaChip(d.xp, 'XP')}`, char.xp, xpToNext(char.level), `xp${d.xp > 0 ? ' gain' : ''}`),
+  };
 }
 
 function viewNav() {
@@ -472,19 +515,34 @@ function huntRows() {
   }).join('');
 }
 
+// The tile's monsters in a native drop-down with a Fight button (gameplay polish F1). Choosing
+// only selects; the button starts the fight. World-boss hunts stay as rows above it. In town,
+// roaming monsters keep away (F2); a lair boss sharing the town tile is still offered.
+function monsterLabel(m) {
+  const d = difficulty(m.level);
+  return `Lv ${m.level} ${m.name}, ${d.word}${m.boss ? ', boss' : ''}${m.element ? `, ${ELEMENT_LABEL[m.element]}` : ''}`;
+}
+function pickedMonster(mons) {
+  const here = (id) => id && mons.some((m) => m.id === id);
+  return here(ui.pickMonster) ? ui.pickMonster : here(ui.lastMonster) ? ui.lastMonster : mons[0]?.id;
+}
 function monsterRows() {
   const mons = monstersHere(char);
   const hunts = huntRows();
-  if (!mons.length && !hunts) return emptyState('No monsters roam here.', 'Move on to find something to fight.');
-  return `<div class="rows">${hunts}${mons.map((m) => {
-    const d = difficulty(m.level);
-    return `<button class="row ${m.boss ? 'boss' : ''}" data-a="fight" data-v="${m.id}">
-      <span class="lv ${d.cls}">Lv ${m.level}</span>
-      <span class="nm">${esc(m.name)}<small><span class="${d.cls}">${d.word}</span>${m.boss ? ', boss' : ''}${m.element ? `, ${ELEMENT_LABEL[m.element]}` : ''}</small></span>
-      <span class="go">Fight</span>
-    </button>`;
-  }).join('')}</div>`;
+  const town = inTown(char) ? `<p class="town-calm">${esc(TOWN_NO_MONSTERS)}</p>` : '';
+  if (!mons.length && !hunts) return town || emptyState('No monsters roam here.', 'Move on to find something to fight.');
+  const chosen = pickedMonster(mons);
+  // data-keep: paint() leaves this element in place while the monsters offered are the same, so
+  // a redraw doesn't close the picker or move focus (GP-F2b). The selection lives in the element
+  // (and ui.pickMonster), not in the signature.
+  const picker = mons.length ? `<div class="pick" id="mon-pick" data-keep="${esc(mons.map((m) => m.id).join('|'))}">
+      <label for="mon-select">Monster</label>
+      <div class="pick-row"><select id="mon-select">${mons.map((m) => `<option value="${esc(m.id)}"${m.id === chosen ? ' selected' : ''}>${esc(monsterLabel(m))}</option>`).join('')}</select>${btn('fight', null, 'Fight', 'primary')}</div>
+    </div>` : '';
+  return `${hunts ? `<div class="rows">${hunts}</div>` : ''}${town}${picker}`;
 }
+// Keeps the choice across redraws; it starts nothing.
+document.addEventListener('change', (e) => { if (e.target.id === 'mon-select') ui.pickMonster = e.target.value; });
 
 function playerRows(zone) {
   const players = ui.playersKey === locKey() ? ui.players : null;
@@ -539,28 +597,51 @@ function dockExplore() {
 }
 
 // ---------------------------------------------------------------- battle
-// The log, grouped by turn: the lines each of your actions produced (tracked here, since the
-// server's log has no turn markers). The current turn stands out; earlier turns step back.
-// Without turn marks (after a reload) it falls back to "last few lines bright".
+// The log (gameplay polish C to E). Only the current round is shown; earlier rounds wait in a
+// collapsed "Earlier rounds", and lines from before this page loaded, whose rounds aren't known,
+// in "Before this page loaded". Once a fight is over, the last round leaves out the rewards and
+// losses its outcome card lists (cardLine). The stored log is never changed.
 function logHtml(b) {
   const log = b.log;
-  const marks = (ui.turnLog?.marks || []).filter((m) => m.start < log.length);
-  const line = (l, i, cls) => `<p class="${l.kind} ${cls}${i === log.length - 1 ? ' latest' : ''}">${esc(l.text)}</p>`;
-  if (!marks.length) {
-    const firstFresh = Math.max(0, log.length - 4);
-    return log.map((l, i) => line(l, i, i >= firstFresh ? 'fresh' : 'older')).join('');
+  const last = log.length - 1;
+  const groups = logGroups(log, ui.turnLog);
+  const before = groups[0]?.type === 'before' ? groups[0] : null;
+  const tail = groups.at(-1);
+  const current = tail && tail !== before ? tail : null;
+  const earlier = groups.filter((g) => g !== before && g !== current);
+  const open = ui.turnLog?.open || {};
+  const lines = (g, cls, hideCard) => log.slice(g.start, g.end).map((l, j) => [l, g.start + j])
+    .filter(([l]) => !(hideCard && cardLine(b, l)))
+    .map(([l, i]) => `<p class="${l.kind} ${cls}${i === last ? ' latest' : ''}">${esc(l.text)}</p>`).join('');
+  // A mastery raised in a round is listed under that round, once (E); the round that won the
+  // fight leaves it to the Victory card.
+  const gains = (g) => (g.gains?.length && !(g === current && cardListsMastery(b))
+    ? `<p class="turn-gain">${g.gains.map((x) => `${esc(MASTERY_LABEL[x.m])} mastery ${x.to}`).join(', ')}</p>` : '');
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  const parts = [];
+  if (before) {
+    parts.push(`<details class="log-group" data-g="before"${open.before ? ' open' : ''}><summary id="log-before">Before this page loaded (${plural(before.end, 'line', 'lines')})</summary>
+      ${lines(before, 'older')}</details>`);
   }
-  const parts = [log.slice(0, marks[0].start).map((l, i) => line(l, i, 'older')).join('')];
-  marks.forEach((m, k) => {
-    const end = k + 1 < marks.length ? marks[k + 1].start : log.length;
-    const current = k === marks.length - 1;
-    const gains = current && ui.delta?.mastery?.length && Date.now() - ui.delta.at < DELTA_MS
-      ? `<p class="turn-gain">${ui.delta.mastery.map((g) => `${esc(MASTERY_LABEL[g.m])} mastery ${g.to}`).join(', ')}</p>` : '';
-    parts.push(`<div class="turn${current ? ' current' : ''}"><p class="turn-label">${m.turn ? `Turn ${m.turn}` : 'This turn'}</p>
-      ${log.slice(m.start, end).map((l, j) => line(l, m.start + j, current ? 'fresh' : 'older')).join('')}${gains}</div>`);
-  });
+  if (earlier.length) {
+    parts.push(`<details class="log-group" data-g="earlier"${open.earlier ? ' open' : ''}><summary id="log-earlier">Earlier rounds (${earlier.length})</summary>
+      ${earlier.map((g) => `<div class="turn"><p class="turn-label">Turn ${g.turn}</p>${lines(g, 'older')}${gains(g)}</div>`).join('')}</details>`);
+  }
+  if (current) {
+    parts.push(`<div class="turn current">${current.type === 'turn' ? `<p class="turn-label">Turn ${current.turn}</p>` : ''}
+      ${lines(current, 'fresh', true)}${gains(current)}</div>`);
+  } else if (!b.over) {
+    parts.push(`<p class="turn-wait">${b.turn ? `Fight in progress, turn ${b.turn}.` : 'Fight in progress.'}</p>`);
+  }
   return parts.join('');
 }
+// Remembers whether the log's groups are open, for the rest of the fight.
+document.addEventListener('toggle', (e) => {
+  const g = e.target.dataset?.g;
+  if (!g || !char?.battle) return;
+  ui.turnLog ||= { marks: [], restored: char.battle.log.length, open: {} };
+  ui.turnLog.open[g] = e.target.open;
+}, true);
 
 // How the fight ended, and what it earned or cost, next to the latest line and the next action.
 function outcomeHtml(b) {
@@ -840,7 +921,7 @@ function syncMapFrame() {
   const tools = $('#map-tools');
   if (tools) tools.hidden = !over;
 }
-window.addEventListener('resize', () => { if ($('#map-scroll')) { syncMapFrame(); if (char) centerMap(char.loc.x, char.loc.y); } });
+window.addEventListener('resize', () => { fitMeters(); if ($('#map-scroll')) { syncMapFrame(); if (char) centerMap(char.loc.x, char.loc.y); } });
 
 // Scroll the map so a square sits in the middle of the visible area (the map scrolls on its own,
 // the rest of the screen stays put).
@@ -1052,7 +1133,7 @@ function paint(id, html) {
   const hadFocus = active && active !== root && root.contains(active);
   const key = hadFocus ? focusKey(active) : null;
   const caret = hadFocus && 'selectionStart' in active ? [active.selectionStart, active.selectionEnd] : null;
-  root.innerHTML = html;
+  if (!keepInPlace(root, html)) root.innerHTML = html;
   if (hadFocus) {
     const next = key && root.querySelector(key);
     if (isUsable(next)) {
@@ -1062,6 +1143,24 @@ function paint(id, html) {
       focusLost = true;
     }
   }
+  return true;
+}
+
+// Replaces a region's content but leaves one child marked data-keep where it is, untouched, when
+// the new content has the same element (same id and data-keep). The element is never detached,
+// so a native picker that is open stays open and keeps focus (gameplay polish F1, GP-F2b).
+function keepInPlace(root, html) {
+  const old = [...root.children].find((el) => el.dataset.keep != null);
+  if (!old) return false;
+  const tpl = document.createElement('template');
+  tpl.innerHTML = html;
+  const nodes = [...tpl.content.childNodes];
+  const same = nodes.find((n) => n.nodeType === 1 && n.id === old.id && n.dataset.keep === old.dataset.keep);
+  if (!same) return false;
+  for (const c of [...root.childNodes]) if (c !== old) c.remove();
+  const at = nodes.indexOf(same);
+  old.before(...nodes.slice(0, at));
+  old.after(...nodes.slice(at + 1));
   return true;
 }
 
@@ -1139,9 +1238,13 @@ function render() {
   const mapScroll = mapBox && [mapBox.scrollLeft, mapBox.scrollTop];
   focusLost = false;
   const changed = paint('main', ui.phase === 'game' ? `<h1 class="sr-only" id="screen-title" tabindex="-1">${esc(screenTitle())}</h1>${main}` : '');
+  const pick = $('#mon-select');
+  if (pick && pick !== document.activeElement) { const want = pickedMonster(monstersHere(char)); if (want && pick.value !== want) pick.value = want; }
   document.body.classList.toggle('creating', ui.phase === 'game' && !char); // hero creation keeps the entrance's backdrop
   const inGame = ui.phase === 'game' && !!char && !ui.sanctions?.banned;
-  paint('top', inGame ? viewTop() : '');
+  // A new shell has empty regions, so they are painted again whatever they held before.
+  if (paint('top', inGame ? HUD_SHELL : '')) for (const id of Object.keys(HUD_PARTS)) delete painted[id];
+  if (inGame) for (const [id, html] of Object.entries(viewTop())) paint(id, html);
   paint('dock', inGame ? dock : '');
   paint('nav', inGame ? viewNav() : '');
   const side = inGame && layout === 'desktop';
@@ -1154,6 +1257,7 @@ function render() {
   positionToast();
   markPending();
   markShortcuts();
+  fitMeters();
 
   const viewKey = `${ui.phase}:${!!char}:${ui.tab}:${!!char?.battle}`;
   const viewChanged = viewKey !== lastView;
@@ -1173,10 +1277,13 @@ function render() {
 // After an action: turn boundaries for the battle log, and the gold, XP and mastery changes.
 function trackChanges(action, before) {
   const b = char?.battle;
-  if (!b || ['fight', 'again', 'hunt', 'attack'].includes(action)) ui.turnLog = { marks: [] };
+  if (!b || ['fight', 'again', 'hunt', 'attack'].includes(action)) ui.turnLog = { marks: [], restored: 0, open: {} };
+  let mark = null;
   if (b && before && ['melee', 'cast', 'flee'].includes(action) && b.log.length > before.battleLog) {
-    ui.turnLog ||= { marks: [] }; // e.g. a fight resumed after reloading the page
-    ui.turnLog.marks.push({ start: before.battleLog, turn: b.turn });
+    // A fight resumed after reloading the page: what was already there has no known rounds.
+    ui.turnLog ||= { marks: [], restored: before.battleLog, open: {} };
+    mark = { start: before.battleLog, turn: b.turn, gains: [] };
+    ui.turnLog.marks.push(mark);
   }
   if (!char || !before) return;
   // A defeat's real cost, from the hero before and after (a duel's log names the gold but not
@@ -1192,8 +1299,9 @@ function trackChanges(action, before) {
   // XP gained: across a level-up the bar restarts, so take the reward when there is one.
   const xp = char.level > before.level ? (b?.rewards?.xp || 0) : char.xp - before.xp;
   const mastery = Object.keys(char.masteries || {}).filter((m) => (char.masteries[m] || 0) > (before.masteries[m] || 0)).map((m) => ({ m, to: char.masteries[m] }));
-  if (!gold && !xp && !mastery.length) return;
-  ui.delta = { gold, xp: Math.max(0, xp), mastery, at: Date.now() };
+  if (mark) mark.gains = mastery; // listed under the round that raised it
+  if (!gold && !xp) return;
+  ui.delta = { gold, xp: Math.max(0, xp), at: Date.now() };
   clearTimeout(ui.deltaTimer);
   ui.deltaTimer = setTimeout(render, DELTA_MS + 50);
 }
@@ -1326,7 +1434,13 @@ async function remoteCall(a, v) {
     case 'move': return ['move', { dir: v }];
     case 'walkto':
     case 'walk': { const [x, y] = v.split(',').map(Number); return x === char.loc.x && y === char.loc.y ? null : ['walk', { x, y }]; }
-    case 'fight': ui.lastMonster = v; return ['fight', { monsterId: v }];
+    case 'fight': {
+      // The dock's quick button names its monster; the explore screen's uses the drop-down.
+      const id = v ?? $('#mon-select')?.value;
+      if (!id) return null;
+      ui.lastMonster = id;
+      return ['fight', { monsterId: id }];
+    }
     case 'hunt': return ['hunt', { huntId: v }];
     case 'melee': case 'cast': case 'flee': case 'again': case 'done': case 'dismiss': case 'portal': return [a, {}];
     case 'heal': return ['heal', {}, `Healed for ${healCost(char)} gold.`];
@@ -1609,6 +1723,8 @@ document.addEventListener('keydown', (e) => {
     return;
   }
   if (shortcut(e)) return;
+  // A drop-down keeps its own arrow keys: they choose a monster, not a direction (gameplay polish F1).
+  if (e.target.tagName === 'SELECT') return;
   if (KEY_DIRS[e.key] && char && !char.battle && ui.tab === 'explore' && !document.querySelector('dialog[open]') && !e.target.closest?.('#chatpanel')) {
     e.preventDefault();
     $(`[data-a="move"][data-v="${KEY_DIRS[e.key]}"]`)?.click();
