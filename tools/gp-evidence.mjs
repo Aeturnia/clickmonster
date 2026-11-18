@@ -12,10 +12,10 @@ fs.mkdirSync(out, { recursive: true });
 const env = await setup();
 const summary = { axe: [], metrics: {} };
 
-async function open({ w = 390, h = 844, hero = {}, edit, textScale, players = [] } = {}) {
+async function open({ w = 390, h = 844, hero = {}, edit, textScale, players = [], hunts = [] } = {}) {
   const c = makeHero({ y: 4, ...hero });
   if (edit) edit(c);
-  const backend = new FakeBackend({ hero: c, players });
+  const backend = new FakeBackend({ hero: c, players, activeHunts: hunts });
   const ctx = await env.page({ backend, viewport: { width: w, height: h }, mobile: w < 900 });
   if (textScale) await ctx.page.addInitScript((s) => document.addEventListener('DOMContentLoaded', () => { document.documentElement.style.fontSize = s; }), textScale);
   await signIn(ctx.page, env.url, 'player');
@@ -94,7 +94,8 @@ try {
   // A: the XP cue after a victory, with regeneration running.
   {
     const { page, context } = await open({ edit: (c) => { c.hp = Math.floor(maxHp(c) * 0.5); } });
-    await page.evaluate(() => { window.__a = []; document.addEventListener('animationstart', (e) => { if (e.target.closest('#top .meter.xp')) window.__a.push(e.animationName); }, true); });
+    // The XP glow, and the "+XP" cue: a chip in the meter before amendment 1, a floating cue after.
+    await page.evaluate(() => { window.__a = []; document.addEventListener('animationstart', (e) => { if (e.target.closest('#top .meter.xp') || (e.target.matches('#top .cue') && /XP$/.test(e.target.textContent))) window.__a.push(e.animationName); }, true); });
     await fight(page, 'Garden Snake');
     await finish(page);
     const meter = await page.$('#top .meter.xp');
@@ -103,7 +104,7 @@ try {
     await wait(page, 300);
     const a = await page.evaluate(() => window.__a);
     summary.metrics['A XP glow starts after one victory'] = a.filter((x) => x === 'xp-glow').length;
-    summary.metrics['A +XP chip starts after one victory'] = a.filter((x) => x === 'delta').length;
+    summary.metrics['A +XP chip starts after one victory'] = a.filter((x) => x === 'delta' || x === 'cue-rise').length;
     summary.metrics['A XP meter element replaced by a regeneration tick'] = !(await meter.evaluate((el) => el.isConnected));
     await context.close();
   }
@@ -147,6 +148,48 @@ try {
     await page.waitForSelector('.outcome');
     summary.metrics['D visible lines repeating the duel card 390'] = await page.evaluate(CARD_REPEATS);
     await shot(page, '390-duel-lost');
+    await context.close();
+  }
+
+  // Amendment 1 (scope, section 14): where the gold and XP cues go, and the fight screen's bars.
+  for (const [w, h] of [[390, 844], [1440, 900]]) {
+    // The owner's case: level 62 at 23,516 XP, a win in Cinderspire Caldera, with the cues showing.
+    const { page, context } = await open({ w, h, hero: { level: 62, zone: 'cinderspire', x: 3, y: 3 }, edit: (c) => { c.xp = 23516; } });
+    await page.selectOption('#mon-select', { index: 0 });
+    await page.click('#main [data-a="fight"]'); await settle(page);
+    await finish(page);
+    summary.metrics[`G1 cues inside the hero bar's text after a victory ${w}`] = await page.evaluate(() => document.querySelectorAll('#top .meter .delta, #top .meter .cue, #top .hud-res .delta').length);
+    summary.metrics[`G1 XP meter label after a victory ${w}`] = await page.evaluate(() => document.querySelector('#top .meter.xp .meter-name').textContent);
+    await page.screenshot({ path: `${out}/${w}-victory-owner-case-cues.png` });
+    await context.close();
+  }
+  {
+    const { page, context } = await open({});
+    await fight(page, 'Bog Hag');
+    for (let i = 0; i < 2 && await page.$('[data-a="melee"]'); i++) { await wait(page); await page.click('[data-a="melee"]'); await settle(page); }
+    summary.metrics['G2 bars on an ordinary fight screen'] = await page.evaluate(() => document.querySelectorAll('#versus .meter').length);
+    await shot(page, '390-fight-no-bars');
+    await context.close();
+  }
+  {
+    const hunt = { id: 'h1', zone: 'bramblebrook', name: 'Old Mother Bramble', level: 12, hp: 15000, max_hp: 20000, ends_at: new Date(Date.now() + 3 * 3600000).toISOString() };
+    const { page, context } = await open({ hunts: [hunt] });
+    await page.waitForSelector('#main [data-a="hunt"]');
+    await page.click('#main [data-a="hunt"]'); await settle(page);
+    summary.metrics['G2 bars on a world-boss hunt screen (Shared HP kept)'] = await page.evaluate(() => [...document.querySelectorAll('#versus .meter .meter-name')].map((n) => n.textContent).join(', '));
+    await shot(page, '390-hunt');
+    await context.close();
+  }
+  {
+    const musa = { id: 'char-other', name: 'Musa', race: 'human', level: 30, zone: 'duskhollow', x: 2, y: 2, gold: 900, updated_at: new Date().toISOString() };
+    const { page, context } = await open({ hero: { level: 35, zone: 'duskhollow', x: 2, y: 2 }, edit: (c) => { Object.assign(c.stats, { str: 900, dex: 900, int: 900, wis: 900, vit: 900 }); c.hp = maxHp(c); }, players: [musa] });
+    await page.click('[data-a="list"][data-v="players"]'); await settle(page);
+    await page.waitForSelector('[data-a="attack"]');
+    await page.click('[data-a="attack"]');
+    await page.click('#confirm [data-r="ok"]'); await settle(page);
+    await page.waitForSelector('.outcome');
+    summary.metrics['G2 bars on a duel screen'] = await page.evaluate(() => document.querySelectorAll('#versus .meter').length);
+    await shot(page, '390-duel-won');
     await context.close();
   }
 

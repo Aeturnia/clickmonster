@@ -746,6 +746,9 @@ test('GP-H1 an ordinary fight shows no HP bar on either side; the damage numbers
   const floats = await page.evaluate(() => window.__floats);
   assert.ok(floats.some((f) => f.side === 'fx-foe') && floats.some((f) => f.side === 'fx-you'), JSON.stringify(floats));
   assert.ok(floats.every((f) => f.inStrip), "every float is in its side's strip");
+  // Your HP during the fight is the hero bar's (scope 14.6, GP-A2): it follows the hits taken.
+  const hp = await page.evaluate(() => ({ bar: document.querySelector('#top .meter:not(.xp) .meter-num .sr-only').textContent, hp: window.clickmonster.char.hp }));
+  assert.equal(hp.bar.split(' of ')[0], hp.hp.toLocaleString('en-US'));
   await done(ctx);
 });
 
