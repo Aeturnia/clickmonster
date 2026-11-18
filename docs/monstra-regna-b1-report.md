@@ -41,7 +41,7 @@
 | B1-4b | After the authorized deployment, on the real old host: 301, path and query kept, no loop, previews reachable | **After step 5,** read-only requests |
 | B1-4c | Authentication links issued before the move arrive on the new domain with their fragment, and R-1's guard handles them | **After step 5** |
 | B1-5 | Cutover steps 2–7 recorded with their results | **Started:** section 3. Completed in a later docs PR |
-| B1-6 | Every suite green, no gameplay change | **Local:** engine RESULT_ENGINE; browser RESULT_UI. **Database:** not run here (no Docker in this environment); CI's `database` job runs it on the PR. No gameplay files changed except the two headings in `main.js` |
+| B1-6 | Every suite green, no gameplay change | **Local:** engine and file tests 51 of 51 (48 before, plus the 3 identity tests); browser 208 of 208 in each of 3 consecutive full runs. **Database:** not run here (no Docker in this environment); CI's `database` job runs it on the PR. No gameplay files changed except the two headings in `main.js` |
 
 ## 3. Cutover record (section 3.2 of the scope)
 
