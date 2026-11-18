@@ -1,6 +1,6 @@
 # Gameplay polish: scope
 
-**Status: scope draft, at the independent scope-review gate.** Nothing is implemented. No code change, deployment or database change is authorized by this document.
+**Status: scope draft, revised after the scope review of `8e82297` (section 13); at the scope acceptance gate.** Nothing is implemented. No code change, deployment or database change is authorized by this document.
 
 **What it covers:** six problems the owner found in play-testing (2026-11-18), A to F below. They all affect how combat is presented and how a fight is started. The owner asked to fix these before any new features and to keep the milestone to these six, not to turn it into a wider gameplay redesign.
 
@@ -155,6 +155,7 @@ These come from `CLAUDE.md` and apply to every item:
   - **Its open or closed state** is kept in `ui` for the rest of that fight, so a redraw doesn't close it.
   - **At the start of each new fight,** it resets to closed.
 - **After the fight,** the last round stays visible with the outcome card (D) beneath it, and Earlier rounds still holds the rest.
+- **Known rounds and ungrouped lines are kept apart.** Lines whose round isn't known (after a reload, section 6) are never counted or labelled as rounds: they sit in their own group, "Before this page loaded (N lines)", above any rounds marked since.
 - **The data:** `char.battle.log` isn't changed or trimmed. The client only chooses what to show.
 - **A duel** is resolved in a single action, so the whole duel is one round.
 - **A world-boss hunt** follows the same rules as an ordinary fight.
@@ -166,15 +167,17 @@ These come from `CLAUDE.md` and apply to every item:
 
 ### D. The outcome is shown once (R-1, R-3)
 
-**Removed from the visible last round:** once a fight is over, the last round leaves out the lines the outcome card already shows.
+**Removed from the visible last round:** once a fight is over, the last round leaves out the reward and loss details the outcome card already shows. The narrative outcome line stays (scope review, Q2): it tells what happened; the card gives the economic consequences.
 
 | Fight | Lines hidden from the visible last round | Where they're shown instead |
 |---|---|---|
-| Victory over a monster | "Victory! … has been slain!", the gold drop, a gem or relic found, each "mastery is now", "You gain N experience", "You reached level N!" | The Victory card |
-| Defeat by a monster | "You have been defeated by …", "You wake up in town, having lost …" | The Defeated card: the losses, "Back in town", "Gold in the bank is safe" |
-| A duel | "Victory! … has been defeated!" or the defeat line, and the "You take …" gold line | The duel's card |
+| Victory over a monster | The gold drop, a gem or relic found, each "mastery is now", "You gain N experience", "You reached level N!" | The Victory card |
+| Defeat by a monster | "You wake up in town, having lost …" | The Defeated card: the losses, "Back in town", "Gold in the bank is safe" |
+| A duel | The "You take …" gold line | The duel's card |
 
-**Kept in the visible round:** everything the card doesn't show:
+**Kept as narration:** "Victory! … has been slain!", "You have been defeated by …", and a duel's "Victory! … has been defeated!" or defeat line.
+
+**Also kept in the visible round:** everything else the card doesn't show:
 - the blows, misses and the monster's attacks;
 - a variant's "warm light restores your health";
 - "Something rare glinted … your pack is full".
@@ -182,6 +185,8 @@ These come from `CLAUDE.md` and apply to every item:
 **How the lines are recognized:**
 - by their `kind` and a fixed list of text patterns, in one function next to `outcomeHtml()`;
 - a test feeds that function the engine's own output for each fight, so a change to the engine's wording fails a test instead of showing the line twice.
+
+**A finished fight restored after a reload** (section 6) follows the same rule in its own way. Its lines are ungrouped, so there is no "last round" to filter. They all stay in "Before this page loaded", unfiltered and complete, and the outcome card shows beneath them as now. Only a last round marked on this page is ever filtered.
 
 **The hidden lines are still used and still available:**
 - **The card still reads them** (R-1).
@@ -220,9 +225,10 @@ These come from `CLAUDE.md` and apply to every item:
 **Staying open:**
 - **The risk:** if `#main` is repainted while the picker is open, the browser closes it.
 - **The rule:** the explore screen's HTML must not change on unrelated ticks while the player is on a monster tile.
-  - **Regeneration off town:** the explore screen has no HP-dependent content (the Heal button is only in town, where F2 removes the drop-down).
+  - **Regeneration off town:** the explore screen has no HP-dependent content (the Heal button is only in town).
+  - **A town tile that is also a lair** (5F2) shows the drop-down and the Heal button together, and the Heal price changes with every regeneration tick. So the drop-down doesn't rely on the screen's HTML staying the same: it goes in its own paint region, replaced only when its own options or selection change. GP-F2b checks this on that tile too.
   - **The other ticks** (the players list, hunts, world events) are checked one by one.
-  - **If any of them changes the screen,** the drop-down goes in its own stable paint region.
+  - **Either way,** the drop-down's own paint region keeps the element in place.
 - **Focus is kept** by `focusKey` (the `id` on the `<select>`).
 
 **The rest:**
@@ -232,8 +238,8 @@ These come from `CLAUDE.md` and apply to every item:
 ### F2. No ordinary monsters on a town tile
 
 **The engine rule** (`engine/world.js`, used by both client and server):
-- **`monstersHere()`** returns no ordinary monsters on the zone's town tile. The lair boss is still added on a lair tile, as now; a lair never shares the town tile in the built-in zones, but the rule doesn't depend on that.
-- **`startBattle()`** refuses a town-tile fight with its own message, "No monsters come near the town. Step outside to hunt.", rather than the general "That monster isn't here."
+- **`monstersHere()`** returns no ordinary (roaming) monsters on the zone's town tile. The lair boss is still added on a lair tile, as now, **including a lair on the town tile**. No built-in zone puts a lair on its town (checked on `9827ce1`, all 12 zones), but a zone edited in the admin console could, and the rule must not depend on that.
+- **`startBattle()`** keeps its one membership check against `monstersHere()`, so a valid lair boss on a town tile is accepted. It is **not** a blanket `inTown()` refusal. Only when that check fails, the hero is in town, and the requested monster is one of the zone's ordinary monsters does it give the town message, "No roaming monsters can be fought in town. Move to another tile to hunt.", in place of the general "That monster isn't here."
 
 **Unchanged:**
 - world-boss hunts, which are started by `startHuntBattle()` in the `game` function and don't use `monstersHere()`;
@@ -242,7 +248,7 @@ These come from `CLAUDE.md` and apply to every item:
 - respawning in town after a defeat.
 
 **The client follows from the engine:**
-- **The town's Explore screen** shows, in place of the drop-down, "No monsters come near the town. Step outside to hunt." Hunts are still listed.
+- **The town's Explore screen** shows "No roaming monsters can be fought in town. Move to another tile to hunt.". Hunts are still listed. On a town tile that is also a lair, the drop-down is still shown, holding the lair boss only, with the town message beside it.
 - **The dock's quick Fight button** is already filtered through `monstersHere()`, so it disappears in town.
 - **"Fight again"** is only offered after a victory, on the tile where the fight happened, so it never appears in town.
 
@@ -254,12 +260,13 @@ The round boundaries exist only in the page's memory. A reload loses them, and t
 
 **R2-a (proposed): be honest about what isn't known.** Client-only, with no change to data.
 - **No round split:** after a reload, the lines already in the log aren't divided into rounds or labelled as a round.
-- **Where they go:** they go under the Earlier rounds control, labelled **Before this page loaded (N lines)**.
+- **Where they go:** a collapsed group labelled **Before this page loaded (N lines)**. N counts lines, which are known; it never counts rounds, which aren't. The group isn't presented as earlier rounds, and it holds the stored lines verbatim, in order.
+- **Rounds marked since the reload** go in the Earlier rounds control as usual, below that group.
 - **The current-round area** shows one line: "Fight in progress, turn N." N is `battle.turn`, which the server stores.
 - **From the next action:** rounds are marked as usual.
 - **A fight that was already over when the page loaded:**
   - **Its outcome card** shows from the stored rewards, and from the log for a defeat, as now.
-  - **The log lines** go under "Before this page loaded".
+  - **The log lines** go under "Before this page loaded", unfiltered: with no known last round, nothing is hidden (section 5D).
 - **What's lost:** the "fall back to the last four lines" rule (`main.js:550`) is removed, because it presents an arbitrary group of lines as current.
 
 **R2-b (an alternative, not proposed): the engine stamps each log line with its turn number.**
@@ -282,13 +289,16 @@ The client and the functions share the engine but are deployed separately:
 | **New client** | Town monsters aren't listed, so no fights are started there from the UI. A modified client could still fight in town until the redeploy. | Consistent |
 
 **The plan:**
-1. **Merge** after review and green CI. Netlify publishes the client, so new page loads stop offering town fights.
-2. **Redeploy the functions** from the merged `main` (`npm run deploy:functions`) right after, with the owner's authorization. The window in between is harmless, because the new client offers nothing the old server refuses.
-3. **Verify** on the live site:
+**F2 is not server-enforced until the function redeploy succeeds.** Until then the live server still accepts a town fight from an old or modified client, whatever the merged code says. The report states this, and the record of F2 counts from the redeploy, not the merge.
+
+1. **Authorization first:** the owner's separate authorization for the function redeploy is obtained before the merge is scheduled, so the merge and the redeploy happen together.
+2. **Merge** after review and green CI. Netlify publishes the client, so new page loads stop offering town fights.
+3. **Redeploy the functions** from the merged `main` (`npm run deploy:functions`) immediately after Netlify's deploy, under that authorization. The interval is kept to minutes. It is visible to no one, because the new client offers nothing the old server refuses; it is only a window in which enforcement is missing.
+4. **Verify** on the live site:
    - The town tile shows no monster list.
    - One step out, a fight starts.
    - With authorization, a read-only check of the function's version.
-4. **Old tabs** pick up the client on their next load. Until then, their refused town fight shows a clear message.
+5. **Old tabs** pick up the client on their next load. Until then, their refused town fight shows a clear message.
 
 **Rollback:**
 - **Revert the merge**, then redeploy the functions from the reverted `main`.
@@ -312,18 +322,22 @@ Each criterion has a test that fails on `main` at `9827ce1`, run against the old
 | GP-C1 | During a fight, only the current round is visible; the earlier rounds are in a collapsed Earlier rounds control with the right count | Browser: three actions; one visible round, a `<details>` with 2 rounds, closed |
 | GP-C2 | Opening Earlier rounds survives redraws and the next action; it resets for a new fight | Browser |
 | GP-C3 | The stored log is unchanged | Browser: `window.clickmonster` shows the full `battle.log` after the fight, every line present |
-| GP-C4 | After a reload mid-fight: no lines presented as a round; "Before this page loaded" holds them; "Fight in progress, turn N"; the next action starts a marked round | Browser, with a saved session and a battle in progress |
-| GP-D1 | After a victory, the reward lines appear only in the card | Browser and a Node test of the filter on the engine's own output for a victory with a gem, a level-up and a mastery gain |
-| GP-D2 | The same after a defeat, and after a duel either way | Browser |
+| GP-C4 | After a reload mid-fight: no lines presented as a round; "Before this page loaded (N lines)" holds them all, labelled by line count; no "Turn" heading and no round count is shown for them; "Fight in progress, turn N"; the next action starts a marked round, listed apart from the ungrouped lines | Browser, with a saved session and a battle in progress |
+| GP-D1 | After a victory, the reward lines appear only in the card; "Victory! … has been slain!" stays in the visible round | Browser and a Node test of the filter on the engine's own output for a victory with a gem, a level-up and a mastery gain |
+| GP-D2 | The same after a defeat ("You have been defeated by …" stays; the losses line is only in the card), and after a duel either way (its narrative line stays; the gold line is only in the card) | Browser |
+| GP-D5 | A finished fight restored after a reload: every stored line is in "Before this page loaded", none filtered; the outcome card shows; the stored log is unchanged | Browser, with a saved session and a finished battle |
 | GP-D3 | Each reward and loss is announced exactly once | Browser: the polite announcer's text for a victory and for a defeat |
 | GP-D4 | The defeat card still shows the losses after a reload | The existing Phase 3 test, kept |
 | GP-E1 | A mastery gain appears under its own round only, and not under the next one however fast the next action comes | Browser: gain mastery, act again within 2.6 s; the line is under the earlier round only |
 | GP-F1 | Off town, monsters are in a labelled `<select>`; choosing doesn't start a fight; Fight starts the selected one | Browser, keyboard only: arrow through the options, no `fight` call; Tab, Enter, one `fight` call for the chosen monster |
 | GP-F2 | The selection survives unrelated redraws (ticks, chat, players list) and defaults to the last monster fought | Browser |
+| GP-F2b | Unrelated updates don't replace the `<select>` element itself while it's in use, off town and on a town-and-lair tile (where the Heal price changes each tick): with the picker focused, a regeneration tick, a players-list refresh, a hunts refresh, a world-events refresh and a chat message each leave the same element attached (identity checked, not only its value) | Browser: keep a reference to the focused `<select>`, trigger each update, assert `el.isConnected` and that it is still `document.activeElement` |
 | GP-F3 | Hunts are still separate rows and still start a hunt | Browser |
-| GP-F4 | On the town tile, the engine lists no ordinary monsters and `startBattle()` refuses with the town message; the lair boss and world-boss hunts are unaffected; duels in town are still refused as before | Node engine tests |
+| GP-F4 | On the town tile, the engine lists no ordinary monsters and `startBattle()` refuses them with the town message; world-boss hunts are unaffected; duels in town are still refused as before | Node engine tests |
+| GP-F4b | With a synthetic zone whose lair is on its town tile: `monstersHere()` there returns the lair boss only; `startBattle()` accepts the lair boss and refuses an ordinary monster with the town message | Node engine test, with the synthetic zone fixture |
 | GP-F5 | On the town tile, the client shows the town message and no Fight controls | Browser |
-| GP-F6 | The API refuses a town fight | `tests/db` API test, on the local stack |
+| GP-F5b | On the synthetic town-and-lair tile, the client shows the town message and a drop-down holding the lair boss only, and Fight starts the boss fight | Browser, with the same zone fixture through `FakeBackend({ zones })` |
+| GP-F6 | The API refuses a town fight with an ordinary monster | `tests/db` API test, on the local stack |
 | GP-X1 | Axe: 0 violations of any impact on the changed screens, at 320, 390, 1024 and 1440 | `tools/ui-shots.mjs` |
 
 **Tests that change because of F2:**
@@ -350,7 +364,7 @@ Each criterion has a test that fails on `main` at `9827ce1`, run against the old
 
 **One phase, GP-1, in one PR.** The six items share the battle view and the hero bar, so splitting them would mean reviewing overlapping changes twice. Within the PR, there is one commit per item, A to F, so each can be reviewed alone.
 
-**GP-1 ends at the review gate.** After it's approved and merged, the function redeploy (section 7) is a separate, authorized step.
+**GP-1 ends at the review gate.** The function redeploy (section 7) is a separate production step with its own authorization, obtained before the merge is scheduled so that the two happen together. F2 is server-enforced only once that redeploy succeeds.
 
 ## 11. Out of scope
 
@@ -361,8 +375,20 @@ Each criterion has a test that fails on `main` at `9827ce1`, run against the old
 - The Linux font follow-up.
 - A shortcut for the drop-down's Fight button. Enter on the button already works, and the shortcut list stays as it is.
 
-## 12. Questions for the scope review
+## 12. Questions for the scope review (answered)
 
-1. **Q1, reload behaviour:** R2-a, as proposed, or R2-b?
-2. **Q2, the victory line:** "Victory! … has been slain!" is hidden from the last round, since the card says Victory. Keep it in the log instead?
-3. **Q3, the town message:** "No monsters come near the town. Step outside to hunt." Do you want other wording?
+1. **Q1, reload behaviour:** **R2-a.** Don't invent turn boundaries; keep ungrouped lines apart from known rounds.
+2. **Q2, the victory line:** **keep it.** The narrative victory, defeat and duel lines stay in the visible log; only the reward and loss details move to the cards.
+3. **Q3, the town message:** **"No roaming monsters can be fought in town. Move to another tile to hunt."** It distinguishes roaming monsters from world-boss hunts and lair bosses.
+
+## 13. Scope review corrections (review of `8e82297`)
+
+**Disposition:** minor scope corrections requested. The six-item scope is accepted in principle. Documentation only; nothing is implemented, the shared engine is unchanged, and no function was deployed.
+
+| # | Correction | Where |
+|---|---|---|
+| 1 | **The town/lair overlap.** `startBattle()` is not a blanket `inTown()` refusal: it keeps the `monstersHere()` check, so a valid lair boss on a town tile can be fought, and gives the town message only for an ordinary monster. A synthetic zone with its lair on its town tile is added to the engine and client criteria | 5F2; GP-F4b, GP-F5b |
+| 2 | **The native picker stays the same element.** A test holds the focused `<select>` and checks that each unrelated update leaves that element attached and focused, not only its value | GP-F2b |
+| 3 | **Server enforcement starts at the redeploy.** F2 isn't enforced by the live server until the authorized function redeploy succeeds. The redeploy authorization is obtained before the merge is scheduled, and the redeploy follows Netlify's deploy immediately; the production authorization gate is kept | Section 7 |
+| 4 | **Outcome filtering after a reload.** A finished fight restored after a reload has no known last round, so nothing is filtered: every stored line is shown, ungrouped, in "Before this page loaded", with the outcome card beneath. The full log is unchanged | 5D, section 6; GP-D5 |
+| Q1–Q3 | The owner's answers: R2-a, with ungrouped lines labelled by line count and never as rounds; the narrative outcome lines kept (victory, defeat and duel); the town message "No roaming monsters can be fought in town. Move to another tile to hunt." | 5C, 5D, 5F2, section 6, section 12; GP-C4, GP-D1, GP-D2 |
