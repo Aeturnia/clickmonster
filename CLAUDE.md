@@ -143,7 +143,8 @@ Read these first:
   - **Pages:** no script, a strict policy, `no-store`, and the canonical address from `public/js/site.js` (`SITE_ORIGIN`, which also holds `SITE_NAME`).
   - **Tests:** the handler is tested in Node (`tests/news-pages.test.mjs`), and the harness serves `/news` through it.
   - **The entrance's news** (`js/entry-news.js`) loads only after the first contentful paint, and failures show nothing.
-- **Password recovery** (R-1, `docs/password-recovery-r1-report.md`; scope `docs/password-recovery-scope.md`, PR #44):
+- **Password recovery: R-1 implemented and accepted,** pending production activation. It was merged as PR #45 (`48be811`, 2026-11-17). See `docs/password-recovery-r1-report.md`; the scope is `docs/password-recovery-scope.md`, PR #44 (`031a026`).
+  - **The startup budget** has only 13 bytes of room (33,987 of 34,000). Plan for that before touching `entry.js`, `index.html` or `entry.css`.
   - **The guard** is in `entry.js`, in the first paint. A reset link, its error, a `PASSWORD_RECOVERY` event, or the `clickmonster.recovery` marker for the saved session's user holds the game back: no start and no preload. It is a UI guard, not server-enforced.
   - **The rest** is lazily loaded: `js/entry-recover.js`.
   - **`entry.js` stays the only auth listener;** the module gets sessions through hooks.

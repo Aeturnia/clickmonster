@@ -1,7 +1,7 @@
 # Password recovery: scope
 
 **Status: accepted at `43327bd`, with the owner's later decisions recorded in section 10 (2026-11-17).**
-- **R-1 is authorized** for local development and testing, and is implemented in PR #45.
+- **R-1 is implemented and accepted,** pending production activation. It was merged as PR #45 (`48be811`), and the request is still switched off.
 - **Production activation is not authorized.**
 - **Backlog item:** "Password recovery" (`docs/backlog.md`), raised in the landing scope review (Q14) as a higher-priority account-reliability item.
 - **This scope adds no code.**

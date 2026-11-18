@@ -1,6 +1,9 @@
 # Password recovery, R-1: implementation report
 
-**Status: the independent technical review is accepted (re-review of `adb99bc`, 2026-11-17). R1-01, R1-02 and the release-switch hardening are accepted. Approved to merge once the required checks pass on the final head.** After the merge, R-1 is implemented and accepted, pending production activation (section 7).
+**Status: implemented and accepted, pending production activation.**
+- **Merged** as PR #45 (`48be811`, 2026-11-17), its tree identical to the final head `6ea67a5`. Its required checks passed (run `44220743282`).
+- **The independent technical review** was accepted at `adb99bc`. The final head added only this report's corrections.
+- **Still off:** `RECOVERY_REQUESTS = false`. Production activation (section 7) is a separate milestone.
 - **Authorized** by the owner on 2026-11-17, for local development and testing, under the accepted scope (`docs/password-recovery-scope.md`, PR #44, with PR-S01 and PR-S02).
 - **The base:**
   - first `main` at `752e25a`;
