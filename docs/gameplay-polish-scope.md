@@ -1,6 +1,8 @@
 # Gameplay polish: scope
 
-**Status: scope draft, revised after the scope review of `8e82297` (section 13); at the scope acceptance gate.** Nothing is implemented. No code change, deployment or database change is authorized by this document.
+**Status: scope accepted (2026-11-18).** The final independent scope review accepted the reviewed commit `9882a02`, after the corrections from the review of `8e82297` (section 13). All three required CI jobs passed on it (run `44364332056`).
+- **Not authorized by this acceptance:** implementing GP-1, or deploying the functions. Each needs its own owner authorization; the F2 redeploy's is obtained before the implementation merge is scheduled (section 7).
+- **How to read GP-F5 and GP-F5b together:** GP-F5 forbids Fight controls on an ordinary town tile; GP-F5b allows the lair boss's Fight control on a tile that is both town and lair.
 
 **What it covers:** six problems the owner found in play-testing (2026-11-18), A to F below. They all affect how combat is presented and how a fight is started. The owner asked to fix these before any new features and to keep the milestone to these six, not to turn it into a wider gameplay redesign.
 
