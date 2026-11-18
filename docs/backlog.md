@@ -111,7 +111,7 @@ A separate staging Supabase project is dropped. The live sign-in session above c
   - Normal operation writes exactly one entry per change.
   - Guaranteeing the entry (the change and its log in one transaction, for example through a database function) would be a change across every admin action. It needs its own decision.
 
-- **The entrance's startup budget** (landing LAC-2) is 34,000 decoded bytes. It was revised to 32,000 in the L-4 review, then to 34,000 by the owner for password recovery (2026-11-17). The first paint is 33,702 bytes with R-1. Comments are not to be stripped to meet it (the owner's direction).
+- **The entrance's startup budget** (landing LAC-2) is 34,000 decoded bytes. It was revised to 32,000 in the L-4 review, then to 34,000 by the owner for password recovery (2026-11-17). The first paint is 33,987 bytes with R-1. Comments are not to be stripped to meet it (the owner's direction).
 
 - **Queued battle effects across an account change** (from the L-1 final review).
   - `playEffects()` in `main.js` schedules battle animations with `setTimeout`. The timers aren't tied to the game session (`gameGen`).

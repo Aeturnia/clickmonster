@@ -30,7 +30,7 @@ Read these first:
     - **What it covers:** the entrance's news and maintenance line (`js/entry-news.js`, loaded after the first paint) and the article pages (`netlify/edge-functions/news.js`).
     - **Findings:** L4-01 (the maintenance notice expires while the page is open), L4-02 (405 headers) and L4-03 (an open-ended notice under way comes first) are closed.
   - **Final baseline** on `main` at `d754dad`: engine 47/47 and browser 178/178, in each of 3 runs.
-  - **The entrance's startup budget** (LAC-2) is 34,000 decoded bytes: revised to 32,000 in the L-4 review, then to 34,000 by the owner for password recovery (2026-11-17). It is 33,702 with R-1. Don't strip comments to meet it.
+  - **The entrance's startup budget** (LAC-2) is 34,000 decoded bytes: revised to 32,000 in the L-4 review, then to 34,000 by the owner for password recovery (2026-11-17). It is 33,987 with R-1. Don't strip comments to meet it.
   - **Still open:**
     - the backlog's release checks: before release, sign-in on the live site and unpublishing; after release, the live maintenance line and the rest;
     - `/news` pagination (a follow-up);

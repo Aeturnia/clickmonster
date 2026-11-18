@@ -7,7 +7,7 @@
 //     left out, as LAC-2 leaves them out. Everything else loads after the paint.
 //   - Bytes as served: git stores these files with LF line endings and Netlify serves those bytes.
 //     A Windows checkout turns LF into CRLF, so CRLF is counted as LF, and the total is the same
-//     on Windows and Linux. (31,112 bytes at the L-4 merge, d754dad; 33,702 with password recovery.)
+//     on Windows and Linux. (31,112 bytes at the L-4 merge, d754dad; 33,987 with password recovery.)
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';

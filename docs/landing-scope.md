@@ -17,7 +17,7 @@
 - **Final baseline** on `main` at `d754dad`: engine 47/47 and browser 178/178, in each of 3 runs.
 - **LAC-2's byte target is revised again, to 34,000 decoded bytes,** by the owner on 2026-11-17, for password recovery (R-1).
   - **Why:** the recovery guard must be in the first paint, to stop a returning player's game from preloading during an unfinished reset.
-  - **Measured:** 33,702 bytes with R-1 (33,481 at the decision). The additions are about 2,000 bytes of code and markup and 400 of comments; everything else for recovery loads lazily.
+  - **Measured:** 33,987 bytes with R-1 after its review corrections (33,481 at the decision). The additions are about 2,000 bytes of code and markup and 400 of comments; everything else for recovery loads lazily.
   - **Comments** were not stripped. The metric and the other LAC-2 conditions are unchanged.
 - **LAC-2's byte target was revised to 32,000 decoded bytes** (L-4 review, 2026-11-13). This is a scoped exception, decided by the reviewer and recorded here rather than counting the original 30 KB as met.
   - **Why:** the news itself loads after the first paint, as the owner directed. Its two hooks (the hidden news markup in `index.html` and the after-paint loader in `entry.js`) bring the first paint to 31,112 bytes as served, against 29,800 after L-2.

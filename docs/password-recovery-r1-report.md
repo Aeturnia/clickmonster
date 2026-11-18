@@ -1,6 +1,6 @@
 # Password recovery, R-1: implementation report
 
-**Status: implemented, awaiting independent review. Not merged.**
+**Status: the review corrections R1-01 and R1-02 are made (section 8). Awaiting independent re-review. Not merged.**
 - **Authorized** by the owner on 2026-11-17, for local development and testing, under the scope at `43327bd` (PR #44, with PR-S01 and PR-S02).
 - **The base** is `main` at `752e25a`.
 - **PR #44** (the scope itself) is still open. Merging it, and updating its status line to "approved, R-1 authorized", is an outstanding administrative step for the owner. This branch doesn't include the scope document.
@@ -88,7 +88,7 @@
 
 ## 4. The startup budget (LAC-2)
 
-**The first paint is 33,702 bytes:** `index.html` 5,647, `css/entry.css` 10,465, `js/entry.js` 17,590.
+**The first paint is 33,987 bytes** after the review corrections (section 8): `index.html` 5,647, `css/entry.css` 10,465, `js/entry.js` 17,875. It was 33,702 at `cbddd42`.
 
 **Why it no longer fits 32,000:** the guard had to be in the first paint. The first version measured 33,481; about 2,000 bytes were code and markup and 400 comments, so even without comments it would have been about 33,100.
 
@@ -197,3 +197,72 @@ Each step is the owner's, or needs the owner's authorization. The dedicated Mons
 7. **Test real delivery** to outside providers (for example Gmail and Outlook): inbox, not spam.
 8. **An owner-controlled recovery test** on the live site, with a real address: ask, receive, open on another device, set, sign in.
 9. **Enable the public feature:** `RECOVERY_REQUESTS = true` in `public/js/entry.js`, in its own reviewed PR, then check it live.
+
+## 8. Review corrections (review of `cbddd42`)
+
+**The review accepted:**
+- the architecture and the release switch;
+- handling arrivals with the switch off;
+- `location.origin` with the production-only allow-list;
+- the Mailpit tests;
+- the 34,000 budget.
+
+It found two edge cases with invalid links and existing sessions, and asked for one hardening.
+
+### R1-01: a link error given only as `error_code`
+
+**Defect.** `entry.js` recognised `#…error=…` but not `#error_code=…` on its own, though the scope requires both.
+- **What the library does:** it doesn't treat an `error_code`-only fragment as a link, because it looks for `access_token` or `error_description`.
+- **The result:** a returning player's saved session simply resumed, with no invalid-link message.
+
+**Correction.**
+- **`RESET_LINK = /[#&](type=recovery|error(_code)?=)/`** is used for both the guard and the same-tab reload.
+- **`linkError`** recognises both forms.
+
+### R1-02: an invalid link with a session already saved
+
+**Defect.** The module's `session()` turned any state but "choose" and "partial" into the password form. That included **"Reset link not valid"**.
+- **The sequence:** while an invalid link was being handled, a session already saved in the browser was restored. `session()` then replaced the error with **"Choose a new password" for that unrelated account.**
+- **Confirmed on `cbddd42`:** with a saved player session and a full error fragment, the page showed the password form for the player. No update was sent, but the form was live.
+
+**Correction:**
+- **`entry.js`:** during an invalid-link arrival, a session that turns up is **not a reset session** (`reset = event === 'PASSWORD_RECOVERY' || !linkError`). No marker is written, and the module is told.
+- **The module:** "Reset link not valid" never becomes a password form. With a session saved here, its way out is **"Continue to the realm"**, as that session's own, with no reset. Without one, it's "Back to sign in".
+- **Leaving any recovery panel** (`hide()`) now always releases the guard, so a reset is never left behind it.
+
+**What the library does with invalid links** (vendored 2.45.4, read and observed):
+- **A link it recognises** (`access_token` or `error_description`) **that fails:** the client **removes the saved session** before reporting no session. The player is signed out, which is the library's behaviour, not R-1's.
+- **An `error_code`-only fragment:** the client doesn't treat it as a link and keeps the saved session.
+
+R-1's tests cover both.
+
+### Hardening: the release switch in the handler
+
+- **The `#forgot` click handler** now checks `RECOVERY_REQUESTS`.
+- **The module's `request()`** checks the same flag.
+
+This is a UI gate, not a security boundary. Supabase's public recovery endpoint is unchanged.
+
+### Tests: six new, 30 in `password-recovery.test.mjs`
+
+| Test | On `cbddd42` | Now |
+|---|---|---|
+| R1-01: `#error_code=otp_expired`, no session: the invalid-link panel, the address cleaned, no game start or preload | **fails** (no panel) | passes |
+| R1-02: `error_code` only, with a valid saved session: no form, no update, no marker, no game while shown; "Continue to the realm" enters as that session | **fails** | passes |
+| R1-02: a full error fragment, with a valid saved session: no form | **fails**: **"Choose a new password" for the saved account** | passes |
+| R1-02: a recovery token the server refuses, with a valid saved session: no form | passes (the library drops the session itself) | passes |
+| R1-02: after an invalid link, "Back to sign in" and an ordinary sign-in go straight into the game | passes (there, the library's "no session" event already released the guard) | passes |
+| The release switch: a click on the hidden link loads nothing and sends nothing | **fails** (the module loaded) | passes |
+
+**Also unchanged and passing:**
+- PR-6, a valid reset link for another account replacing a running game;
+- PR-7, a normal sign-in.
+
+**The budget:** 33,987 of 34,000. The corrections first measured 34,061. The two comment lines I had just added were reworded into one; no existing comment was removed.
+
+**Results:**
+- **Local:**
+  - the recovery file passed 30/30 in each of 2 runs;
+  - the full suites: RESULTS_FULL.
+- **CI:** linked in the PR.
+
