@@ -21,9 +21,13 @@ export function inTown(char) {
   return !!z.town && z.town.x === char.loc.x && z.town.y === char.loc.y;
 }
 
+// Roaming monsters keep away from a zone's town tile (gameplay polish F2). A lair boss is still
+// there to fight if the lair shares the tile; world-boss hunts are joined anywhere in the zone.
+export const TOWN_NO_MONSTERS = 'No roaming monsters can be fought in town. Move to another tile to hunt.';
+
 export function monstersHere(char) {
   const zone = currentZone(char);
-  const list = [...zone.monsters];
+  const list = inTown(char) ? [] : [...zone.monsters];
   if (zone.boss && featuresAt(zone, char.loc.x, char.loc.y).some((f) => f.type === 'lair')) list.push(zone.boss);
   return list;
 }
