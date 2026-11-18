@@ -1,6 +1,8 @@
 # MR-B1: identity and domain (report)
 
-**Status: cutover step 1 implemented, for review.** Authorized by the owner on 2026-11-18.
+**Status: cutover step 1 complete** (2026-11-18). Authorized by the owner on 2026-11-18; independently reviewed at `2eaae3e` and approved to merge after green CI; merged as PR #48 (`ea2e4a4`).
+- **Next gate:** the owner's verification on `monstraregna.com` (steps 3 and 4). The redirect (step 5) and removing the Netlify origin from the allow-list (step 7) are **not** done and not authorized here. MR-B2 and MR-S1 are not started.
+- **Unchanged:** public password-reset requests stay off (`RECOVERY_REQUESTS = false`).
 - **Scope:** `docs/monstra-regna-scope.md`, section 3, with the owner's decisions (section 1, D1–D3) and answers (section 10, QB-1).
 - **Base:** `main` at `9a9887f` (PR #47).
 - **This PR is step 1 only:** the rename and `SITE_ORIGIN`, **without** the old-address redirect. Both addresses keep serving the site after it merges.
@@ -41,16 +43,16 @@
 | B1-4b | After the authorized deployment, on the real old host: 301, path and query kept, no loop, previews reachable | **After step 5,** read-only requests |
 | B1-4c | Authentication links issued before the move arrive on the new domain with their fragment, and R-1's guard handles them | **After step 5** |
 | B1-5 | Cutover steps 2–7 recorded with their results | **Started:** section 3. Completed in a later docs PR |
-| B1-6 | Every suite green, no gameplay change | **Local:** engine and file tests 51 of 51 (48 before, plus the 3 identity tests); browser 208 of 208 in each of 3 consecutive full runs. **Database:** not run here (no Docker in this environment); CI's `database` job runs it on the PR. No gameplay files changed except the two headings in `main.js` |
+| B1-6 | Every suite green, no gameplay change | **Met.** **Local** (head `2eaae3e`): engine and file tests 51 of 51 (48 before, plus the 3 identity tests); browser 208 of 208 in each of 3 consecutive full runs. **CI** run `44326706062`, head `2eaae3e`, tested merge commit `8429bc7`: `engine` 51 of 51; `database` 42 of 42 pgTAP and 12 of 12 API, function and recovery tests; `browser` (Windows Chromium) 208 of 208. Counts read from the job logs. No gameplay files changed except the two headings in `main.js` |
 
 ## 3. Cutover record (section 3.2 of the scope)
 
 | Step | Who | Status |
 |---|---|---|
-| 1. Merge the rename, without the redirect | Owner merges this PR | **This PR** |
-| 2. Supabase Auth: Site URL `https://monstraregna.com`; allow-list `https://monstraregna.com/**`, keeping the Netlify origin until step 7; no preview wildcard | Owner | **Done early by the owner, 2026-11-17** (scope, section 11). Not read or verified by Claude |
-| 3. On the new domain: sign-up confirmation lands on `monstraregna.com`; sign-in and session restore; a reset email from the dashboard opens "Choose a new password", not the game, with "Forgot your password?" still off | Owner | After the merge |
-| 4. Public pages on the new domain: `/news` and `/news/<slug>` with canonical and `og:url` on `monstraregna.com`; the manifest and titles | Owner, or read-only requests by Claude if authorized | After the merge |
+| 1. Merge the rename, without the redirect | Owner merges this PR | **Done, 2026-11-18:** PR #48 merged as `ea2e4a4` after independent review (approved at `2eaae3e`) and green required checks (CI run `44326706062`: engine, database and browser all passed on the merge commit `8429bc7`) |
+| 2. Supabase Auth: Site URL `https://monstraregna.com`; allow-list `https://monstraregna.com/**`, keeping the Netlify origin until step 7; no preview wildcard | Owner | **Done early by the owner, 2026-11-17** (scope, section 11), and treated as completed configuration. Not read or independently inspected by Claude; its behaviour is tested by the owner in step 3 |
+| 3. On the new domain: sign-up confirmation lands on `monstraregna.com`; sign-in and session restore; a reset email from the dashboard opens "Choose a new password", not the game, with "Forgot your password?" still off | Owner | **Next: waiting for the owner** |
+| 4. Public pages on the new domain: `/news` and `/news/<slug>` with canonical and `og:url` on `monstraregna.com`; the manifest and titles | Owner, or read-only requests by Claude if authorized | **Waiting for the owner** |
 | QB-2. Publish the announcement article (the move, the new address, the possible one-time sign-in) | Owner, in the admin console | Between steps 4 and 5 |
 | 5. Turn on the redirect | Owner merges the redirect PR | Prepared (`b00a5c7`), not opened |
 | 6. Verify the redirect (B1-4b, B1-4c) | Read-only requests, if authorized; the owner's own old email if one exists | After step 5 |

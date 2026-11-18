@@ -499,6 +499,12 @@ MR-B1 and MR-B2 were accepted in principle. MR-S1 needed a tighter contract.
 
 **Don't repeat this step.** MR-B1's implementation starts at step 1 (the rename, without the redirect). Then it goes on to the step 3 checks: sign-up confirmation landing on `monstraregna.com`; sign-in and session restore there; and a valid reset link opening "Choose a new password". After that come steps 4–7. Confirming the settings with a read-only inspection would need the owner's authorization.
 
+### Step 1 is complete (2026-11-18)
+
+- **The rename merged** as PR #48 (`ea2e4a4`), after independent review at `2eaae3e` and green required checks (CI run `44326706062`: `engine` 51/51; `database` 42/42 pgTAP and 12/12 API; `browser` 208/208, on the merge commit `8429bc7`).
+- **Step 2** stays recorded as done early by the owner, not independently inspected.
+- **Next:** the owner's checks in steps 3 and 4. The record is `docs/monstra-regna-b1-report.md`, section 3.
+
 ### Unchanged through the migration
 
 - **`RECOVERY_REQUESTS` stays `false`.** The migration verifies that incoming reset links work on the new domain (R-1's guard). It doesn't switch on public password-reset requests; that belongs to the separate activation milestone.
