@@ -368,7 +368,7 @@ function viewMinimap() {
 function viewBanned() {
   const s = ui.sanctions;
   const when = new Date(s.banned).getFullYear() > 9000 ? 'permanently' : `until ${new Date(s.banned).toLocaleString()}`;
-  return `<div class="intro"><h1>ClickMonster</h1></div>
+  return `<div class="intro"><h1>Monstra Regna</h1></div>
     <div class="notice bad"><p><b>${esc(char.name)} is banned ${when}.</b></p>${s.reason ? `<p class="small">Reason: ${esc(s.reason)}</p>` : ''}
     <p class="small muted" style="margin:0">If you think this is a mistake, contact the game staff.</p></div>
     ${btn('signout', null, 'Sign out', 'block')}`;
@@ -379,7 +379,7 @@ function viewCreate() {
   const bonuses = Object.entries(r.bonus).map(([s, n]) => `+${n} ${STAT_SHORT[s]}`).join(', ');
   return `
     <div class="realm-create">
-    <div class="intro realm-head"><p class="realm-kicker">The last step into the realm</p><h1>ClickMonster</h1><p>Who are you?</p></div>
+    <div class="intro realm-head"><p class="realm-kicker">The last step into the realm</p><h1>Monstra Regna</h1><p>Who are you?</p></div>
     <label class="field">Name<input id="name" type="text" maxlength="18" autocomplete="off" autocapitalize="words" placeholder="Your hero's name" value="${esc(ui.draftName || '')}"${ui.createError ? ' aria-invalid="true" aria-describedby="name-error"' : ''}></label>
     ${ui.createError ? `<p id="name-error" class="field-msg bad" role="alert">${esc(ui.createError)}</p>` : ''}
     <label class="field">Race</label>

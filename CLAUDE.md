@@ -1,6 +1,7 @@
-# ClickMonster: notes for Claude
+# Monstra Regna (formerly ClickMonster): notes for Claude
 
-A text-based multiplayer fantasy RPG for mobile browsers.
+A text-based multiplayer fantasy RPG for mobile browsers, at `https://monstraregna.com`.
+- **The name:** players see "Monstra Regna" everywhere (MR-B1). Technical identifiers keep "ClickMonster" on purpose (D2): the repository, the Supabase project, the function names, the Netlify site and the `clickmonster.*` storage keys. `tests/identity.test.mjs` fails on any other use of the old name in `public/`, `netlify/` or the email templates.
 - **Frontend:** vanilla JS ES modules in `public/`, no build step. Netlify publishes that folder.
 - **Backend:** Supabase. It provides auth, Postgres with RLS, Realtime, and two edge functions: `game` (server-authoritative) and `admin` (staff API).
 - **Players:** pick a race, raise uncapped stats, fight in level-gated grid zones, collect gold, gems and relic gear, and chat. Some zones allow PvP.
@@ -18,7 +19,7 @@ Read these first:
   - **D-1, the desktop frame:** merged as PR #18. See `docs/desktop-d1-report.md`.
   - **D-2, the persistent chat panel:** merged as PR #19 (`672a81a`). Findings D2-01 to D2-03 are closed. See `docs/desktop-d2-report.md`.
   - **D-3, keyboard shortcuts:** merged as PR #21 (`d567be2`), approved with no corrections. See `docs/desktop-d3-report.md`.
-  - **Separate:** the layout picker was built as landing phase L-2 (below). Wider desktop sheets and the possible rename to "Monstra Regna", a working title only, are not approved.
+  - **Separate:** the layout picker was built as landing phase L-2 (below). Wider desktop sheets are not approved. The rename to Monstra Regna was later approved and scoped (`docs/monstra-regna-scope.md`); see MR-B1 below.
 - **The landing page milestone is complete** (2026-11-14). All four phases passed independent review, and Stages 1 (L-1, L-2) and 2 (L-3, L-4) are formally closed. `docs/landing-scope.md` was the contract (PR #23, `e385e38`); its section 5 holds the owner's decisions and section 12 the scope review's corrections.
   - **L-1, the entrance:** merged as PR #25 (`b911a79`). L1-01 and L1-02 (account isolation) are closed. See `docs/landing-l1-report.md`.
   - **L-2, the interface picker:** merged as PR #27 (`4c9d049`), with no corrections. See `docs/landing-l2-report.md`.
@@ -30,12 +31,12 @@ Read these first:
     - **What it covers:** the entrance's news and maintenance line (`js/entry-news.js`, loaded after the first paint) and the article pages (`netlify/edge-functions/news.js`).
     - **Findings:** L4-01 (the maintenance notice expires while the page is open), L4-02 (405 headers) and L4-03 (an open-ended notice under way comes first) are closed.
   - **Final baseline** on `main` at `d754dad`: engine 47/47 and browser 178/178, in each of 3 runs.
-  - **The entrance's startup budget** (LAC-2) is 34,000 decoded bytes: revised to 32,000 in the L-4 review, then to 34,000 by the owner for password recovery (2026-11-17). It is 33,987 with R-1. Don't strip comments to meet it.
+  - **The entrance's startup budget** (LAC-2) is 34,000 decoded bytes: revised to 32,000 in the L-4 review, then to 34,000 by the owner for password recovery (2026-11-17). It is 33,987 with R-1, and 33,989 with MR-B1's rename ("Monstra Regna" is one character longer, in the title and the heading). Don't strip comments to meet it.
   - **Still open:**
     - the backlog's release checks: before release, sign-in on the live site and unpublishing; after release, the live maintenance line and the rest;
     - `/news` pagination (a follow-up);
     - maintenance mode (a server-enforced pause of play) and bug reports, newly in the backlog, not scoped;
-    - the rename, which is not approved.
+    - the rename: now MR-B1, below.
 - **CI (GitHub Actions), part 1: complete and accepted** (2026-11-16). Scope `docs/ci-scope.md` (PR #37, `6e21a82`); report `docs/ci-a-report.md`.
   - **What it is:** one workflow, three jobs (engine and database on Ubuntu, browser in Chromium on Windows), on each PR's merge commit, with no secrets and no production traffic.
   - **CI-A, its implementation,** was accepted and merged as PR #39 (`a54e392`, 2026-11-15). See `docs/ci-a-report.md`.
@@ -44,6 +45,9 @@ Read these first:
     - **Accepted:** CI-A and CI-1a are complete; the record was merged as PR #42 (`a0d5629`).
     - **Required checks** are ready for the owner to configure: `engine`, `browser` and `database`, on PRs into `main` (Q2). Don't change branch protection yourself.
   - **Not authorized:** parts 2 and 3.
+- **MR-B1, identity and domain** (`docs/monstra-regna-scope.md`, section 3), authorized by the owner on 2026-11-18. The implementation PR is cutover step 1 only: the rename and `SITE_ORIGIN`, **without** the old-address redirect. See `docs/monstra-regna-b1-report.md`.
+  - **Step 2** (Supabase Auth URLs) was done early by the owner. **Steps 3–7** are the owner's, or need authorization, after the merge; the redirect is its own commit, merged only after steps 1–4 are verified.
+  - **MR-B2 and MR-S1** each need their own authorization.
 - **Development moved to the owner's Windows laptop.** `npm run deploy:functions` now runs from any shell (PR #15) and needs `SUPABASE_ACCESS_TOKEN` set in the environment.
 - **Don't start another milestone, or make gameplay or server changes,** until the owner approves it.
 - **Release verification** is in `docs/backlog.md`. The owner split it on 2026-11-14, because there aren't the resources to test every device before release.
@@ -144,7 +148,7 @@ Read these first:
   - **Tests:** the handler is tested in Node (`tests/news-pages.test.mjs`), and the harness serves `/news` through it.
   - **The entrance's news** (`js/entry-news.js`) loads only after the first contentful paint, and failures show nothing.
 - **Password recovery: R-1 implemented and accepted,** pending production activation. It was merged as PR #45 (`48be811`, 2026-11-17). See `docs/password-recovery-r1-report.md`; the scope is `docs/password-recovery-scope.md`, PR #44 (`031a026`).
-  - **The startup budget** has only 13 bytes of room (33,987 of 34,000). Plan for that before touching `entry.js`, `index.html` or `entry.css`.
+  - **The startup budget** has only 11 bytes of room (33,989 of 34,000, after MR-B1). Plan for that before touching `entry.js`, `index.html` or `entry.css`.
   - **The guard** is in `entry.js`, in the first paint. A reset link, its error, a `PASSWORD_RECOVERY` event, or the `clickmonster.recovery` marker for the saved session's user holds the game back: no start and no preload. It is a UI guard, not server-enforced.
   - **The rest** is lazily loaded: `js/entry-recover.js`.
   - **`entry.js` stays the only auth listener;** the module gets sessions through hooks.
