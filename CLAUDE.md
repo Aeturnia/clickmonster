@@ -52,7 +52,7 @@ Read these first:
   - **Step 4 passed** (2026-11-18): titles, manifest, and news canonical and `og:url` on `monstraregna.com`, checked by the owner and independently by authorized read-only requests.
   - **Next gate: the announcement (QB-2)**, published by the owner before the redirect; then the redirect PR (step 5), which needs its own go-ahead. Don't open or merge the redirect (prepared on `claude/mr-b1-redirect`, `b00a5c7`), and don't touch the Supabase allow-list, without authorization.
   - **MR-B2 and MR-S1** each need their own authorization.
-- **Gameplay polish** (`docs/gameplay-polish-scope.md`, merged as PR #50, `cc736b5`): six play-testing fixes. GP-1, authorized 2026-11-18, is implemented on `claude/gp-1`; see `docs/gameplay-polish-report.md`.
+- **Gameplay polish: complete** (2026-11-19). Scope `docs/gameplay-polish-scope.md` (PR #50, `cc736b5`; amendment 1 in its section 14, PR #52, `99357cb`). GP-1 was merged as PR #51 (`9fb022a`) and the `game` function redeployed (version 13); the owner's live check passed. See `docs/gameplay-polish-report.md`, section 10.
   - **The fixes:**
     - A: the XP cue plays once;
     - B: numbers on the bars;
@@ -61,7 +61,13 @@ Read these first:
     - E: a mastery gain is shown once, under its round;
     - F1: a native monster drop-down;
     - F2: no roaming monsters on a town tile.
-  - **F2 is a game rule in the shared engine.** The live server enforces it only after the `game` function is redeployed. That redeploy needs its own authorization, obtained before the merge is scheduled (scope, section 7).
+  - **Amendment 1:**
+    - "+XP" and gold changes float over the hero bar;
+    - two-line meters span the bar (an iPhone WebKit fix);
+    - no HP bars on the fight screen, except a world boss's Shared HP.
+  - **F2 is a game rule in the shared engine,** enforced by the live server since the redeploy.
+  - **Follow-ups:** the phone-landscape tabs below the screen's edge, and the Windows runner's `ERR_NO_BUFFER_SPACE` (`docs/backlog.md`).
+- **P1: sign-out on one device locks another out** (found 2026-11-19, live). Its scope, `docs/sign-out-scope.md`, is in PR #53 for independent review; nothing is implemented or deployed until it is approved.
 - **Development moved to the owner's Windows laptop.** `npm run deploy:functions` now runs from any shell (PR #15) and needs `SUPABASE_ACCESS_TOKEN` set in the environment.
 - **Don't start another milestone, or make gameplay or server changes,** until the owner approves it.
 - **Release verification** is in `docs/backlog.md`. The owner split it on 2026-11-14, because there aren't the resources to test every device before release.
@@ -146,7 +152,9 @@ Read these first:
   - **What shows:** only the current round. Earlier rounds are a collapsed `<details>`.
   - **After a reload:** the lines already there are "Before this page loaded (N lines)", never rounds. The round marks exist only in the page (`ui.turnLog`).
   - **`cardLine()`** hides, from the finished round, the rewards and losses its outcome card lists. It is presentation only: `char.battle.log` is never changed.
-- **Meters** (`meter()`, `fitMeters()`) carry their numbers on the bar. `fitMeters()` picks the full, short (`.compact`) or stacked (`.stack`) form after each render. The hero bar is three paint regions (`hud-row`, `hud-hp`, `hud-xp`), so a regeneration tick doesn't recreate the XP meter.
+- **Meters** (`meter()`, `fitMeters()`) carry their numbers on the bar. `fitMeters()` picks the full, short (`.compact`) or stacked (`.stack`) form after each render. It measures each part's own text width, not its box, because WebKit keeps a stale box width after the switch. On two lines, the label and the numbers span the bar. The hero bar is three paint regions (`hud-row`, `hud-hp`, `hud-xp`), so a regeneration tick doesn't recreate the XP meter.
+- **Gold and XP cues** (`showCues()`, `floatCue()`) are created once per change, directly in `#top`, which redraws never replace, and removed after 1.6 s (`CUE_MS`). They take no space in the hero bar. Tests read them through the harness's `watchCues()`.
+- **The fight screen** has no HP bars except a world boss's Shared HP. Each side has a strip (`.side-fx`) where `floatText()` puts the damage numbers, clear of the names.
 - **The monster drop-down** (`#mon-select`) is marked `data-keep`. `paint()` leaves such an element in place when the new HTML has the same one (`keepInPlace()`), so an open native picker survives redraws.
   - **The Fight button** has no `data-v`; it reads the drop-down.
   - **Arrow keys** don't move the hero while a `<select>` has focus.
@@ -199,7 +207,7 @@ Read these first:
 
 ```
 npm test                 # engine, entrance file checks, the startup budget, news rules, the news page handler, the town rule and the log rules (63)
-npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (238)
+npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (248)
 npm run test:db          # database (pgTAP, 42) and API/function/recovery tests (13) on the LOCAL Supabase stack, with Mailpit
 npx playwright install chromium   # once
 ```

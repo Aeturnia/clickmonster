@@ -92,6 +92,11 @@ A separate staging Supabase project is dropped. The live sign-in session above c
 
 ## Follow-ups (not blocking)
 
+- **Sign-out on one device locks another out (P1, a user-facing sign-in recovery defect;** found by the owner on the live site, 2026-11-19).
+  - **What happened:** signed in as the same account on a phone and a desktop, the owner signed out on the phone. The desktop then showed "Please sign in again". After a refresh, the entrance showed it again with Try again and Sign out. Try again failed the same way, Sign out did nothing visible, and the sign-in form stayed hidden, so no account could sign in on that browser. The phone kept working.
+  - **Not GP-1's:** it is in the entrance and `net.js`, and existed before GP-1.
+  - **Its own scope,** for independent review before any implementation: `docs/sign-out-scope.md`, PR #53.
+
 - **Phone landscape: the tabs below the screen's edge** (from GP-1's iPhone check, 2026-11-18; the owner chose to record it as a follow-up rather than change GP-1).
   - **What the owner saw:** on an iPhone turned to landscape, on PR #51's deploy preview, the tabs (Explore, Hero, Gear, Map) were below the screen's edge. Resizing brought them into view, but then the browser's tab bar covered the hero bar.
   - **The cause, measured in Chromium at 844 px wide:**
@@ -133,6 +138,12 @@ A separate staging Supabase project is dropped. The live sign-in session above c
   - **The diagnostics:** `diag.json` showed no page errors, no bad responses, and low CPU and memory.
   - **The likely cause** is the runner's network stack under the suite's many short connections, after more than 200 tests. It isn't established.
   - **Next step, when authorized:** see whether it recurs, and whether the harness's server should keep connections alive or the job should limit them. Unlike the `PR-4a` timeout above, this one has diagnostics; they are not known to share a cause.
+  - **It recurs.** It has been seen three times on 2026-11-18 and 19:
+    - PR #47's docs-only commit (`/js/data/masteries.js`);
+    - run `44410857655` above;
+    - the `push` run on `main` after GP-1's merge (run `44432245764`, attempt 1): `GP-B4` failed at `page.goto: net::ERR_NO_BUFFER_SPACE`.
+
+    Each time, one re-run of the failed job, authorized by the owner, passed in full. The re-runs support the diagnosis but don't fix the fault.
 
 - **Pagination of `/news`** (from the L-4 review). The public list (`netlify/edge-functions/news.js`, `LIST_LIMIT = 100`) shows the 100 newest published articles. Older ones stay reachable by their address but drop off the list. Add pages (for example `/news?page=2`, or a link to older articles) before there are 100.
 
