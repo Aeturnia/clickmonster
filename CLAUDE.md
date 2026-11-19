@@ -142,7 +142,11 @@ Read these first:
 - **Signing out and refused sessions** (`net.js`; `docs/sign-out-report.md`):
   - **`signOut()` and `endSession()`** end this device's session only (`scope: 'local'`), with a 5 s limit. If the library errs, runs out of time or leaves a session saved, they remove `clickmonster.auth` themselves (only if it is still the session being ended), keep the message in `sessionStorage` (`clickmonster.note`) and reload. `signOut()` is the player's own; `endSession()` says "Your session has ended".
   - **Other tabs** follow a removed session through a `storage` listener.
-  - **`api(action, args, isCurrent)`:** on a 401 from `game`, one shared renewal, then the request once more, only if the sign-in is unchanged (`err.stale` otherwise). A refused renewal or a second 401 is `err.ended`, and callers end the session. Nothing else is retried.
+  - **`api(action, args, isCurrent)`:** on a 401 from `game`, one renewal, then the request once more, only if the sign-in is unchanged (`err.stale` otherwise).
+    - **The renewal is net.js's own request,** not `refreshSession()`: the library would itself remove the session on a 500 or 429. It runs one at a time, with a lock across tabs, and is installed with `setSession()`.
+    - **Only `refresh_token_not_found` ends a session** (`err.ended`). A 429 backs off; anything else keeps the session.
+    - **Nothing else is retried.**
+    - **The library's own background renewal** still discards a session on a 500 or 429 (backlog).
   - **The server:** the `game` function answers 401 only when `sessionFailure()` (`engine/session.js`) says "ended", and 503 otherwise. Its list comes from GoTrue's measured answers (`tests/session-answers.mjs`).
   - **Watch out:** supabase-js reports GoTrue's `session_not_found` as `AuthSessionMissingError`, not as an `AuthApiError`, and its own `signOut()` then keeps the saved session.
 - **Game UI** is `public/js/main.js`:
@@ -218,8 +222,8 @@ Read these first:
 
 ```
 npm test                 # engine, entrance file checks, the startup budget, news rules, the news page handler, the town rule, the log rules and the session rule (65)
-npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (271)
-npm run test:db          # database (pgTAP, 42) and API/function/recovery/session tests (16, plus 1 opt-in) on the LOCAL Supabase stack, with Mailpit
+npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (281)
+npm run test:db          # database (pgTAP, 42) and API/function/recovery/session tests (17, plus 1 opt-in) on the LOCAL Supabase stack, with Mailpit
 npx playwright install chromium   # once
 ```
 

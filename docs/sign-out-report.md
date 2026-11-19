@@ -1,6 +1,6 @@
 # Sign-out and session recovery: report
 
-**Status: implemented; at the independent implementation review gate (2026-11-19).** Nothing is deployed or merged.
+**Status: implemented, with the correction for F-1 (section 18); at the independent implementation review gate (2026-11-19).** Nothing is deployed or merged.
 - **The review gates on the way** (sections 4 to 8):
   - **First:** SO-1b showed that an ended session isn't an `AuthApiError`. The review of `4ac3740` approved the amended classification (section 5).
   - **Second:** an expired token is answered exactly as a malformed one. The review of `4853b02` approved one renewal before ending a session, with safeguards (section 9).
@@ -134,7 +134,7 @@ The opt-in test is in `tests/db/session-answers.test.mjs` (run with `SO1B_EXPIRE
 | A 503 or any other answer | Unchanged: nothing is retried |
 
 **The review's safeguards, and how each is met:**
-1. **Supported renewal, no storms:** `sb.auth.refreshSession()`, through one shared promise. Concurrent refusals wait for the same renewal, and the library also serialises its own renewals under its lock. SO-3 sends three refused requests at once: one renewal, and all three succeed.
+1. **Supported renewal, no storms** (superseded for F-1 by section 18: the renewal is now the client's own request, installed with `setSession()`): `sb.auth.refreshSession()`, through one shared promise. Concurrent refusals wait for the same renewal, and the library also serialises its own renewals under its lock. SO-3 sends three refused requests at once: one renewal, and all three succeed.
 2. **One resend:** after a successful renewal, the request is sent exactly once more; a second 401 is final. There is no loop.
 3. **Account and generation before resending:**
    - `api()` takes an `isCurrent()` check (`main.js` passes `live(g)`; `start()` passes its own);
@@ -212,7 +212,7 @@ Every browser test was run against `main` at `bfad9b3` (`UI_PUBLIC_DIR`): **18 o
 5. **SO-13's compare-before-removing case is a guard on `bfad9b3`,** not a detector: the old code never removed anything.
 6. **`api()` reads the signed-in user before each call** (`getSession()`, from storage, under the library's lock), to compare it after a renewal. `functions.invoke` already does the same read.
 7. **The scope expected LAC-21 and the L-1 sign-out tests to change.** They pass unchanged.
-8. **A new storage key, `clickmonster.note`** (`sessionStorage`), follows the existing `clickmonster.*` keys (MR-B1's D2), and is added deliberately to the identity test's list of allowed technical identifiers (`tests/identity.test.mjs`). The MR-B1 report's list is a record of its time; the test is the current list.
+8. **Two new technical names, `clickmonster.note`** (a `sessionStorage` key) **and `clickmonster.renew`** (the renewal lock, section 18), follow the existing `clickmonster.*` keys (MR-B1's D2), and are added deliberately to the identity test's list of allowed technical identifiers (`tests/identity.test.mjs`). The MR-B1 report's list is a record of its time; the test is the current list.
 9. **The opt-in expired-token test** needs a short local `jwt_expiry` and is skipped otherwise, including in CI. Its recorded answer is checked by the rule's Node test, which runs everywhere.
 
 ## 14. Runs and CI
@@ -239,6 +239,7 @@ Every browser test was run against `main` at `bfad9b3` (`UI_PUBLIC_DIR`): **18 o
 - **A lock held by another tab's stuck request** (for example a hung renewal). It delays that tab's own library calls; its Sign out has the same fallback. This case is not tested.
 - **Screen readers.**
 - **The production behaviour,** until the `game` function is redeployed (section 16).
+- **R4 is not guaranteed everywhere** (section 18). A temporary failure of the client's own renewal after a 401 keeps the session. But the library's own background renewal, and any renewal it starts itself before sending a request, still discard the session on a 500 or 429. That is tracked separately (`docs/backlog.md`).
 
 ## 16. Deployment, when authorized (scope, section 8)
 
@@ -278,4 +279,82 @@ Every browser test was run against `main` at `bfad9b3` (`UI_PUBLIC_DIR`): **18 o
 - **C. Keep `refreshSession()`, fix only the classification,** and document that the library still discards the session on a 500 or 429. That doesn't meet F-1 or R4.
 
 **Nothing has changed since `543cbde`.** F-1 waits for this decision; F-2 will be recorded as asked.
+
+## 18. The correction for F-1 (option A, approved at the review of `2178097`)
+
+**The decision:** option A, conditionally.
+- **What changes:** the renewal after a `game` 401 is the client's own request, and the library's `refreshSession()` is no longer used for it.
+- **What doesn't:** background renewal is left to a separate investigation.
+- **Conditions:**
+  1. prove the hand-over to `setSession()` first;
+  2. end a session only on measured evidence;
+  3. keep one renewal and one resend;
+  4. serialise across tabs, and alongside the library's own renewal;
+  5. a late answer never restores a changed session, including a new session of the same account;
+  6. a 429, 500 or unknown answer never erases the session;
+  7. no immediate retry after a 429;
+  8. document the remaining limitation, and track F-2 and background renewal.
+
+**Before:** `renew()` called `sb.auth.refreshSession()`, and classed any error but `AuthRetryableFetchError` as "ended". On a 500 or 429, the library had already removed the saved session and emitted `SIGNED_OUT` (section 17).
+
+**After** (`net.js`, `renew()`):
+- **The request:** `POST /auth/v1/token?grant_type=refresh_token`, with the publishable key and GoTrue's API version header, using the refresh token of the session the refused request was made with.
+- **Its answers:**
+
+| Answer | Result |
+|---|---|
+| 200 with a session | If this browser still holds the session it renewed, it is handed to the library with `setSession()`, and the request is sent once more |
+| 400 `refresh_token_not_found` (measured: an ended session's refresh token) | "Ended": the caller ends the session, and the form shows |
+| 429 | "Unavailable", the session kept; no renewal before `Retry-After`, or 30 s |
+| Anything else: 500, another code (a malformed token gets `validation_failed`, measured), a dropped connection, a `setSession()` error | "Unavailable", the session kept; the player can try again |
+
+- **One at a time:** a shared promise in the tab, and a lock (`navigator.locks`, `clickmonster.renew`) across the browser's tabs. Whoever goes second re-reads the saved session, finds it already renewed (a new refresh token, the same `session_id`), and sends nothing.
+- **Late answers:**
+  - The saved session is re-read before the request and again before installing.
+  - If it has changed to a different session (a sign-out, another account, or a new sign-in of the same account, told apart by `session_id`), nothing is installed, nothing is resent, and the caller gets `err.stale`.
+  - A second 401 ends the session only if the saved session is still the same one.
+- **The library's own renewal at the same moment:** GoTrue lets the same refresh token be used twice within its reuse interval, for the same session (measured). Both results are valid, so whichever is saved last works.
+
+**The proofs:**
+- **Browser** (`tests/ui/sign-out.test.mjs`, "F-1 proof"):
+  1. A renewal is installed with `setSession()` (a new refresh token, the same session), no second renewal follows, and the next request works unrenewed.
+  2. A renewal answered 500, 429, with an unknown 400 code, or with a dropped connection leaves the saved session exactly as it was, keeps the player in the game with "Can't reach the sign-in service", and lets them try again. After a 429, a further refusal sends no renewal before `Retry-After`. Only `refresh_token_not_found` ends the session.
+  3. A renewal held while the browser's session changes (a new session of the same account, or a sign-out) installs nothing, resends nothing, and leaves what the browser saved.
+  4. The library's `refreshSession()` and a refused request at the same moment: the same session, working.
+  5. Refusals in two tabs at once: one renewal request for both.
+- **GoTrue, on the local stack** (`tests/db/session-answers.test.mjs`, "F-1"):
+  - two renewals of one refresh token at once both answer 200, for the same session, and both work;
+  - `setSession()` accepts a renewed session, and it works;
+  - an ended session's refresh token gets 400 `refresh_token_not_found`;
+  - a malformed one gets 400 `validation_failed`.
+
+**Against `543cbde`:** 7 of the 10 browser proofs fail there.
+- **Guards** (pass there too): proof 1 (`refreshSession()` also installed a renewal), the `refresh_token_not_found` case, and proof 6.
+- **The dropped-connection case** fails there only on its "untouched" check: the library retried the renewal and saved a renewed session, so the session wasn't lost.
+
+**The remaining limitation, stated as the review asks:** R4 holds for the renewal this fix controls, after a `game` 401. It does not hold for renewals the library starts itself:
+- its background renewal, about an hour after each sign-in;
+- a renewal before sending a request, when the device's clock says the token has expired.
+
+On a 500 or 429 those still remove the session. **R4 is not claimed as universal.** Background renewal is a separate tracked investigation (`docs/backlog.md`), with option B as one possible remedy.
+
+**F-2:** the stuck-lock case in another tab is recorded in the backlog as a separate investigation, as asked.
+
+**Runs and CI for this correction:** section 19.
+
+## 19. Runs and CI after the F-1 correction
+
+**Local, on the owner's Windows laptop, with the local stack stopped:**
+
+| Run | Engine and file tests | Browser |
+|---|---|---|
+| 1 | 65 of 65 | 281 of 281 |
+| 2 | 65 of 65 | 281 of 281 |
+| 3 | 65 of 65 | 281 of 281 |
+
+- **Browser:** on `23a5b44`, the correction itself; later commits don't touch `public/` or `tests/ui/`. 281 is 271 plus the 10 F-1 proofs.
+- **Engine:** after the identity test's list gained the renewal lock's name, `clickmonster.renew` (deviation 8). The first three engine runs failed only that test, which caught the new name: 64 of 65.
+- **The database suite,** once locally with the stack up: pgTAP 42 of 42, and 17 of 17 tests (the F-1 GoTrue proof added), plus the opt-in one, skipped.
+
+**CI:** recorded on PR #55 once the run on the pushed head completes.
 

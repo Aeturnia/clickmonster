@@ -92,6 +92,21 @@ A separate staging Supabase project is dropped. The live sign-in session above c
 
 ## Follow-ups (not blocking)
 
+- **The sign-in library's own renewals discard a session on a temporary failure** (from the sign-out fix's F-1 review, 2026-11-19; a security-hardening investigation before the public launch).
+  - **What happens:** supabase-js 2.45.4 treats only 502, 503, 504 and "no response" as temporary. On a 500 or 429 during a renewal it starts itself, it removes the saved session and signs the player out. That covers its background renewal (`autoRefreshToken`, about an hour after each sign-in) and a renewal before a request when the device's clock says the token has expired.
+  - **What the sign-out fix covers:** only the renewal after a `game` 401, which is now the client's own (`docs/sign-out-report.md`, section 18).
+  - **To investigate:**
+    - option B, turning off the library's background renewal and renewing in `net.js` the same way;
+    - a newer supabase-js, if it treats these failures differently (a similar report exists upstream, supabase-js issue 2715);
+    - the cross-tab and scheduling risks either brings.
+  - **Not authorized.**
+
+- **A tab's stuck sign-in lock** (F-2 of the sign-out fix's review, 2026-11-19).
+  - **What happens:** the library's renewal, sign-in and sign-out wait for one lock shared by every tab of the site, with no time limit. If one tab's request never finishes, the other tabs' library calls wait behind it.
+  - **What the sign-out fix covers:** a sign-out still clears the session after 5 s, and other tabs follow through the `storage` event.
+  - **To investigate:** whether recovery in the *other* tabs can be made independent of a blocked lock.
+  - **Not authorized.**
+
 - **The `admin` function answers 401 for any sign-in check failure** (from the sign-out scope's review, 2026-11-19; deferred there by decision, Q2).
   - **What it does:** `supabase/functions/admin/index.ts:672` answers 401 whenever `getUser` gives no user: an ended session, a bad token, or the sign-in service being briefly unreachable. Staff can't tell an outage from a session that has ended.
   - **The fix:** the same classification as the `game` function's, once that exists (`docs/sign-out-scope.md`, 5.2): 401 only for a definitive refusal, 503 otherwise, from the shared `sessionFailure()` rule.
