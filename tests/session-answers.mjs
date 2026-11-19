@@ -12,4 +12,7 @@ export const GOTRUE_ANSWERS = {
   malformedGetUser: { name: 'AuthApiError', status: 403, code: 'bad_jwt' },
   noTokenGetUser: { name: 'AuthSessionMissingError', status: 400, code: null },
   deletedGetUser: { name: 'AuthApiError', status: 403, code: 'user_not_found' },
+  // A genuinely issued token left to expire (the opt-in test, run once with jwt_expiry = 30 on the
+  // local stack, then restored). Its refresh token still renewed normally.
+  expiredGetUser: { name: 'AuthApiError', status: 403, code: 'bad_jwt' },
 };

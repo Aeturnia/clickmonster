@@ -14,7 +14,6 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import vm from 'node:vm';
 import { readFileSync } from 'node:fs';
-import { createHmac } from 'node:crypto';
 import { GOTRUE_ANSWERS } from '../session-answers.mjs';
 
 // The vendored browser build, byte-identical to the npm package the functions import
@@ -27,7 +26,7 @@ globalThis.location ??= new URL('http://127.0.0.1/');
 vm.runInThisContext(readFileSync(new URL('../../public/vendor/supabase-js@2.45.4/supabase.js', import.meta.url), 'utf8'), { filename: 'supabase.js' });
 const { createClient } = globalThis.supabase;
 
-let API, ANON, SERVICE, JWT_SECRET;
+let API, ANON, SERVICE;
 const RUN = `t${Date.now()}`;
 const PASSWORD = 'local-session-password-1';
 const made = [];
@@ -54,23 +53,10 @@ const getUser = async (token) => shape((await anon().auth.getUser(token)).error)
 const logout = async (token, scope) => shape((await anon().auth.admin.signOut(token, scope)).error);
 const renew = async (refresh) => shape((await anon().auth.refreshSession({ refresh_token: refresh })).error);
 
-// An expired copy of a real access token, signed as the local stack signs (HS256 with its JWT
-// secret). Returns null if the stack signs some other way; that case is then reported as not measured.
-function expired(token) {
-  const [h, p] = token.split('.');
-  const header = JSON.parse(Buffer.from(h, 'base64url'));
-  if (header.alg !== 'HS256' || !JWT_SECRET) return null;
-  const claims = JSON.parse(Buffer.from(p, 'base64url'));
-  claims.exp = Math.floor(Date.now() / 1000) - 3600;
-  const body = Buffer.from(JSON.stringify(claims)).toString('base64url');
-  const sig = createHmac('sha256', JWT_SECRET).update(`${h}.${body}`).digest('base64url');
-  return `${h}.${body}.${sig}`;
-}
-
 before(() => {
   const out = execFileSync(process.platform === 'win32' ? 'npx.cmd' : 'npx', ['--no-install', 'supabase', 'status', '-o', 'json'], { encoding: 'utf8', shell: process.platform === 'win32' });
   const s = JSON.parse(out.slice(out.indexOf('{'), out.lastIndexOf('}') + 1));
-  API = s.API_URL; ANON = s.ANON_KEY; SERVICE = s.SERVICE_ROLE_KEY; JWT_SECRET = s.JWT_SECRET;
+  API = s.API_URL; ANON = s.ANON_KEY; SERVICE = s.SERVICE_ROLE_KEY;
   assert.match(API, /^http:\/\/127\.0\.0\.1:\d+$/, 'local stack only');
 });
 after(async () => {
@@ -89,11 +75,7 @@ test('SO-1b GoTrue\'s answers for each way a token stops working, as supabase-js
   seen.endedLogout = await logout(device.access, 'local');
   seen.endedRenew = await renew(device.refresh);
 
-  // An expired token, a malformed one, and none.
-  const b = await account('expired');
-  const live = await session(b);
-  const old = expired(live.access);
-  seen.expiredGetUser = old ? await getUser(old) : 'not measured: the stack does not sign with HS256';
+  // A malformed token, and none. (An expired one is measured separately, below.)
   seen.malformedGetUser = await getUser('not-a-jwt');
   seen.noTokenGetUser = await getUser('');
 
@@ -106,7 +88,28 @@ test('SO-1b GoTrue\'s answers for each way a token stops working, as supabase-js
 
   console.log(`# SO-1b GoTrue answers (supabase-js 2.45.4): ${JSON.stringify(seen)}`);
   // The rule's fixtures must be these answers (tests/session-answers.mjs).
-  for (const [k, v] of Object.entries(GOTRUE_ANSWERS)) assert.deepEqual(seen[k], v, `${k} changed: the classification rule must be reviewed`);
+  for (const [k, v] of Object.entries(GOTRUE_ANSWERS)) {
+    if (k === 'expiredGetUser') continue; // measured by the opt-in test below
+    assert.deepEqual(seen[k], v, `${k} changed: the classification rule must be reviewed`);
+  }
+});
+
+// An expired token, genuinely issued and left to expire. Opt-in, because it needs the local stack
+// started with a short token lifetime (supabase/config.toml, [auth] jwt_expiry, for one run only):
+//   SO1B_EXPIRED=1 node --test tests/db/session-answers.test.mjs
+// It waits for the token's own expiry, records getUser's answer without renewing, then checks that
+// the session's refresh token still renews normally.
+test('SO-1b an expired access token, and its normal renewal (opt-in: SO1B_EXPIRED=1, short jwt_expiry)', { skip: !process.env.SO1B_EXPIRED }, async () => {
+  const acct = await account('expired');
+  const live = await session(acct);
+  const claims = JSON.parse(Buffer.from(live.access.split('.')[1], 'base64url'));
+  const lifetime = claims.exp - claims.iat;
+  assert.ok(lifetime <= 120, `the stack must run with a short jwt_expiry for this test (got ${lifetime} s)`);
+  const wait = (claims.exp * 1000) - Date.now() + 5000; // past its expiry, with a margin
+  await new Promise((r) => setTimeout(r, Math.max(0, wait)));
+  const seen = await getUser(live.access);
+  console.log(`# SO-1b expired token (lifetime ${lifetime} s): ${JSON.stringify(seen)}; renewal: ${JSON.stringify(await renew(live.refresh))}`);
+  assert.deepEqual(seen, GOTRUE_ANSWERS.expiredGetUser, 'the expired-token answer changed: the classification rule must be reviewed');
 });
 
 test('SO-1 signing out with scope=local leaves the account\'s other session working; a late local sign-out with an old token ends only its own', async () => {

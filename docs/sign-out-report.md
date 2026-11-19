@@ -1,6 +1,8 @@
 # Sign-out and session recovery: report
 
-**Status: implementation paused at the SO-1b review gate (2026-11-19).** SO-1b's measurements contradict one statement of the approved scope (section 4). As the scope requires, the work stops for review before `sessionFailure()` or any client code is written.
+**Status: paused at a second review gate (2026-11-19), after the expired-token measurement (section 8).**
+- **The first gate** (section 4) was decided by the review of `4ac3740`: the amended classification of section 5 is approved.
+- **The second gate:** the expired token, measured as the review ordered, comes back exactly as a malformed one does. Under the approved client design, that would sign out a player whose session can still be renewed. No `sessionFailure()` or client code is written yet.
 - **Contract:** `docs/sign-out-scope.md`, approved at `0074459` and merged as PR #53 (`bfad9b3`).
 - **Authorization:** the owner authorized the implementation on 2026-11-19 ("Sign-out fix implementation authorized").
 - **Branch:** `claude/sign-out`, based on `main` at `bfad9b3`.
@@ -27,7 +29,7 @@
 | `getUser` with a malformed token | `AuthApiError`, 403, `bad_jwt` |
 | `getUser` with a deleted user's token | `AuthApiError`, 403, `user_not_found` |
 | `getUser` with no token | `AuthSessionMissingError`, 400, no code |
-| `getUser` with an expired token | **Not measured.** The local stack signs its tokens with a key pair, not the HS256 secret the test could use to make an expired copy |
+| `getUser` with an expired token | `AuthApiError`, 403, `bad_jwt`, the same as a malformed token. Measured in a second run (section 8); renewal with its refresh token still worked |
 
 **Why an ended session isn't an `AuthApiError`:** GoTrue answers it with 403 `session_not_found`. supabase-js 2.45.4 recognises that code and throws its own `AuthSessionMissingError` instead, which has no status of GoTrue's and no code. That is the library's code, read in the vendored build:
 - `if ("session_not_found" === code) throw new AuthSessionMissingError()`;
@@ -69,11 +71,9 @@ The scope expected the list to be set by evidence, but it fixed the error *type*
 - every "ended" entry is either measured, or is GoTrue's own statement that the session or user doesn't exist;
 - everything unknown stays "unavailable", which keeps the saved session, and Sign out always works.
 
-**The expired token, two options:**
-1. **Measure it** before the rule is written, by lowering the local stack's `jwt_expiry` for one run (local only, restored after), and add the answer to the fixtures.
-2. **Leave it unmeasured.** In the client, the library renews an expired token before using it, so an expired token rarely reaches the `game` function. An expired token's actual answer then falls to "unavailable" unless it is one of the listed answers. The report would say so.
+**The expired token:** the review chose to measure it (option 1). It is section 8.
 
-Option 1 is proposed: it costs one local run.
+**Approved** by the review of `4ac3740`, restricted to the `getUser` check on the server.
 
 **Nothing else in the scope changes.** R1 to R7, the invariant, 5.1's fallback (which this evidence makes more necessary), the startup budget plan, and SO-1 to SO-13 stand. SO-6b's Node test will use the recorded answers in `tests/session-answers.mjs` as fixtures.
 
@@ -83,9 +83,42 @@ Option 1 is proposed: it costs one local run.
 - **Two sessions of one account:** signing out one with `scope=local` leaves the other's `getUser` and renewal working, and the signed-out session has ended.
 - **A late `logout?scope=local`** with an older session's token, sent after a newer session of the same account exists, leaves the newer one working. That is the server side of SO-13 (scope 5.1, point 5).
 
-## 7. Next, when the amendment is decided
+## 7. Next, once the second gate is decided
 
-1. **Measure the expired token,** if option 1 is chosen.
-2. **Write `sessionFailure()`** and its Node test from the recorded answers.
-3. **Then the client, the `game` function, the harness and the rest of SO-2 to SO-13,** as the scope describes.
-4. **Then the report's remaining sections:** evidence, runs and CI, deviations, and what wasn't verified.
+1. **Write `sessionFailure()`** and its Node test from the recorded answers.
+2. **Then the client,** with the renewal step if approved (section 8), the `game` function, the harness, and the rest of SO-2 to SO-13.
+3. **Then the report's remaining sections:** evidence, runs and CI, deviations, and what wasn't verified.
+
+## 8. The expired token (measured 2026-11-19, as the review of `4ac3740` ordered)
+
+**How it was measured, on the local stack only:**
+1. `supabase/config.toml`'s `[auth] jwt_expiry` was set from 3600 to 30, and the stack restarted.
+2. A test account signed in, and its genuinely issued access token was left to expire, plus 5 s.
+3. `getUser` with the expired token was recorded, without renewing. Then the session's refresh token was renewed separately.
+4. The setting was restored. `git diff` shows `supabase/config.toml` unchanged, and after a restart a newly issued token lasts 3600 s.
+5. Hosted settings were not touched.
+
+The opt-in test is in `tests/db/session-answers.test.mjs` (run with `SO1B_EXPIRED=1` and a short `jwt_expiry`; skipped otherwise, including in CI). Its answer is in `tests/session-answers.mjs`.
+
+**The answers:**
+- `getUser` with the expired token: **`AuthApiError`, 403, `bad_jwt`.**
+- Renewal with the same session's refresh token: **it worked.**
+
+**Why this is a second gate.** GoTrue answers an expired token and a malformed one identically, and the approved rule classes `bad_jwt` as "ended" (401). That is right for the server: the token can't be used. But the approved client design then reacts to every 401 by ending the session (scope 5.2: "401 from the `game` function means the session is over"), and an expired token's session can still be renewed.
+- **When would the `game` function see an expired token?** supabase-js renews before sending when the token has expired by the device's clock. So an expired token reaches the server when:
+  - the device's clock is behind the server's by more than the library's renewal margin;
+  - or the token expires in transit.
+- **The result would be a new defect:** such a player would be signed out, regularly, by a session that still works. Today they get an error message instead.
+
+**The proposed refinement, for review: one renewal before ending.** The server rule stays as approved. The client, on a 401 from the `game` function:
+1. **Renews once** (`sb.auth.refreshSession()`).
+2. **If the renewal succeeds:** repeats the request once with the new token. A second 401 then ends the session.
+3. **If the renewal is refused** (for a session ended elsewhere, measured: `refresh_token_not_found`): the library itself removes the session and emits `SIGNED_OUT`, and the client's `endSession()` makes sure of it (scope 5.1's fallback). Then the form, as R2 requires.
+4. **If the renewal can't reach the service** (`AuthRetryableFetchError`): "unavailable", the gate with Try again, and the session kept, as R4 requires.
+
+**What it changes:**
+- **The scope:** only the client's reaction to a 401 (5.2), at start-up and during play. The server, R1 to R7, the invariant and SO-1 to SO-13 are unchanged.
+- **One criterion gains a case:** SO-2 and SO-3, where a 401 for an expired but renewable token renews and carries on (start-up and play), and an ended session still reaches the form.
+
+**The alternative,** a separate server answer for an expired token (decoding the token's `exp` when GoTrue says `bad_jwt`), is not proposed. It puts token parsing in the function, and the client would still need the renewal step.
+
