@@ -1,6 +1,6 @@
 # Sign-out and session recovery: report
 
-**Status: implemented, with the correction for F-1 (section 18); at the independent implementation review gate (2026-11-19).** Nothing is deployed or merged.
+**Status: implemented, with the corrections for F-1 (section 18) and F-3 and F-4 (section 20); at the independent implementation review gate (2026-11-19).** Nothing is deployed or merged.
 - **The review gates on the way** (sections 4 to 8):
   - **First:** SO-1b showed that an ended session isn't an `AuthApiError`. The review of `4ac3740` approved the amended classification (section 5).
   - **Second:** an expired token is answered exactly as a malformed one. The review of `4853b02` approved one renewal before ending a session, with safeguards (section 9).
@@ -166,7 +166,7 @@ The opt-in test is in `tests/db/session-answers.test.mjs` (run with `SO1B_EXPIRE
 - `entry.js` as the page's only auth listener;
 - L-1's account isolation.
 
-**The startup budget:** the first paint is **33,949 of 34,000 bytes** (33,989 before). `authError()` moved out and the session-note line came in; no comment was removed and nothing was minified.
+**The startup budget:** the first paint is **33,949 of 34,000 bytes** (33,989 before; 33,960 after section 20). `authError()` moved out and the session-note line came in; no comment was removed and nothing was minified.
 
 ## 11. Acceptance criteria (scope, section 6)
 
@@ -185,7 +185,7 @@ Every browser test was run against `main` at `bfad9b3` (`UI_PUBLIC_DIR`): **18 o
 | SO-7 | **Met.** After recovering, the `fresh` account signs in: hero creation, no hero carried over, no hero bar of the first | **Fails:** no recovery |
 | SO-8 | **Met.** Two tabs: signing out in one returns the other to the entrance, also when the server refused it | **The refused case fails;** the normal case is a guard |
 | SO-9 | **Met** at 390 x 844, 844 x 390 and 1440 x 900: the form on screen, the email field focusable, 0 axe violations | **All fail:** the gate |
-| SO-10 | **Met:** 33,949 bytes | Guard |
+| SO-10 | **Met:** 33,949 bytes, and 33,960 after section 20 | Guard |
 | SO-11 | **Met:** the password recovery tests pass unchanged | Guard |
 | SO-12 | **Reviewed:** the new code logs nothing and keeps no token. The message kept across a reload is the message's text only, and the comparison before removing is made in memory | Review |
 | SO-13 | **Met.** This tab: a hung sign-out falls back, the player signs in again, the late answer clears nothing, and the game works. Compare before removing: a session saved meanwhile is left alone. Two tabs: A's sign-out hangs while B signs in as another account; B's session survives A's late answer | **This tab and two tabs fail.** Compare-before-removing passes as a guard: the old code never removes anything |
@@ -357,4 +357,58 @@ On a 500 or 429 those still remove the session. **R4 is not claimed as universal
 - **The database suite,** once locally with the stack up: pgTAP 42 of 42, and 17 of 17 tests (the F-1 GoTrue proof added), plus the opt-in one, skipped.
 
 **CI:** recorded on PR #55 once the run on the pushed head completes.
+
+## 20. The review of `ef20c15`: F-3 and F-4
+
+**The review:** F-1 is accepted for the controlled 401 renewal, and CI run `44468455936` verified. Changes requested for two session-identity concerns: a late result of session S1 must never have authority over S2.
+
+### F-3 (blocking): a late refusal of S1 could sign out S2
+
+**Before:** on `refresh_token_not_found`, `renew()` returned "ended" without checking that S1 was still the saved session. `endSession()` then ended whatever was saved, possibly S2: a new sign-in of the same account, which doesn't advance the game's generation.
+
+**After:**
+1. **The refusal is re-checked.** "Ended" only while the browser still holds S1's refresh token. Otherwise S1 was renewed meanwhile (the same `session_id`: resend) or replaced (stale: nothing ended, nothing resent).
+2. **`err.ended` carries the refused session** (`err.session`), and the callers pass it (`endSession(err.session)` in `main.js` and `entry.js`).
+3. **`endSession(expected)` ends nothing** if the saved session isn't the same sign-in as `expected`: the same refresh token, or the same session renewed.
+4. **The sign-out fallback compares sign-ins, not strings.** A renewed S1 (its token rotated meanwhile) is still removed, and a newer S2 never is.
+
+**Tests:**
+- **A held renewal of S1;** S2 of the same account saved meanwhile; then S1's token refused with `refresh_token_not_found`. The result is stale, not ended: S2 stays saved, signed in, and working.
+- **`endSession(S1)` with S2 saved:** no reload, nothing signed out, S2 kept.
+- **Both fail on `ef20c15`.**
+
+### F-4: the hand-over to `setSession()`
+
+**What was checked:** `setSession()` (supabase-js 2.45.4) waits for the library's lock, checks the token with the server (`GET /auth/v1/user`), then saves and announces the session. The client's own check of the saved session ran before that, not with it.
+
+**What the tests found:**
+- **Another tab saving a new session during the hand-over: the race is real.** Tab A's renewal was fetched and its `setSession()` held at its token check. Tab B then signed in again (S2, the same account), and A's renewal was saved over S2. On `ef20c15`: A carried on with S1's renewal, and S2 was gone.
+  - The library's lock doesn't prevent this, because `signInWithPassword()` saves without taking it.
+- **A sign-out in the same tab during the hand-over: no race.** The library runs its calls in order under its lock, so the sign-out comes after the pending save and clears it. When the sign-out falls back to the reload, the reload drops the pending save. Both orders were tested (the hand-over released before and after the 5 s limit); the session isn't restored, on `ef20c15` and now.
+
+**The correction:** the library saves through a guard, its own `storage` option, which supabase-js supports.
+- **Every save passes unchanged,** except a renewal being installed. That one is saved only if the browser still holds the session it renewed.
+- **The check runs as the library saves,** inside its lock, and synchronously with the write. A save that would overwrite a newer session is refused before the library announces anything, so no tab is told about a session that wasn't kept.
+- **`renew()` then reports the session as replaced:** stale, with nothing resent.
+- **Test:** the cross-tab case above. A's renewal is refused at the save, nothing is resent, and S2 stays saved. It fails on `ef20c15`.
+
+**What it can't cover:** another tab writing to `localStorage` in the instant between the guard's read and its write. The two are adjacent synchronous calls, and no browser API makes them atomic across processes.
+
+### Startup budget
+
+The first paint is **33,960 of 34,000 bytes.** The callers pass `err.session`.
+
+### Runs and CI after F-3 and F-4
+
+**Local, on `c6f20aa`** (the code and tests as pushed), with the local stack stopped:
+
+| Run | Engine and file tests | Browser |
+|---|---|---|
+| 1 | 65 of 65 | 286 of 286 |
+| 2 | 65 of 65 | 286 of 286 |
+| 3 | 65 of 65 | 286 of 286 |
+
+- **The browser count:** 286 is 281 plus the 5 F-3 and F-4 tests.
+- **The database suite** is unchanged since section 19; it runs in CI.
+- **CI:** recorded on PR #55 once the run on the pushed head completes.
 

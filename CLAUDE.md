@@ -31,7 +31,7 @@ Read these first:
     - **What it covers:** the entrance's news and maintenance line (`js/entry-news.js`, loaded after the first paint) and the article pages (`netlify/edge-functions/news.js`).
     - **Findings:** L4-01 (the maintenance notice expires while the page is open), L4-02 (405 headers) and L4-03 (an open-ended notice under way comes first) are closed.
   - **Final baseline** on `main` at `d754dad`: engine 47/47 and browser 178/178, in each of 3 runs.
-  - **The entrance's startup budget** (LAC-2) is 34,000 decoded bytes: revised to 32,000 in the L-4 review, then to 34,000 by the owner for password recovery (2026-11-17). It is 33,987 with R-1, 33,989 with MR-B1's rename ("Monstra Regna" is one character longer, in the title and the heading), and 33,949 after the sign-out fix moved the sign-in error wording to `net.js`. Don't strip comments to meet it.
+  - **The entrance's startup budget** (LAC-2) is 34,000 decoded bytes: revised to 32,000 in the L-4 review, then to 34,000 by the owner for password recovery (2026-11-17). It is 33,987 with R-1, 33,989 with MR-B1's rename ("Monstra Regna" is one character longer, in the title and the heading), and 33,960 after the sign-out fix moved the sign-in error wording to `net.js`. Don't strip comments to meet it.
   - **Still open:**
     - the backlog's release checks: before release, sign-in on the live site and unpublishing; after release, the live maintenance line and the rest;
     - `/news` pagination (a follow-up);
@@ -144,7 +144,9 @@ Read these first:
   - **Other tabs** follow a removed session through a `storage` listener.
   - **`api(action, args, isCurrent)`:** on a 401 from `game`, one renewal, then the request once more, only if the sign-in is unchanged (`err.stale` otherwise).
     - **The renewal is net.js's own request,** not `refreshSession()`: the library would itself remove the session on a 500 or 429. It runs one at a time, with a lock across tabs, and is installed with `setSession()`.
-    - **Only `refresh_token_not_found` ends a session** (`err.ended`). A 429 backs off; anything else keeps the session.
+    - **Only `refresh_token_not_found` ends a session** (`err.ended`, with `err.session`), and only while the browser still holds that session. A 429 backs off; anything else keeps the session.
+    - **The library saves through a guard** (its `storage` option): a renewal being installed is refused at the save, inside the library's lock, if the browser no longer holds the renewed session. A late result of one session never overwrites or ends a newer one, even of the same account.
+    - **`endSession(expected)`** ends only that session.
     - **Nothing else is retried.**
     - **The library's own background renewal** still discards a session on a 500 or 429 (backlog).
   - **The server:** the `game` function answers 401 only when `sessionFailure()` (`engine/session.js`) says "ended", and 503 otherwise. Its list comes from GoTrue's measured answers (`tests/session-answers.mjs`).
@@ -193,7 +195,7 @@ Read these first:
   - **Tests:** the handler is tested in Node (`tests/news-pages.test.mjs`), and the harness serves `/news` through it.
   - **The entrance's news** (`js/entry-news.js`) loads only after the first contentful paint, and failures show nothing.
 - **Password recovery: R-1 implemented and accepted,** pending production activation. It was merged as PR #45 (`48be811`, 2026-11-17). See `docs/password-recovery-r1-report.md`; the scope is `docs/password-recovery-scope.md`, PR #44 (`031a026`).
-  - **The startup budget** has 51 bytes of room (33,949 of 34,000, after the sign-out fix moved the sign-in error wording to `net.js`). Plan for that before touching `entry.js`, `index.html` or `entry.css`.
+  - **The startup budget** has 40 bytes of room (33,960 of 34,000, after the sign-out fix moved the sign-in error wording to `net.js`). Plan for that before touching `entry.js`, `index.html` or `entry.css`.
   - **The guard** is in `entry.js`, in the first paint. A reset link, its error, a `PASSWORD_RECOVERY` event, or the `clickmonster.recovery` marker for the saved session's user holds the game back: no start and no preload. It is a UI guard, not server-enforced.
   - **The rest** is lazily loaded: `js/entry-recover.js`.
   - **`entry.js` stays the only auth listener;** the module gets sessions through hooks.
@@ -222,7 +224,7 @@ Read these first:
 
 ```
 npm test                 # engine, entrance file checks, the startup budget, news rules, the news page handler, the town rule, the log rules and the session rule (65)
-npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (281)
+npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (286)
 npm run test:db          # database (pgTAP, 42) and API/function/recovery/session tests (17, plus 1 opt-in) on the LOCAL Supabase stack, with Mailpit
 npx playwright install chromium   # once
 ```
