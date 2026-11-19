@@ -451,5 +451,13 @@ The first paint is **33,960 of 34,000 bytes.** The callers pass `err.session`.
 
 - **The browser count:** 288 is 286 plus the two F-5 tests. The SO-1 to SO-13 tests and the F-1 to F-4 proofs are all among them.
 - **On `4218e2f`:** the F-5 race test fails and the guard test passes, as stated above.
-- **CI:** recorded on PR #55 once the run on the pushed head completes.
+- **CI, run `44538744904`, on head `8aa0349`** (tested merge commit `8750070`):
+  - **Attempt 1:** engine 65 of 65 and database passed. The browser job failed **1 of 288**: `P4-04 a failed save unlocks the draft…` (admin console) timed out after 30 s in its setup, waiting for the admin sign-in form. Its neighbours ran in 2.5 to 5 s, and it passed in all three local runs and three more runs of the admin tests.
+  - **The diagnostics** (the failure artifact, downloaded with the owner's approval; not committed):
+    - **The cause:** the browser's request for `/js/data/stats.js`, one of the admin page's modules, failed with **`net::ERR_NO_BUFFER_SPACE`**. The page's script never ran: an empty body, no `#login`, and no element of the admin console.
+    - **Not this change:** `net.js` loaded normally (206 ms). There were no page errors, no bad responses, and no request to the fake backend at all.
+    - **Not a slow runner:** the machine's CPU was at 12.6%, Node at 1.2%, the event-loop delay idle (mean 31 ms, as an idle Windows process reads), and 5.5 GB free.
+    - **Classified as infrastructure:** the Windows runner's socket-buffer fault already in the backlog, its fourth occurrence.
+  - **Attempt 2,** the one re-run of the failed job the owner authorized for that finding, with no code changed: **passed in full:** browser 288 of 288, and engine and database again (65 of 65; 42 of 42 pgTAP, and 17 of 17 plus 1 opt-in, skipped). The run's conclusion is success. It supports the infrastructure diagnosis; it doesn't show the runner fault is gone. Attempt 1's failure stands on record.
+  - **Kept separate:** the infrastructure investigation stays apart from the sign-out correction, whose F-5 evidence is reviewed on its own.
 

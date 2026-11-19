@@ -158,15 +158,17 @@ A separate staging Supabase project is dropped. The live sign-in session above c
   - **The diagnostics:** `diag.json` showed no page errors, no bad responses, and low CPU and memory.
   - **The likely cause** is the runner's network stack under the suite's many short connections, after more than 200 tests. It isn't established.
   - **Next step, when authorized:** see whether it recurs, and whether the harness's server should keep connections alive or the job should limit them. Unlike the `PR-4a` timeout above, this one has diagnostics; they are not known to share a cause.
-  - **It recurs.** It has been seen three times on 2026-11-18 and 19:
+  - **It recurs.** It has been seen four times on 2026-11-18 and 19:
     - PR #47's docs-only commit (`/js/data/masteries.js`);
     - run `44410857655` above;
     - the `push` run on `main` after GP-1's merge (run `44432245764`, attempt 1): `GP-B4` failed at `page.goto: net::ERR_NO_BUFFER_SPACE`.
+    - PR #55's run on `8aa0349` (run `44538744904`, attempt 1): `P4-04` (admin console); the request for `/js/data/stats.js` failed, so the admin page's script never ran.
 
     **The re-runs:**
     - PR #47's run (`44238281270`): attempt 2, authorized by the owner, passed.
     - Run `44410857655`: attempt 2 was started and then cancelled, most likely when the next push to the PR superseded it; it gave no result.
     - The `push` run after GP-1's merge (`44432245764`): attempt 2, authorized by the owner, passed 248/248.
+    - PR #55's run on `8aa0349` (`44538744904`, 2026-11-19): `P4-04` in the admin console tests; its page's request for `/js/data/stats.js` failed, so the admin script never ran. Attempt 2, authorized by the owner after the diagnostics showed the fault: passed 288/288.
 
     The passing re-runs support the diagnosis but don't fix the fault.
 
