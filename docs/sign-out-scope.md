@@ -1,6 +1,6 @@
 # Sign-out and session recovery: scope
 
-**Status: conditionally approved at `c00b4ef`; revised for its three required refinements (section 12), for final scope acceptance.** Documentation only: nothing is implemented, nothing is deployed, and no production auth setting is read or changed.
+**Status: approved at `0074459` and merged as PR #53 (`bfad9b3`). Implemented on `claude/sign-out` (PR #55), with two amendments decided at review gates: the classification of an ended session (5.2) and one renewal before ending a session. See `docs/sign-out-report.md`, sections 5, 8 and 9.** It was earlier conditionally approved at `c00b4ef` and revised for three refinements (section 12). Documentation only: nothing is implemented, nothing is deployed, and no production auth setting is read or changed.
 - **Priority: P1,** a user-facing sign-in recovery defect. On current evidence it isn't a security incident.
 - **Ordered by:** the owner, 2026-11-19, after the defect was found on the live site. Implementing, merging and deploying each wait for this scope's approval and their own authorization.
 - **Kept separate from GP-1:** gameplay polish is closed; this defect isn't a GP-1 regression.

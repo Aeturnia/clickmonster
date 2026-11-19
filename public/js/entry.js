@@ -58,16 +58,6 @@ function clearMsg() {
   msg.textContent = '';
   for (const input of [email, password]) { input.removeAttribute('aria-invalid'); input.removeAttribute('aria-describedby'); }
 }
-// What a failed sign-in says. Network failures get our own words; the server's are kept.
-function authError(err) {
-  if (err?.unavailable) return err.message;
-  const text = String(err?.message || '');
-  if (err?.status === 0 || err?.name === 'AuthRetryableFetchError' || /fetch|network/i.test(text)) {
-    return "Can't reach the sign-in service. Check your connection, then try again.";
-  }
-  return text || 'Could not sign in.';
-}
-
 function setMode(next) {
   mode = next;
   const signup = mode === 'signup';
@@ -159,7 +149,7 @@ function recover(then) {
   recovery ||= import('./entry-recover.js').then((m) => m.start({
     loadNet, clearMarker, requests: RECOVERY_REQUESTS, signInHeading: () => setMode(mode),
     unguard() { recovering = false; clearMarker(); }, // the password is changed
-    cancel: () => net?.signOut({ scope: 'local' }),
+    cancel: () => net?.signOut(),
     release(text) { if (current) enterGame(++gen); if (text) status.textContent = text; },
   }));
   recovery.then(then, () => { recovery = null; say('The password reset could not be loaded. Check your connection, then reload the page.', 'bad'); });
@@ -267,6 +257,7 @@ async function enterGame(my) {
     hideApp();
     root.classList.remove('resuming', 'entering');
     status.textContent = '';
+    if (err?.ended) return net.endSession(err.session); // the server ended it: the form, not Try again
     form.hidden = true;
     modeBtn.parentElement.hidden = true;
     iface.hidden = true;
@@ -347,7 +338,7 @@ form.addEventListener('submit', async (e) => {
       if (error) throw error;
     }
   } catch (err) {
-    say(authError(err), 'bad');
+    say(err?.unavailable ? err.message : net.authMessage(err), 'bad'); // net.js has the wording
   } finally {
     setPending(false);
   }
@@ -399,6 +390,8 @@ submit.disabled = false;
 modeBtn.disabled = false;
 // A reset link opened over this page changes only the fragment: reload, so the client reads it.
 addEventListener('hashchange', () => { if (RESET_LINK.test(location.hash)) location.reload(); });
+// After a sign-out that had to clear the session itself and reload (net.js), its message.
+try { const note = sessionStorage.getItem('clickmonster.note'); if (note) { sessionStorage.removeItem('clickmonster.note'); say(note); } } catch { /* none kept */ }
 if (recovering) {
   root.classList.remove('resuming');
   recover((r) => r.arrived());

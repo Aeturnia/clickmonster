@@ -83,18 +83,27 @@ export function makeHero({ name = 'Bartholomew Thorne', race = 'halfling', level
   return c;
 }
 
-function fakeJwt(sub, email, expiresIn = 3600) {
+// Sessions, as GoTrue keeps them: each sign-in starts a session (session_id, numbered in order),
+// its tokens carry that id, and a renewal keeps it while rotating the refresh token
+// (refresh-<account>~<session>~<n>). So a session can end on the server (FakeBackend.endSessions())
+// while one started after it keeps working, and a renewed session can be told from a new sign-in.
+let SESSION = 0;
+let ROTATION = 0;
+function fakeJwt(sub, email, expiresIn = 3600, sessionId = ++SESSION) {
   const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
   const exp = Math.floor(Date.now() / 1000) + expiresIn;
-  return `${b64({ alg: 'HS256', typ: 'JWT' })}.${b64({ sub, email, role: 'authenticated', aud: 'authenticated', exp })}.signature`;
+  return `${b64({ alg: 'HS256', typ: 'JWT' })}.${b64({ sub, email, role: 'authenticated', aud: 'authenticated', exp, session_id: sessionId })}.signature`;
 }
+// The account and session a refresh token belongs to (null if it isn't one of ours).
+const refreshOf = (t) => { const m = /^refresh-([^~]+)(?:~(\d+))?/.exec(String(t)); return m && { acct: Object.values(ACCOUNTS).find((x) => x.id === m[1]), session: Number(m[2]) || null }; };
+const claims = (token) => { try { return JSON.parse(Buffer.from(String(token).split('.')[1], 'base64url').toString()); } catch { return null; } };
 
 // A session as supabase-js stores it (localStorage 'clickmonster.auth') and as the token endpoint
 // returns it. expiresIn below zero gives an expired one, for session-restore tests.
-export function savedSession(acct, expiresIn = 3600) {
+export function savedSession(acct, expiresIn = 3600, sessionId = ++SESSION) {
   return {
-    access_token: fakeJwt(acct.id, acct.email, expiresIn), token_type: 'bearer', expires_in: expiresIn,
-    expires_at: Math.floor(Date.now() / 1000) + expiresIn, refresh_token: `refresh-${acct.id}`,
+    access_token: fakeJwt(acct.id, acct.email, expiresIn, sessionId), token_type: 'bearer', expires_in: expiresIn,
+    expires_at: Math.floor(Date.now() / 1000) + expiresIn, refresh_token: `refresh-${acct.id}~${sessionId}~${++ROTATION}`,
     user: { id: acct.id, email: acct.email, aud: 'authenticated', role: 'authenticated' },
   };
 }
@@ -146,7 +155,15 @@ export class FakeBackend {
     this.holds = {}; // action -> promise: requests for it wait until released
     this.offline = false;
     this.sockets = [];
-    this.revoked = new Set(); // refresh tokens the auth server refuses
+    this.revoked = new Set(); // refresh-<account id>: that account's refresh tokens are refused
+    this.renewed = []; // for each token grant, the session renewed (null for a sign-in)
+    // Sign-out and session recovery (docs/sign-out-scope.md):
+    this.endedBefore = {}; // account id -> its sessions up to this session_id have ended on the server (endSessions())
+    this.refreshFail = null; // the next renewal fails: a status, { status, code, retryAfter }, or 'drop'
+    this.staleTokens = 0; // the next n game calls answer 401, as for an expired access token that still renews
+    this.logoutFail = null; // the next sign-out (local or global): a status, 'drop' or 'hang'
+    this.authHold = null; // a promise the token endpoint waits for (a slow renewal)
+    this.stepHolds = {}; // 'password' or 'user' -> a promise that step waits for (holdStep())
     this.authCalls = []; // grant types requested from /auth/v1/token, in order
     // Password recovery: reset requests ({ email, redirectTo }), changed passwords by user id, password
     // updates and sign-out scopes, in order. recoverStatus = 429 refuses a reset request;
@@ -163,7 +180,19 @@ export class FakeBackend {
     this.quests = quests || generateQuests(hourBucket()).map((q, i) => ({ ...q, id: `quest-${i}`, completedBy: null }));
   }
 
-  failNext(action, status, message) { this.failures.push({ action, status, message }); }
+  failNext(action, status, message) { this.failures.push({ action, status, message }); } // status 'drop': the connection is dropped
+
+  // The account's sessions so far end on the server, as when another device signs out everywhere:
+  // their tokens are refused (game 401; /user and /logout 403 session_not_found, which supabase-js
+  // reports as AuthSessionMissingError) and their renewal is refused. A later sign-in works.
+  endSessions(acct) { this.endedBefore[acct.id] = SESSION; }
+  ended(token) { const c = claims(token); return !!c && (c.session_id || 0) <= (this.endedBefore[c.sub] ?? -1); }
+  endedRefresh(t) { const r = refreshOf(t); return !!r?.acct && (r.session || 0) <= (this.endedBefore[r.acct.id] ?? -1); }
+  // Hold the token endpoint (sign-in and renewal) until the returned function is called.
+  holdAuth() { let release; this.authHold = new Promise((r) => { release = r; }); return () => { this.authHold = null; release(); }; }
+  // Hold only sign-ins (password grants), or only the token check (GET /auth/v1/user, which
+  // supabase-js's setSession() makes under its lock), until the returned function is called.
+  holdStep(step) { let release; this.stepHolds[step] = new Promise((r) => { release = r; }); return () => { delete this.stepHolds[step]; release(); }; }
 
   // Keep requests for an action waiting (a slow server) until the returned function is called.
   hold(action) {
@@ -176,6 +205,7 @@ export class FakeBackend {
     try {
       const payload = JSON.parse(Buffer.from(String(token).split('.')[1], 'base64url').toString());
       if (payload.exp && payload.exp * 1000 < Date.now()) return null; // expired, as the real server refuses it
+      if (this.ended(token)) return null; // its session has ended on the server
       return Object.values(ACCOUNTS).find((a) => a.id === payload.sub) || null;
     } catch { return null; }
   }
@@ -570,9 +600,13 @@ async function cdnFetch(route) {
   await route.fulfill({ response: res, body });
 }
 
-function json(route, status, body) {
-  return route.fulfill({ status, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(body) });
+function json(route, status, body, headers = {}) {
+  return route.fulfill({ status, contentType: 'application/json', headers: { 'access-control-allow-origin': '*', ...headers }, body: JSON.stringify(body) });
 }
+// GoTrue's answer for a token whose session has ended. With the API version header, as GoTrue sends
+// it, supabase-js reads the code and reports AuthSessionMissingError (tests/session-answers.mjs).
+const sessionGone = (route) => json(route, 403, { code: 'session_not_found', msg: 'Session from session_id claim in JWT does not exist' },
+  { 'x-supabase-api-version': '2024-01-01', 'access-control-expose-headers': 'x-supabase-api-version' });
 
 export async function attach(context, backend, baseUrl) {
   await context.route('**/*', async (route) => {
@@ -602,15 +636,29 @@ export async function attach(context, backend, baseUrl) {
     const p = url.pathname;
     try {
       if (p === '/auth/v1/token') {
+        if (backend.authHold) await backend.authHold;
         const body = JSON.parse(req.postData() || '{}');
-        // Refresh tokens are refresh-<account id>; anything else (or a revoked one) is refused.
-        const acct = url.searchParams.get('grant_type') === 'refresh_token'
-          ? (backend.revoked.has(body.refresh_token) ? null : Object.values(ACCOUNTS).find((x) => body.refresh_token === `refresh-${x.id}`))
+        // Refresh tokens are refresh-<account id>~<session>~<n>; one of an ended session, or of an
+        // account in `revoked` (refresh-<account id>), is refused, as GoTrue refuses it.
+        const renewal = url.searchParams.get('grant_type') === 'refresh_token';
+        if (!renewal && backend.stepHolds.password) await backend.stepHolds.password;
+        const r = renewal ? refreshOf(body.refresh_token) : null;
+        const acct = renewal
+          ? (!r?.acct || backend.revoked.has(`refresh-${r.acct.id}`) || backend.endedRefresh(body.refresh_token) ? null : r.acct)
           : Object.values(ACCOUNTS).find((x) => x.email === body.email && (backend.passwords[x.id] ?? x.password) === body.password);
         backend.authCalls.push(url.searchParams.get('grant_type') || 'password');
-        if (!acct && url.searchParams.get('grant_type') === 'refresh_token') return json(route, 400, { error: 'invalid_grant', error_description: 'Invalid Refresh Token: Refresh Token Not Found', msg: 'Invalid Refresh Token: Refresh Token Not Found', code: 'refresh_token_not_found' });
+        if (renewal && backend.refreshFail) {
+          const f = typeof backend.refreshFail === 'object' ? backend.refreshFail : { status: backend.refreshFail };
+          backend.refreshFail = null;
+          if (f.status === 'drop') return route.abort('connectionreset');
+          return json(route, f.status, { code: f.code || 'unexpected_failure', msg: 'Temporary failure' },
+            { 'x-supabase-api-version': '2024-01-01', 'access-control-expose-headers': 'x-supabase-api-version, retry-after', ...(f.retryAfter ? { 'retry-after': String(f.retryAfter) } : {}) });
+        }
+        if (!acct && renewal) return json(route, 400, { error: 'invalid_grant', error_description: 'Invalid Refresh Token: Refresh Token Not Found', msg: 'Invalid Refresh Token: Refresh Token Not Found', code: 'refresh_token_not_found' }, { 'x-supabase-api-version': '2024-01-01', 'access-control-expose-headers': 'x-supabase-api-version' });
         if (!acct) return json(route, 400, { error: 'invalid_grant', error_description: 'Invalid login credentials', msg: 'Invalid login credentials' });
-        return json(route, 200, savedSession(acct));
+        if (!renewal) backend.revoked.delete(`refresh-${acct.id}`); // a new session, a new refresh token
+        backend.renewed.push(renewal ? r.session : null);
+        return json(route, 200, renewal ? savedSession(acct, 3600, r.session) : savedSession(acct));
       }
       // Password recovery (docs/password-recovery-scope.md). A changed password is kept per backend
       // (backend.passwords), never in the shared ACCOUNTS.
@@ -625,10 +673,20 @@ export async function attach(context, backend, baseUrl) {
         }
         return json(route, 200, { id: user.id, email: user.email, aud: 'authenticated', role: 'authenticated' });
       }
+      if (p === '/auth/v1/user' && req.method() === 'GET' && backend.stepHolds.user) await backend.stepHolds.user;
+      if (p === '/auth/v1/user' && backend.ended(token)) return sessionGone(route);
       if (p === '/auth/v1/user') return user ? json(route, 200, { id: user.id, email: user.email, aud: 'authenticated', role: 'authenticated' }) : json(route, 401, { msg: 'no user' });
       if (p === '/auth/v1/logout') {
         const scope = url.searchParams.get('scope') || 'global';
         backend.logouts.push(scope);
+        if (backend.ended(token)) return sessionGone(route); // as GoTrue answers (tests/session-answers.mjs)
+        if (scope !== 'others' && backend.logoutFail) {
+          const f = backend.logoutFail;
+          backend.logoutFail = null;
+          if (f === 'drop') return route.abort('connectionreset');
+          if (f === 'hang') { backend.hungLogout = route; return; } // answered by the test, or never
+          return json(route, f, { msg: 'Internal server error' });
+        }
         if (scope === 'others' && backend.failOthersLogout > 0) { backend.failOthersLogout--; return json(route, 500, { msg: 'Internal server error' }); }
         return route.fulfill({ status: 204 });
       }
@@ -652,8 +710,10 @@ export async function attach(context, backend, baseUrl) {
         const fail = backend.failures.findIndex((f) => f.action === body.action);
         if (fail >= 0) {
           const f = backend.failures.splice(fail, 1)[0];
+          if (f.status === 'drop') return route.abort('connectionreset');
           return json(route, f.status, { error: f.message });
         }
+        if (fnName === 'game' && backend.staleTokens > 0) { backend.staleTokens--; return json(route, 401, { error: 'Please sign in again.' }); }
         if (!user) return json(route, 401, { error: 'Please sign in again.' });
         try {
           const out = fnName === 'admin' ? backend.admin(user, body.action, body.args || {}) : backend.game(user, body.action, body.args || {});

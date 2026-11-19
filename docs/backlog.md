@@ -92,6 +92,21 @@ A separate staging Supabase project is dropped. The live sign-in session above c
 
 ## Follow-ups (not blocking)
 
+- **The sign-in library's own renewals discard a session on a temporary failure** (from the sign-out fix's F-1 review, 2026-11-19; a security-hardening investigation before the public launch).
+  - **What happens:** supabase-js 2.45.4 treats only 502, 503, 504 and "no response" as temporary. On a 500 or 429 during a renewal it starts itself, it removes the saved session and signs the player out. That covers its background renewal (`autoRefreshToken`, about an hour after each sign-in) and a renewal before a request when the device's clock says the token has expired.
+  - **What the sign-out fix covers:** only the renewal after a `game` 401, which is now the client's own (`docs/sign-out-report.md`, section 18).
+  - **To investigate:**
+    - option B, turning off the library's background renewal and renewing in `net.js` the same way;
+    - a newer supabase-js, if it treats these failures differently (a similar report exists upstream, supabase-js issue 2715);
+    - the cross-tab and scheduling risks either brings.
+  - **Not authorized.**
+
+- **A tab's stuck sign-in lock** (F-2 of the sign-out fix's review, 2026-11-19).
+  - **What happens:** the library's renewal, sign-in and sign-out wait for one lock shared by every tab of the site, with no time limit. If one tab's request never finishes, the other tabs' library calls wait behind it.
+  - **What the sign-out fix covers:** a sign-out still clears the session after 5 s, and other tabs follow through the `storage` event.
+  - **To investigate:** whether recovery in the *other* tabs can be made independent of a blocked lock.
+  - **Not authorized.**
+
 - **The `admin` function answers 401 for any sign-in check failure** (from the sign-out scope's review, 2026-11-19; deferred there by decision, Q2).
   - **What it does:** `supabase/functions/admin/index.ts:672` answers 401 whenever `getUser` gives no user: an ended session, a bad token, or the sign-in service being briefly unreachable. Staff can't tell an outage from a session that has ended.
   - **The fix:** the same classification as the `game` function's, once that exists (`docs/sign-out-scope.md`, 5.2): 401 only for a definitive refusal, 503 otherwise, from the shared `sessionFailure()` rule.
@@ -143,15 +158,17 @@ A separate staging Supabase project is dropped. The live sign-in session above c
   - **The diagnostics:** `diag.json` showed no page errors, no bad responses, and low CPU and memory.
   - **The likely cause** is the runner's network stack under the suite's many short connections, after more than 200 tests. It isn't established.
   - **Next step, when authorized:** see whether it recurs, and whether the harness's server should keep connections alive or the job should limit them. Unlike the `PR-4a` timeout above, this one has diagnostics; they are not known to share a cause.
-  - **It recurs.** It has been seen three times on 2026-11-18 and 19:
+  - **It recurs.** It has been seen four times on 2026-11-18 and 19:
     - PR #47's docs-only commit (`/js/data/masteries.js`);
     - run `44410857655` above;
     - the `push` run on `main` after GP-1's merge (run `44432245764`, attempt 1): `GP-B4` failed at `page.goto: net::ERR_NO_BUFFER_SPACE`.
+    - PR #55's run on `8aa0349` (run `44538744904`, attempt 1): `P4-04` (admin console); the request for `/js/data/stats.js` failed, so the admin page's script never ran.
 
     **The re-runs:**
     - PR #47's run (`44238281270`): attempt 2, authorized by the owner, passed.
     - Run `44410857655`: attempt 2 was started and then cancelled, most likely when the next push to the PR superseded it; it gave no result.
     - The `push` run after GP-1's merge (`44432245764`): attempt 2, authorized by the owner, passed 248/248.
+    - PR #55's run on `8aa0349` (`44538744904`, 2026-11-19): `P4-04` in the admin console tests; its page's request for `/js/data/stats.js` failed, so the admin script never ran. Attempt 2, authorized by the owner after the diagnostics showed the fault: passed 288/288.
 
     The passing re-runs support the diagnosis but don't fix the fault.
 
