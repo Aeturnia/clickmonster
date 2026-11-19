@@ -74,9 +74,11 @@ test('movement is bounded by zone size', () => {
   assert.equal(c.loc.y, 2);
 });
 
-test('every cell shares the zone monster list; boss only in lair', () => {
+test('every cell but the town shares the zone monster list; boss only in lair', () => {
   const c = createCharacter('Tester', 'gnome');
   const zone = ZONES[c.loc.zone];
+  assert.deepEqual(monstersHere(c), [], 'heroes start in town, where roaming monsters keep away (gameplay polish F2)');
+  c.loc = { ...c.loc, y: c.loc.y - 1 };
   assert.deepEqual(monstersHere(c).map((m) => m.id), zone.monsters.map((m) => m.id));
   const lair = zone.features.find((f) => f.type === 'lair');
   c.loc = { zone: zone.id, x: lair.x, y: lair.y };
@@ -86,6 +88,7 @@ test('every cell shares the zone monster list; boss only in lair', () => {
 test('a level 1 hero can beat a level 1 monster and earns gold + xp', () => {
   const rng = seeded(7);
   const c = createCharacter('Tester', 'human');
+  c.loc = { ...c.loc, y: c.loc.y - 1 }; // one step out of town
   const rat = ZONES.ashford.monsters[0];
   startBattle(c, rat.id, () => 0.99); // no elite variant
   assert.match(c.battle.log[0].text, /You face a Field Rat!/);

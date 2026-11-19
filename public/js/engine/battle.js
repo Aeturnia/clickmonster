@@ -9,7 +9,7 @@ import { ELEMENTS } from '../data/elements.js';
 import { monsterCombatant, theName, aName } from './monster.js';
 import { playerCombatant, gainXp, maxHp, gemEffects, trainMastery, deathPenalty, addItem } from './character.js';
 import { resolveAttack } from './combat.js';
-import { monstersHere, respawnPoint } from './world.js';
+import { monstersHere, respawnPoint, inTown, currentZone, TOWN_NO_MONSTERS } from './world.js';
 import { randInt, pick, clamp } from './util.js';
 import { mult } from './world-config.js';
 
@@ -19,7 +19,11 @@ const RELIC_CHANCE = 1 / 350;
 
 export function startBattle(char, monsterId, rng = Math.random) {
   if (char.battle && !char.battle.over) throw new Error('You are already fighting!');
-  if (!monstersHere(char).some((m) => m.id === monsterId)) throw new Error('That monster isn’t here.');
+  if (!monstersHere(char).some((m) => m.id === monsterId)) {
+    // Only an ordinary monster gets the town's message; a lair boss on the tile is in the list.
+    if (inTown(char) && currentZone(char).monsters.some((m) => m.id === monsterId)) throw new Error(TOWN_NO_MONSTERS);
+    throw new Error('That monster isn’t here.');
+  }
   if (char.hp <= 0) throw new Error('You are too weak to fight. Rest or visit a healer.');
   const q = char.quest;
   const boosted = q && q.zone === char.loc.zone ? q.variant : null;

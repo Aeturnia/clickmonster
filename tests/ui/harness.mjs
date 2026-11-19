@@ -22,6 +22,7 @@ import { buy, buyAndEquip, sell, equip, unequip, socketGem, extractGem, deposit,
 import { generateQuests, accept, hourBucket } from '../../public/js/engine/quests.js';
 import { canSend } from '../../public/js/engine/chat.js';
 import { duel } from '../../public/js/engine/pvp.js';
+import { startHuntBattle } from '../../public/js/engine/hunt.js';
 import { checkNews, canDeleteNews } from '../../public/js/data/news.js';
 import { newsResponse } from '../../netlify/edge-functions/news.js';
 
@@ -222,6 +223,12 @@ export class FakeBackend {
         if (p.stats) Object.assign(t.stats, p.stats); // a test can make the opponent stronger
         t.hp = maxHp(t);
         duel(c, t, rng);
+      },
+      // Joining a world-boss hunt (the game function's startHuntBattle; the shared damage is not modelled).
+      hunt: () => {
+        const h = this.activeHunts.find((x) => x.id === args.huntId);
+        if (!h) throw Object.assign(new Error('That hunt is over.'), { status: 400 });
+        startHuntBattle(c, h);
       },
       accept: () => accept(c, this.quests.find((q) => q.id === args.questId), now),
       chat: () => {
@@ -755,6 +762,40 @@ export async function settle(page) {
   await page.waitForTimeout(120);
 }
 
+// Records each floating gold or XP cue as it is added to the hero bar (gameplay polish amendment
+// G1). A cue lives 1.6 s, so tests read this record instead of racing to find it. Each record has
+// the cue's text, classes and computed style when added, the XP meter and gold line as they were
+// then, how many times its animation started, and when it was added and removed
+// (performance.now()). Read with page.evaluate(() => window.__cues).
+export async function watchCues(page) {
+  await page.evaluate(() => {
+    window.__cues = [];
+    const top = document.getElementById('top');
+    new MutationObserver((muts) => {
+      for (const m of muts) {
+        for (const n of m.addedNodes) {
+          if (n.nodeType !== 1 || !n.classList.contains('cue')) continue;
+          const cs = getComputedStyle(n);
+          const xp = top.querySelector('#hud-xp .meter');
+          const rec = {
+            text: n.textContent, cls: n.className, ariaHidden: n.getAttribute('aria-hidden'),
+            anim: cs.animationName, opacity: cs.opacity, color: cs.color, background: cs.backgroundColor,
+            inMeter: !!n.closest('.meter'),
+            xpLabel: xp?.querySelector('.meter-name').textContent,
+            xpFit: xp ? ['compact', 'stack'].filter((c) => xp.classList.contains(c)) : null,
+            goldWidth: top.querySelector('#hud-row .hud-res')?.getBoundingClientRect().width,
+            added: performance.now(), removed: null, starts: 0,
+          };
+          n.addEventListener('animationstart', () => { rec.starts++; });
+          n.__cue = rec;
+          window.__cues.push(rec);
+        }
+        for (const n of m.removedNodes) if (n.__cue) n.__cue.removed = performance.now();
+      }
+    }).observe(top, { childList: true });
+  });
+}
+
 // axe-core run; returns violations at or above the given impact.
 const AXE = fs.readFileSync(path.join(ROOT, 'node_modules/axe-core/axe.min.js'), 'utf8');
 // Floating combat numbers are excluded: they are decorative duplicates of the battle log,
@@ -797,6 +838,18 @@ export function bigZone(size = 40, id = 'test-expanse') {
   };
 }
 
+// A zone whose boss lair is on its town tile (gameplay polish GP-F5b). No built-in zone has one;
+// a zone edited in the console could. Pass it to FakeBackend({ zones: [townLairZone()] }).
+export function townLairZone(id = 'test-hamlet') {
+  return {
+    id, name: 'Test Hamlet', desc: 'A lair under the square.', size: 6, starter: false, pvp: false, minLevel: 0, exitLevel: 0,
+    overworld: null, entry: { x: 3, y: 6 }, town: { x: 3, y: 3, name: 'Hamlet' }, shop: null,
+    lairs: [{ x: 3, y: 3 }], portals: [],
+    monsters: [{ name: 'Cellar Rat', level: 1, arch: 'quick', verb: 'bites' }, { name: 'Moth Swarm', level: 2, arch: 'caster', verb: 'stings', element: 'storm' }],
+    boss: { name: 'The Undercroft King', level: 5, arch: 'tank', verb: 'crushes', proper: true },
+  };
+}
+
 // An on-screen keyboard as iOS Safari presents it: the layout viewport keeps its size and only
 // the visual viewport shrinks, so anything anchored to the bottom ends up behind the keyboard.
 // Call before navigation; then setKeyboard(page, px) opens (or, with 0, closes) it.
@@ -825,6 +878,10 @@ export const PAGE_METRICS = () => {
   const rowsIn = [...document.querySelectorAll('#main .row[data-a="fight"]')];
   const visibleRows = rowsIn.filter((r) => { const b = r.getBoundingClientRect(); return b.top >= m.top - 1 && b.bottom <= m.bottom + 1 && b.bottom <= innerHeight; }).length;
   const firstRow = rowsIn[0]?.getBoundingClientRect();
+  // Gameplay polish F1: the monsters are one drop-down and a Fight button; F2: in town, a message.
+  const inMain = (el) => { if (!el) return false; const b = el.getBoundingClientRect(); return b.height > 0 && b.top >= m.top - 1 && b.bottom <= m.bottom + 1 && b.bottom <= innerHeight; };
+  const pickVisible = inMain(document.querySelector('#mon-select')) && inMain(document.querySelector('#mon-pick [data-a="fight"]'));
+  const calmVisible = inMain(document.querySelector('#main .town-calm'));
   const clip = (sel) => [...document.querySelectorAll(sel)].some((el) => el.scrollWidth > el.clientWidth + 1);
   const dockBtns = [...document.querySelectorAll('#dock button')].map((b) => b.getBoundingClientRect()).filter((b) => b.width && b.height);
   let overlaps = 0;
@@ -837,7 +894,7 @@ export const PAGE_METRICS = () => {
   const dock = document.getElementById('dock').getBoundingClientRect();
   const top = document.getElementById('top').getBoundingClientRect();
   return {
-    mainH: Math.round(m.height), visibleRows, firstRowTop: firstRow ? Math.round(firstRow.top - m.top) : null,
+    mainH: Math.round(m.height), visibleRows, pickVisible, calmVisible, firstRowTop: firstRow ? Math.round(firstRow.top - m.top) : null,
     hudH: Math.round(top.height), hudClipped: clip('#top .hud-name') || clip('#top .hud-res'),
     dockH: Math.round(dock.height), dockOverlaps: overlaps, dockMinTarget: minTarget, dockOffscreen: offscreen,
     hOverflow: document.documentElement.scrollWidth > innerWidth + 1,

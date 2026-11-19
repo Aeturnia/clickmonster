@@ -1,0 +1,169 @@
+{
+  "axe": [
+    {
+      "screen": "320-explore-xp5",
+      "violations": []
+    },
+    {
+      "screen": "320-explore-xp7",
+      "violations": []
+    },
+    {
+      "screen": "390-explore-xp5",
+      "violations": []
+    },
+    {
+      "screen": "390-explore-xp7",
+      "violations": []
+    },
+    {
+      "screen": "1024-explore-xp5",
+      "violations": []
+    },
+    {
+      "screen": "1024-explore-xp7",
+      "violations": []
+    },
+    {
+      "screen": "1440-explore-xp5",
+      "violations": []
+    },
+    {
+      "screen": "1440-explore-xp7",
+      "violations": []
+    },
+    {
+      "screen": "320-victory-xp5-chip",
+      "violations": []
+    },
+    {
+      "screen": "390-victory-xp5-chip",
+      "violations": []
+    },
+    {
+      "screen": "320-explore-xp7-200pct",
+      "violations": []
+    },
+    {
+      "screen": "390-explore-xp7-200pct",
+      "violations": []
+    },
+    {
+      "screen": "390-battle-round3",
+      "violations": []
+    },
+    {
+      "screen": "390-battle-round3-earlier-open",
+      "violations": []
+    },
+    {
+      "screen": "390-victory",
+      "violations": []
+    },
+    {
+      "screen": "390-defeat",
+      "violations": []
+    },
+    {
+      "screen": "1440-battle-round3",
+      "violations": []
+    },
+    {
+      "screen": "1440-battle-round3-earlier-open",
+      "violations": []
+    },
+    {
+      "screen": "1440-victory",
+      "violations": []
+    },
+    {
+      "screen": "1440-defeat",
+      "violations": []
+    },
+    {
+      "screen": "390-duel-lost",
+      "violations": []
+    },
+    {
+      "screen": "390-fight-no-bars",
+      "violations": []
+    },
+    {
+      "screen": "390-hunt",
+      "violations": []
+    },
+    {
+      "screen": "390-duel-won",
+      "violations": []
+    },
+    {
+      "screen": "320-explore-open",
+      "violations": []
+    },
+    {
+      "screen": "320-explore-town",
+      "violations": []
+    },
+    {
+      "screen": "390-explore-open",
+      "violations": []
+    },
+    {
+      "screen": "390-explore-town",
+      "violations": []
+    },
+    {
+      "screen": "1440-explore-open",
+      "violations": []
+    },
+    {
+      "screen": "1440-explore-town",
+      "violations": []
+    }
+  ],
+  "metrics": {
+    "B meters cut or overflowing, explore xp5 320": 0,
+    "B meters cut or overflowing, battle xp5 320": 0,
+    "B meters cut or overflowing, explore xp7 320": 0,
+    "B meters cut or overflowing, battle xp7 320": 0,
+    "B meters cut or overflowing, explore xp5 390": 0,
+    "B meters cut or overflowing, battle xp5 390": 0,
+    "B meters cut or overflowing, explore xp7 390": 0,
+    "B meters cut or overflowing, battle xp7 390": 0,
+    "B meters cut or overflowing, explore xp5 1024": 0,
+    "B meters cut or overflowing, battle xp5 1024": 0,
+    "B meters cut or overflowing, explore xp7 1024": 0,
+    "B meters cut or overflowing, battle xp7 1024": 0,
+    "B meters cut or overflowing, explore xp5 1440": 0,
+    "B meters cut or overflowing, battle xp5 1440": 0,
+    "B meters cut or overflowing, explore xp7 1440": 0,
+    "B meters cut or overflowing, battle xp7 1440": 0,
+    "B meters cut or overflowing, after a victory xp5 320": 0,
+    "B meters cut or overflowing, after a victory xp5 390": 0,
+    "B meters cut or overflowing, explore xp7 320 200% text": 0,
+    "B meters cut or overflowing, explore xp7 390 200% text": 0,
+    "A XP glow starts after one victory": 1,
+    "A +XP chip starts after one victory": 1,
+    "A XP meter element replaced by a regeneration tick": false,
+    "C rounds visible after 3 actions 390": 1,
+    "D visible lines repeating the Victory card 390": 0,
+    "D visible lines repeating the Defeated card 390": 0,
+    "C rounds visible after 3 actions 1440": 1,
+    "D visible lines repeating the Victory card 1440": 0,
+    "D visible lines repeating the Defeated card 1440": 0,
+    "D visible lines repeating the duel card 390": 0,
+    "G1 cues inside the hero bar's text after a victory 390": 0,
+    "G1 XP meter label after a victory 390": "Lv 62",
+    "G1 cues inside the hero bar's text after a victory 1440": 0,
+    "G1 XP meter label after a victory 1440": "Lv 62",
+    "G2 bars on an ordinary fight screen": 0,
+    "G2 bars on a world-boss hunt screen (Shared HP kept)": "Shared HP",
+    "G2 bars on a duel screen": 0,
+    "F fight controls on the open tile 320": 1,
+    "F fight controls on the town tile 320": 0,
+    "F fight controls on the open tile 390": 1,
+    "F fight controls on the town tile 390": 0,
+    "F fight controls on the open tile 1440": 1,
+    "F fight controls on the town tile 1440": 0
+  }
+}

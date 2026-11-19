@@ -548,7 +548,8 @@ test('the entrance has no axe violations at phone, landscape, tablet and desktop
 
 // Two accounts with heroes in the same village (so the same buttons), told apart by name.
 function twoHeroes(opts = {}) {
-  const backend = new FakeBackend(opts);
+  // Account A stands one step out of town, where monsters roam (gameplay polish F2).
+  const backend = new FakeBackend({ hero: makeHero({ y: 4 }), ...opts });
   backend.heroes[ACCOUNTS.mod.id] = makeHero({ name: 'Moderator Mia' });
   backend.charIds[ACCOUNTS.mod.id] = 'char-mod';
   return backend;
@@ -604,7 +605,7 @@ test('L1-01 a late action answer for the previous account never reaches the next
 });
 
 test("L1-02 a delayed quest board for the previous account never fills the next account's board", async () => {
-  const backend = twoHeroes({ quests: [fixedQuest()] });
+  const backend = twoHeroes({ hero: makeHero(), quests: [fixedQuest()] }); // in town, for the quest board
   const ctx = await open({ backend });
   const { page } = ctx;
   // A's board request is held, then answered with an empty board (B's own is the real one).

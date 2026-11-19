@@ -4,7 +4,7 @@
 // and no test may see a native confirm()/prompt()/alert().
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { setup, signIn, settle, FakeBackend, makeHero, axe, fixedQuest, adminTab } from './harness.mjs';
+import { setup, signIn, settle, FakeBackend, makeHero, axe, fixedQuest, adminTab, watchCues } from './harness.mjs';
 import { xpToNext } from '../../public/js/engine/character.js';
 
 let env;
@@ -223,7 +223,9 @@ test('admin zones: a delete the server would refuse is explained, not asked; res
 
 async function intoFight(page, foe = 'Bog Hag') {
   await tap(page, '[data-a="move"][data-v="n"]');
-  await page.locator('#main [data-a="fight"]', { hasText: foe }).click(); await settle(page);
+  // The monster drop-down (gameplay polish F1): choose, then Fight.
+  await page.selectOption('#mon-select', await page.evaluate((n) => Object.values(window.clickmonster.MONSTERS).find((m) => m.name === n).id, foe));
+  await page.click('#main [data-a="fight"]'); await settle(page);
   await page.waitForTimeout(270);
 }
 
@@ -275,12 +277,13 @@ test('battle log: turns are grouped, the current turn stands out, the outcome li
   const ctx = await game();
   const { page } = ctx;
   await intoFight(page);
+  await watchCues(page);
   for (let i = 0; i < 2; i++) await tap(page, '[data-a="melee"]');
   let log = await page.evaluate(() => ({
     turns: [...document.querySelectorAll('#log .turn')].map((t) => t.querySelector('.turn-label').textContent),
     current: document.querySelectorAll('#log .turn.current').length,
     latestInCurrent: !!document.querySelector('#log .turn.current p.latest'),
-    olderOutside: [...document.querySelectorAll('#log .turn:not(.current) p:not(.turn-label)')].every((p) => p.classList.contains('older')),
+    olderOutside: [...document.querySelectorAll('#log .turn:not(.current) p:not(.turn-label):not(.turn-gain)')].every((p) => p.classList.contains('older')),
   }));
   assert.deepEqual(log.turns, ['Turn 1', 'Turn 2']);
   assert.equal(log.current, 1);
@@ -293,19 +296,18 @@ test('battle log: turns are grouped, the current turn stands out, the outcome li
       title: document.querySelector('.outcome .outcome-title')?.textContent,
       chips: [...document.querySelectorAll('.outcome .rewards li')].map((l) => l.textContent),
       afterLog: document.getElementById('log').nextElementSibling?.classList.contains('outcome'),
-      hudGold: document.querySelector('#top .hud-res .delta')?.textContent,
-      hudXp: document.querySelector('#top .meter.xp .delta')?.textContent,
     };
   });
   assert.equal(out.over, 'victory');
   assert.equal(out.title, 'Victory');
   assert.ok(out.chips.includes(`+${out.rewards.xp} XP`) && out.chips.includes(`+${out.rewards.gold} gold`), out.chips.join(' | '));
   assert.ok(out.afterLog, 'the outcome follows the log, next to the actions');
-  assert.equal(out.hudGold, `+${out.rewards.gold}`);
-  assert.equal(out.hudXp, `+${out.rewards.xp} XP`);
-  assert.equal(await page.getAttribute('#top .delta', 'aria-hidden'), 'true', 'cues are decorative; the log and announcements carry the news');
-  await page.waitForTimeout(2800);
-  assert.equal(await page.$('#top .delta'), null, 'the cues go away');
+  // The gold and XP cues float over the hero bar (gameplay polish amendment G1).
+  await page.waitForTimeout(1900);
+  const cues = await page.evaluate(() => window.__cues);
+  assert.deepEqual(cues.map((c) => c.text).sort(), [`+${out.rewards.gold}`, `+${out.rewards.xp} XP`].sort());
+  assert.ok(cues.every((c) => c.ariaHidden === 'true'), 'cues are decorative; the log and announcements carry the news');
+  assert.equal(await page.$('#top .cue'), null, 'the cues go away');
   await done(ctx);
 });
 
@@ -331,7 +333,7 @@ test('reduced motion: cues and pending bars hold still, refusals use an outline 
   const { page } = ctx;
   const st = await page.evaluate(() => {
     const mk = (cls, tag = 'span') => { const el = document.createElement(tag); el.className = cls; document.getElementById('main').appendChild(el); return el; };
-    const delta = getComputedStyle(mk('delta up')).animationName;
+    const delta = getComputedStyle(mk('cue up')).animationName;
     const bar = getComputedStyle(mk('btn pending', 'button'), '::after').animationName;
     const refused = mk('btn refused', 'button');
     const r = getComputedStyle(refused);

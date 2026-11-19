@@ -92,6 +92,22 @@ A separate staging Supabase project is dropped. The live sign-in session above c
 
 ## Follow-ups (not blocking)
 
+- **Phone landscape: the tabs below the screen's edge** (from GP-1's iPhone check, 2026-11-18; the owner chose to record it as a follow-up rather than change GP-1).
+  - **What the owner saw:** on an iPhone turned to landscape, on PR #51's deploy preview, the tabs (Explore, Hero, Gear, Map) were below the screen's edge. Resizing brought them into view, but then the browser's tab bar covered the hero bar.
+  - **The cause, measured in Chromium at 844 px wide:**
+    - In landscape the game uses the two-column layout. The right-hand column stacks the hero bar, the chat bar, the actions and the tabs, and nothing in it scrolls. When the column is taller than the visible height, the tabs fall off the bottom.
+    - Resizing shows them by moving the whole page up, which is why the hero bar went under the browser's tab bar.
+  - **It existed before GP-1, and GP-1 makes it worse.**
+    - At this column's width (about 300 px), the HP and XP bars sit one above the other. GP-1's bars carry their numbers and are taller, so the hero bar went from 65 px to 83 px.
+    - At 300 px of visible height, the tabs are 15 px off-screen while exploring before GP-1, and 34 px with it; in a fight, 0 px before and 7 px with it. At 340 px everything fits on both.
+    - On the phone, the home bar's space at the bottom (about 21 px, which the test browser doesn't have) and the browser's toolbars leave less height than that.
+  - **A possible fix, not scoped:**
+    - on short landscape screens, keep the HP and XP bars side by side, with the slimmer 1rem bar the gameplay polish scope already allows for a compact hero bar;
+    - and let the action area scroll when the column still doesn't fit, so the hero bar and the tabs always stay on screen.
+
+    Test at 844 × 300, exploring and in a fight; then check on the owner's iPhone, since the test browser can't reproduce its toolbars or the home bar's space.
+  - **This is not authorized:** neither the fix nor a scope for it.
+
 - **Cross-platform fonts and responsive layout** (from CI-A, 2026-11-14).
   - **What happened:** CI-A's first run (`43638208611`) ran the browser suite on Ubuntu, and five existing layout assertions failed. The browser job now runs on Windows by the owner's exception (`docs/ci-scope.md`, section 10). The Linux results stand, recorded in `docs/ci-a-report.md`.
   - **The likely cause** is Linux font metrics, but it isn't established. The game's stack is `system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`, and the thresholds were set with Segoe UI.
@@ -103,6 +119,20 @@ A separate staging Supabase project is dropped. The live sign-in session above c
     - the admin content starting at 278px on a phone, against at most 250.
   - **Keep the tests:** the thresholds and assertions stay as they are. Any fix is to the layout, not the tests, and only once scoped.
   - **This is not authorized:** neither a CSS change nor the investigation as a milestone.
+
+- **An intermittent timeout in `PR-4a a second tab with the saved session also shows the form`** (`tests/ui/password-recovery.test.mjs:265`), seen twice on 2026-11-18.
+  - **The failure:** the second tab's `untilHeading(…, 'Choose a new password')` times out after 15 s.
+  - **Where it happened:**
+    - CI run `44368408591` on PR #50's docs-only commit `2cef100`, Windows (passed on its one re-run);
+    - local run 2 of 3 for GP-1, Linux. Runs 1 and 3 passed, and so did CI on PR #51.
+  - **Not GP-1's:** it fails without any game change, and GP-1 doesn't touch the entrance or `entry-recover.js`.
+  - **Root cause not established.** It shouldn't be treated as a flake, and the test and its timeout stay as they are.
+  - **Next step, when authorized:** run it repeatedly with `UI_DIAGNOSTICS=1` to capture the trace and the second tab's DOM when it times out.
+- **`net::ERR_NO_BUFFER_SPACE` on the Windows browser runner** (CI run `44410857655`, 2026-11-18, PR #51 at `b60c6ae`).
+  - **What happened:** `R1-02 an expired link (error_code only)…` failed when Chromium's request for `/js/data/items.js` from the harness's local server failed with a Windows socket-buffer error. The entrance showed "The game could not be loaded", as it should for a module that fails.
+  - **The diagnostics:** `diag.json` showed no page errors, no bad responses, and low CPU and memory.
+  - **The likely cause** is the runner's network stack under the suite's many short connections, after more than 200 tests. It isn't established.
+  - **Next step, when authorized:** see whether it recurs, and whether the harness's server should keep connections alive or the job should limit them. Unlike the `PR-4a` timeout above, this one has diagnostics; they are not known to share a cause.
 
 - **Pagination of `/news`** (from the L-4 review). The public list (`netlify/edge-functions/news.js`, `LIST_LIMIT = 100`) shows the 100 newest published articles. Older ones stay reachable by their address but drop off the list. Add pages (for example `/news?page=2`, or a link to older articles) before there are 100.
 

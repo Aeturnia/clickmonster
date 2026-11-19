@@ -1,6 +1,7 @@
 # Gameplay polish: scope
 
-**Status: scope accepted (2026-11-18). Amendment 1 (section 14), from the owner's iPhone testing of GP-1, was corrected after its scope review (14.10) and awaits final acceptance.** The final independent scope review accepted the reviewed commit `9882a02`, after the corrections from the review of `8e82297` (section 13). All three required CI jobs passed on it (run `44364332056`).
+**Status: scope accepted (2026-11-18) and merged as PR #50 (`cc736b5`).** The final independent scope review accepted the reviewed commit `9882a02`, after the corrections from the review of `8e82297` (section 13). All three required CI jobs passed on it (run `44364332056`), and on the merged head `2cef100` (run `44368408591`; its browser job passed on its one re-run after a timeout in `PR-4a a second tab…`, a test this documentation change doesn't touch). GP-1 implementation was then authorized by the owner; see `docs/gameplay-polish-report.md`.
+- **Amendment 1 (section 14), accepted (2026-11-18):** from the owner's iPhone testing of GP-1. It was corrected after its scope review (14.10), accepted at `74dc4da` with all three required CI jobs passing (run `44408670462`), and merged as PR #52 (`99357cb`). The owner then authorized the GP-1 correction pass.
 - **Not authorized by this acceptance:** implementing GP-1, or deploying the functions. Each needs its own owner authorization; the F2 redeploy's is obtained before the implementation merge is scheduled (section 7).
 - **How to read GP-F5 and GP-F5b together:** GP-F5 forbids Fight controls on an ordinary town tile; GP-F5b allows the lair boss's Fight control on a tile that is both town and lair.
 
@@ -397,7 +398,7 @@ Each criterion has a test that fails on `main` at `9827ce1`, run against the old
 
 ## 14. Amendment 1: the iPhone finding, floating cues, and fights without HP bars (proposed)
 
-**Status: corrected after the scope review of `ecb5941` (14.10); awaiting final acceptance.** Documentation only. Nothing here is implemented, GP-1 (PR #51) is unchanged at `59da88f`, and nothing is deployed. Line references are from `59da88f`, the GP-1 head.
+**Status: accepted (2026-11-18) at `74dc4da`, after the scope review of `ecb5941` (14.10); merged as PR #52 (`99357cb`).** Written as documentation only, while GP-1 (PR #51) was at `59da88f`; it is implemented in GP-1's correction pass (`docs/gameplay-polish-report.md`). Line references are from `59da88f`, the GP-1 head.
 
 ### 14.1 What the owner found
 

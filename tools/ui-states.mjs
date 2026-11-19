@@ -41,7 +41,9 @@ async function scene(w, name, opts, run) {
 for (const w of widths) {
   await scene(w, 'battle', {}, async (page, shot, backend) => {
     await page.click('[data-a="move"][data-v="n"]'); await settle(page);
-    await page.locator('#main [data-a="fight"]').last().click(); await settle(page); // the toughest foe here
+    // The toughest foe here: the last in the drop-down (gameplay polish F1).
+    await page.selectOption('#mon-select', await page.$eval('#mon-select', (s) => s.options[s.options.length - 1].value));
+    await page.click('#main [data-a="fight"]'); await settle(page);
     for (let i = 0; i < 3; i++) { await wait(page); await page.click('[data-a="melee"]'); await settle(page); }
     await shot('battle-turns');
     // Slow server: the pressed action shows it is working; a second tap is refused.
@@ -62,7 +64,8 @@ for (const w of widths) {
   });
   await scene(w, 'victory', {}, async (page, shot) => {
     await page.click('[data-a="move"][data-v="n"]'); await settle(page);
-    await page.locator('#main [data-a="fight"]', { hasText: 'Bog Hag' }).click(); await settle(page);
+    await page.selectOption('#mon-select', { label: 'Lv 9 Bog Hag, Trivial, Shadow' });
+    await page.click('#main [data-a="fight"]'); await settle(page);
     for (let i = 0; i < 30 && await page.$('[data-a="melee"]'); i++) { await wait(page); await page.click('[data-a="melee"]'); await settle(page); }
     await wait(page, 300);
     await shot('battle-victory');

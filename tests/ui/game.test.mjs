@@ -145,8 +145,11 @@ test('battle log keeps recent and older lines distinct without failing contrast'
   const ctx = await game();
   const { page } = ctx;
   await page.click('[data-a="move"][data-v="n"]'); await settle(page);
+  // A foe that lasts, so there are earlier rounds; they are collapsed (gameplay polish C), so open them.
+  await page.selectOption('#mon-select', await page.evaluate(() => Object.values(window.clickmonster.MONSTERS).find((m) => m.name === 'Wisp Swarm').id));
   await page.click('[data-a="fight"]'); await settle(page);
-  for (let i = 0; i < 4 && await page.$('[data-a="melee"]'); i++) { await page.click('[data-a="melee"]'); await settle(page); }
+  for (let i = 0; i < 3 && await page.$('[data-a="melee"]'); i++) { await page.waitForTimeout(270); await page.click('[data-a="melee"]'); await settle(page); }
+  await page.click('#log-earlier');
   const styles = await page.evaluate(() => {
     const get = (sel) => { const el = document.querySelector(sel); if (!el) return null; const cs = getComputedStyle(el); return { color: cs.color, weight: cs.fontWeight, border: cs.borderLeftColor }; };
     return { older: get('.log p.older'), latest: get('.log p.latest') };
@@ -227,7 +230,7 @@ test('keyboard movement: arrows move the hero, but not while typing', async () =
 });
 
 test('errors persist until dismissed, and connection errors clear when it recovers', async () => {
-  const ctx = await game();
+  const ctx = await game({ hero: { y: 4 } }); // out of town, where monsters roam (gameplay polish F2)
   const { page, backend } = ctx;
   backend.failNext('fight', 400, 'The beast slips away into the brambles.');
   await page.click('[data-a="fight"]'); await settle(page);

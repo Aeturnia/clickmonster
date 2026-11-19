@@ -52,6 +52,16 @@ Read these first:
   - **Step 4 passed** (2026-11-18): titles, manifest, and news canonical and `og:url` on `monstraregna.com`, checked by the owner and independently by authorized read-only requests.
   - **Next gate: the announcement (QB-2)**, published by the owner before the redirect; then the redirect PR (step 5), which needs its own go-ahead. Don't open or merge the redirect (prepared on `claude/mr-b1-redirect`, `b00a5c7`), and don't touch the Supabase allow-list, without authorization.
   - **MR-B2 and MR-S1** each need their own authorization.
+- **Gameplay polish** (`docs/gameplay-polish-scope.md`, merged as PR #50, `cc736b5`): six play-testing fixes. GP-1, authorized 2026-11-18, is implemented on `claude/gp-1`; see `docs/gameplay-polish-report.md`.
+  - **The fixes:**
+    - A: the XP cue plays once;
+    - B: numbers on the bars;
+    - C: only the current round shows;
+    - D: the outcome is shown once;
+    - E: a mastery gain is shown once, under its round;
+    - F1: a native monster drop-down;
+    - F2: no roaming monsters on a town tile.
+  - **F2 is a game rule in the shared engine.** The live server enforces it only after the `game` function is redeployed. That redeploy needs its own authorization, obtained before the merge is scheduled (scope, section 7).
 - **Development moved to the owner's Windows laptop.** `npm run deploy:functions` now runs from any shell (PR #15) and needs `SUPABASE_ACCESS_TOKEN` set in the environment.
 - **Don't start another milestone, or make gameplay or server changes,** until the owner approves it.
 - **Release verification** is in `docs/backlog.md`. The owner split it on 2026-11-14, because there aren't the resources to test every device before release.
@@ -132,6 +142,14 @@ Read these first:
   - A shortcut presses the existing button, and `markShortcuts()` adds `aria-keyshortcuts` after every render.
   - The off setting is `prefs.keys`.
   - The keydown handler checks `defaultPrevented` first, so keys that chat already handled are left alone.
+- **The battle log** (gameplay polish C to E) is `logHtml()` in `main.js`, with the rules in `js/log-view.js`.
+  - **What shows:** only the current round. Earlier rounds are a collapsed `<details>`.
+  - **After a reload:** the lines already there are "Before this page loaded (N lines)", never rounds. The round marks exist only in the page (`ui.turnLog`).
+  - **`cardLine()`** hides, from the finished round, the rewards and losses its outcome card lists. It is presentation only: `char.battle.log` is never changed.
+- **Meters** (`meter()`, `fitMeters()`) carry their numbers on the bar. `fitMeters()` picks the full, short (`.compact`) or stacked (`.stack`) form after each render. The hero bar is three paint regions (`hud-row`, `hud-hp`, `hud-xp`), so a regeneration tick doesn't recreate the XP meter.
+- **The monster drop-down** (`#mon-select`) is marked `data-keep`. `paint()` leaves such an element in place when the new HTML has the same one (`keepInPlace()`), so an open native picker survives redraws.
+  - **The Fight button** has no `data-v`; it reads the drop-down.
+  - **Arrow keys** don't move the hero while a `<select>` has focus.
 - **Chat** is `chat-ui.js`. It draws one chat state into the drawer or the desktop panel (`setMode()`).
   - Each sign-in is a chat session. `stop()` resets everything that belongs to the account. Anything awaited, including Realtime callbacks and confirmations, checks on return that its session is still current.
 - **Admin** is `admin.js` and `admin-zones.js`: grouped navigation with hash routes, `dataTable()`, `field()`, `checkForm`/`validate`/`submitting`, and form values kept across re-renders.
@@ -180,9 +198,9 @@ Read these first:
 ## Testing
 
 ```
-npm test                 # engine, entrance file checks, the startup budget, news rules and the news page handler (48)
-npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (202)
-npm run test:db          # database (pgTAP, 42) and API/function/recovery tests (12) on the LOCAL Supabase stack, with Mailpit
+npm test                 # engine, entrance file checks, the startup budget, news rules, the news page handler, the town rule and the log rules (63)
+npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (238)
+npm run test:db          # database (pgTAP, 42) and API/function/recovery tests (13) on the LOCAL Supabase stack, with Mailpit
 npx playwright install chromium   # once
 ```
 
@@ -222,7 +240,7 @@ npx playwright install chromium   # once
 - **`FakeBackend({ hero, players, chat, events, zones, quests, reports, worldEvents, activeHunts })`**. Its admin actions write the audit log and refuse repeats the way `supabase/functions/admin/index.ts` does, so a duplicate request shows up as a duplicate audit entry (`backend.adminData().log`). Keep it in step when server behaviour changes. It also provides `failNext(action, status, msg)`, `hold(action)` (returns a release function) and `broadcast()` for Realtime. Recorded `calls` and `unexpected` requests are available for assertions.
 - **Test accounts:** `ACCOUNTS.player`, `admin`, `mod` (a moderator) and `fresh`.
 - **Auth:** `savedSession(acct, expiresIn)` builds a stored session to seed `localStorage` (a negative `expiresIn` gives an expired one). Refresh tokens are `refresh-<id>`; add one to `backend.revoked` to make the server refuse it. `backend.authCalls` lists the grant types requested, and `/auth/v1/signup` answers as with email confirmation on.
-- **Fixtures:** `makeHero()`, `bigZone(n)`, `fixedQuest()`, `ADMIN_CHAT`/`ADMIN_REPORTS`.
+- **Fixtures:** `makeHero()`, `bigZone(n)`, `townLairZone()` (a lair on the town tile), `fixedQuest()`, `ADMIN_CHAT`/`ADMIN_REPORTS`. `makeHero()` stands in Bramblebrook's village (5, 5), where no roaming monsters can be fought (F2): tests that fight use `makeHero({ y: 4 })` or step north first, and choose with `#mon-select`.
 - **Keyboard:** `fakeKeyboard()` / `setKeyboard(px, pan)` simulate an iOS-style overlay keyboard.
 - **Navigation and pages:** `adminTab()` opens admin sections on phones. `page.nativeDialogs` records any native dialog.
 
