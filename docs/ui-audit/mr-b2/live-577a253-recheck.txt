@@ -1,0 +1,17 @@
+# node tools/public-pages-check.mjs https://monstraregna.com   (the revised checker: slash forms one 301 to the canonical address, then 200)
+# main at 577a253, as published by Netlify; read-only GET requests; 2026-11-19T23:39:14Z
+/                            {"status":200,"location":null,"csp":"none","canonical":null,"menu":true,"footer":true}
+/guide                       {"status":200,"location":null,"csp":"no-script policy","canonical":"https://monstraregna.com/guide","menu":true,"footer":true}
+/guide/                      {"status":301,"location":"/guide"}
+/guide/ -> /guide            {"status":200,"location":null,"csp":"no-script policy","canonical":"https://monstraregna.com/guide","menu":true,"footer":true}
+/leaderboard                 {"status":200,"location":null,"csp":"no-script policy","canonical":"https://monstraregna.com/leaderboard","menu":true,"footer":true}
+/leaderboard/                {"status":301,"location":"/leaderboard"}
+/leaderboard/ -> /leaderboard {"status":200,"location":null,"csp":"no-script policy","canonical":"https://monstraregna.com/leaderboard","menu":true,"footer":true}
+/contact                     {"status":200,"location":null,"csp":"no-script policy","canonical":"https://monstraregna.com/contact","menu":true,"footer":true}
+/contact/                    {"status":301,"location":"/contact"}
+/contact/ -> /contact        {"status":200,"location":null,"csp":"no-script policy","canonical":"https://monstraregna.com/contact","menu":true,"footer":true}
+/news                        {"status":200,"location":null,"csp":"no-script policy","canonical":"https://monstraregna.com/news","menu":true,"footer":true}
+/news/under-construction     {"status":200,"location":null,"csp":"no-script policy","canonical":"https://monstraregna.com/news/under-construction","menu":true,"footer":true}
+
+All public pages as expected.
+# exit 0

@@ -1,8 +1,11 @@
 # MR-B2: homepage and navigation, report
 
-**Status: merged as PR #56 (`1679855`, 2026-11-19) after its independent review approved `d6134ed`, and published by Netlify.**
+**Status: published; the closing record (section 7.5) is at its review gate (2026-11-19).** MR-B2 was merged as PR #56 (`1679855`, 2026-11-19) after its independent review approved `d6134ed`, and published by Netlify.
 - **A routing problem found after deployment:** `/guide`, `/leaderboard` and `/contact` answered with a 301, not 200.
-- **Its correction (section 7)** is a follow-up PR at its own review gate. Nothing in it is merged or deployed.
+- **Its correction (section 7)** was merged as PR #57 (`577a253`) and published.
+- **The live check after it (section 7.5):**
+  - **The canonical addresses** answer 200 directly.
+  - **Their slash forms** answer one 301 to them. The owner accepted this as a deviation from section 7.3's expectation of 200 for both forms.
 - **Contract:** `docs/monstra-regna-scope.md`, section 4 (MR-B2), with D7 to D11 and the owner's answers in section 10.
 - **Authorization:** the owner authorized MR-B2 on 2026-11-19 ("Authorization granted for MR-B2, email is good and no permanent discord yet").
   - **D8:** mail to `support@monstraregna.com` reaches a monitored inbox, so Contact ships.
@@ -152,7 +155,7 @@
 **The pages and the rewrites:**
 - **Single files:** `public/guide.html`, `public/leaderboard.html` and `public/contact.html`, moved without change apart from a comment.
 - **The 200 rewrites** in `netlify.toml` point at them: `/guide` to `/guide.html`, and so on.
-- **The slash forms** (`/guide/`) are rewritten to the same file, so earlier links keep working, with no redirect.
+- **The slash forms** (`/guide/`) are rewritten to the same file, so earlier links keep working, with no redirect. (Live, they were not: Netlify redirects them first. See section 7.5.)
 - **Unchanged:** the menu links, the slashless canonical addresses and the headers (`/guide*` covers all three forms).
 - **Not touched:** Netlify's site-wide "Pretty URLs" setting.
 
@@ -174,7 +177,7 @@ With it, the tests reproduce the production 301s on `1679855`.
 
 **What Netlify should do after the merge:**
 - `/guide`, `/leaderboard` and `/contact` answer 200 directly, through the rewrites, with no directory left to trigger the slash redirect;
-- `/guide/` and the other slash forms answer 200 through their own rewrites;
+- `/guide/` and the other slash forms answer 200 through their own rewrites (not so: section 7.5);
 - `/guide.html` answers 200 (it is a file);
 - every one of them has the no-script policy.
 
@@ -198,5 +201,59 @@ With it, the tests reproduce the production 301s on `1679855`.
   - **Attempt 2,** the one authorized re-run: browser passed 307 of 307.
 - **The race was corrected separately,** test only, in PR #58 (`0029aea`), approved and merged first.
 - **Combined with PR #58:** the branch was brought up to date with `main` (`0029aea`); the routing change is unchanged. Browser total 308: 306, plus this correction's first-response test, plus PR #58's proof test.
-- **Combined CI:** recorded on the PR once its run completes.
+- **Combined CI** (run `44632241877`, head `c9c8407`, merge commit `10ef323`): engine 71 of 71, browser 308 of 308, database passed. Approved, then merged as PR #57 (`577a253`).
+- **CI on `main` after the merge** (run `44634288178`, `577a253`): browser failed 1 of 308, `SO-9 at 390x844…`.
+  - **The cause, from the run's trace:** a race in that test, not this correction. It measured the sign-in form shown just before the sign-out fallback's reload.
+  - **Corrected separately,** test only, on `claude/so9-race`. The run was not re-run.
+
+### 7.5 After the correction's deployment: the slash forms, and the owner's decision
+
+**Published:** PR #57 was merged at `577a253`, and Netlify published `main`. No Supabase change.
+
+**The first live check** (`tools/public-pages-check.mjs` as merged). Its evidence is `docs/ui-audit/mr-b2/live-577a253-check.txt`.
+- **The canonical addresses:** `/guide`, `/leaderboard` and `/contact` answered **200 directly**, with the no-script policy, their canonical address, the menu (this page current) and the footer. B2-R1 is fixed.
+- **The slash forms:** `/guide/`, `/leaderboard/` and `/contact/` answered **301 to the slashless address**, which then answered 200. There was no loop, and bookmarks still reach the page. Against the expectation of 200 for both forms, the checker reported 18 problems and exited 1.
+- **Not a stale cache:** each answer came from the origin (`Cache-Status: fwd=miss`).
+- **PR #57's deploy preview** gave the same 301s.
+- **`/`, `/news` and a news article:** as expected.
+
+**The cause:**
+- **Netlify redirects first.** When `x.html` exists, Netlify (Pretty URLs) answers `/x/` with a 301 to `/x`, before the `/x/` rewrite in `netlify.toml` applies.
+- **The test server didn't model this,** so the tests passed.
+- **A missed check:** running the checker against PR #57's deploy preview before the merge would have shown it. Routing changes are now checked on their deploy preview, with the checker, before review.
+
+**The owner's decision (2026-11-19, option 1):**
+- **The canonical addresses** answer 200 directly.
+- **Their slash forms** answer exactly one 301 to the matching canonical address, and that address answers 200.
+- **The final page** keeps its policy, canonical address, menu and footer.
+- **An accepted deviation:** this is an explicitly accepted deviation from section 7.3's expectation, not a claim that the original check passed. It is normal consolidation onto the canonical address. The site's own links use the slashless addresses.
+- **Excluded:** no `force = true`, and no change to Pretty URLs.
+
+**The changes on `claude/mr-b2-close`** (checker and tests only, no site change):
+- **`tools/public-pages-check.mjs`:**
+  - each canonical address must answer 200 directly;
+  - each slash form must answer exactly one 301 to its canonical address;
+  - the checker then reads that address, once, and it must answer 200 with the same checks.
+
+  Any other status, target or redirect is a problem.
+- **The test server** (`tests/ui/harness.mjs`) models Netlify's slash redirect: an address with a trailing slash, with no such directory but an `x.html`, answers 301 to `/x`, before any rewrite.
+- **The browser test** (`tests/ui/homepage.test.mjs`, B2-5):
+  - the canonical addresses must answer 200 on the first response, with their page;
+  - each slash form must answer one 301, to its canonical address, which answers 200 with no second redirect.
+
+  The direct-200 requirement for the canonical addresses is unchanged.
+- **The file test** (`tests/site-pages.test.mjs`):
+  - still required: each canonical address's 200 rewrite and the no-script policy;
+  - no longer required: the slash forms' rewrites, which Netlify never reaches.
+- **`netlify.toml` is unchanged,** and two things in it are now inaccurate. Removing them changes `netlify.toml`, which needs the owner's decision:
+  - **the three `/x/` rewrites,** which are never reached;
+  - **its comment** that the slash forms are rewritten with no redirect.
+
+**The second live check** (the revised checker, read-only): **all public pages as expected, exit 0.** Its evidence is `docs/ui-audit/mr-b2/live-577a253-recheck.txt`.
+- **The test server, checked the same way,** gives the same statuses and redirect targets for all six addresses. It sends no security headers, which `tests/site-pages.test.mjs` checks in `netlify.toml` instead.
+
+**The audit trail is kept:**
+- the first, failing check (`live-577a253-check.txt`);
+- the failure before the correction (`live-1679855-check.txt`);
+- the correction's own record (sections 7.1 to 7.4).
 

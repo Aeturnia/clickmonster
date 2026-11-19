@@ -1,9 +1,12 @@
-// Read-only check of the live public pages (MR-B2; docs/monstra-regna-b2-report.md, section 7).
+// Read-only check of the live public pages (MR-B2; docs/monstra-regna-b2-report.md, sections 7 and 7.5).
 //   node tools/public-pages-check.mjs [base]          (default https://monstraregna.com)
-// For each page it reads the FIRST response, never following a redirect (that is what found the
-// /guide -> /guide/ redirects after MR-B2's first deployment), and reports: the status, the
+// For each page it reads the FIRST response, never following a redirect by itself (that is what found
+// the /guide -> /guide/ redirects after MR-B2's first deployment), and reports: the status, the
 // Location if any, whether the news pages' no-script policy is sent, the canonical address, the
 // site menu (and which item is current) and the footer. GET requests only; nothing is changed.
+// The contract (owner's decision, 2026-11-19): /guide, /leaderboard and /contact answer 200 directly.
+// Their slash forms answer exactly one 301 to that canonical address; the checker then reads that
+// address, once, and it must answer 200 with the same checks. Any other redirect is a problem.
 // Exits 1 if any page is not as expected.
 import { menuHtml, footerHtml } from '../public/js/site.js';
 
@@ -28,12 +31,21 @@ const report = (path, r, want) => {
   for (const [k, v] of Object.entries(want.expect)) if (got[k] !== v) problems.push(`${path}: ${k} is ${JSON.stringify(got[k])}, expected ${JSON.stringify(v)}`);
   console.log(path.padEnd(28), JSON.stringify(got));
 };
+// The location as a path on this site (Netlify sends a relative one; an absolute one must be this host).
+const pathOf = (loc) => { try { const u = new URL(loc, BASE + '/'); return u.origin === new URL(BASE).origin ? u.pathname + u.search : null; } catch { return null; } };
 
 report('/', await first('/'), { current: '/', expect: { status: 200, menu: true, footer: true } });
 for (const p of ['/guide', '/leaderboard', '/contact']) {
-  for (const addr of [p, `${p}/`]) {
-    report(addr, await first(addr), { current: p, expect: { status: 200, location: null, csp: 'no-script policy', canonical: CANON + p, menu: true, footer: true } });
+  const page = { status: 200, location: null, csp: 'no-script policy', canonical: CANON + p, menu: true, footer: true };
+  report(p, await first(p), { current: p, expect: page });
+  const slash = await first(`${p}/`);
+  if (slash.status !== 301 || pathOf(slash.location) !== p) {
+    problems.push(`${p}/: expected one 301 to ${p}, got ${slash.status}${slash.location ? ` to ${slash.location}` : ''}`);
+    console.log(`${p}/`.padEnd(28), JSON.stringify({ status: slash.status, location: slash.location }));
+    continue;
   }
+  console.log(`${p}/`.padEnd(28), JSON.stringify({ status: slash.status, location: slash.location }));
+  report(`${p}/ -> ${p}`, await first(pathOf(slash.location)), { current: p, expect: page });
 }
 const list = await first('/news');
 report('/news', list, { current: null, expect: { status: 200, csp: 'no-script policy', canonical: `${CANON}/news`, menu: true, footer: true } });

@@ -179,18 +179,26 @@ test('B2-4 the footer on the entrance and on the news pages; the same copyright 
   await done(ctx);
 });
 
-// The routing correction (docs/monstra-regna-b2-report.md, section 7). The test server serves as
-// Netlify does: a directory's address without its slash gets a 301 before any rewrite. So this
-// fails if a page is ever a directory index again, as the first version was.
-test('B2-5 the first response for /guide, /leaderboard and /contact, and their slash forms, is the page itself: 200, no redirect', async () => {
+// The routing correction (docs/monstra-regna-b2-report.md, sections 7 and 7.5). The test server
+// serves as Netlify does: a directory's address without its slash gets a 301 before any rewrite,
+// and so does a page file's address with one, to the slashless form. So this fails if a page is
+// ever a directory index again, as the first version was.
+// The contract (owner's decision, 2026-11-19): the canonical, slashless address answers 200
+// directly; its slash form may answer one 301 to it, and the page is at the end of that.
+test('B2-5 /guide, /leaderboard and /contact answer 200 directly; their slash forms one 301 to them', async () => {
   const ctx = await open();
   const { page } = ctx;
+  const hasPage = async (r, p, label) => assert.ok((await r.text()).includes(`<link rel="canonical" href="https://monstraregna.com${p}">`), `${label}: the page, with its slashless canonical address`);
   for (const p of ['/guide', '/leaderboard', '/contact']) {
-    for (const addr of [p, `${p}/`]) {
-      const r = await page.request.get(`${env.url}${addr}`, { maxRedirects: 0 });
-      assert.equal(r.status(), 200, `${addr}: answered directly, not redirected (${r.headers().location || ''})`);
-      assert.ok((await r.text()).includes(`<link rel="canonical" href="https://monstraregna.com${p}">`), `${addr}: the page, with its slashless canonical address`);
-    }
+    const direct = await page.request.get(`${env.url}${p}`, { maxRedirects: 0 });
+    assert.equal(direct.status(), 200, `${p}: answered directly, not redirected (${direct.headers().location || ''})`);
+    await hasPage(direct, p, p);
+    const slash = await page.request.get(`${env.url}${p}/`, { maxRedirects: 0 });
+    assert.equal(slash.status(), 301, `${p}/: one permanent redirect`);
+    assert.equal(slash.headers().location, p, `${p}/: to the canonical address`);
+    const next = await page.request.get(`${env.url}${slash.headers().location}`, { maxRedirects: 0 });
+    assert.equal(next.status(), 200, `${p}/: the redirect ends at the page, with no second one`);
+    await hasPage(next, p, `${p}/ after the redirect`);
   }
   await done(ctx);
 });
