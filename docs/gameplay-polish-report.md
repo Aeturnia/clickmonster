@@ -250,7 +250,10 @@ The fake backend's win gives +71 XP, not the +767 the owner saw live, so the cue
 
 **The browser count is now 248** (238 in section 4): GP-B6, GP-B7, GP-B8 twice, GP-B9, GP-H1, GP-H2, GP-H3 and GP-H4 twice. The engine tests are unchanged.
 
-**CI:** recorded on PR #51 once the run on this push completes.
+**CI:** run `44420150434`, head `c3f4f4a`, tested merge commit `642381e` (`c3f4f4a` merged into `main` at `99357cb`). The counts come from the job logs.
+- `engine`: 63 of 63.
+- `database`: 42 of 42 pgTAP, and 13 of 13 API tests.
+- `browser` (Windows Chromium): 248 of 248.
 
 ### 9.6 Not verified
 
@@ -258,7 +261,18 @@ The fake backend's win gives +71 XP, not the +767 the owner saw live, so the cue
   1. the check page, version 3, with this pass's `meter()`, `fitMeters()` and meter CSS;
   2. on this PR's deploy preview: a win (the cue floats; nothing in the bar is cut off), a fight (no HP bars; the damage numbers float), and turning the phone to landscape and back.
 
-  The check page copies the code at `60160a9` (this pass's client commit), and its results will name the version. **Result:** pending; recorded here when the owner reports it.
+  The check page copies the code at `60160a9` (this pass's client commit), and its results name the version.
+
+  **Result, as reported by the owner (2026-11-18), on the same iPhone (iOS 18.2, 390 x 844, default text size):**
+  - **Step 1, the check page, version 3: all five cases fit.**
+    - **The owner's win:** "Lv 62" with the full numbers on one line (label 31 px, numbers 97 px, in 162 px of room). Before the fix, the label was cut off by 15 px.
+    - **A narrow bar on two lines:** the label's box is the full 98 px, against a leftover 74 px before.
+    - **Two lines, then wide again:** back on one line, with each box its text's width.
+    - **Seven-digit XP:** the short numbers, on one line.
+    - **A world boss's bar, narrow:** two lines, both parts spanning the bar.
+  - **Step 2, the deploy preview:**
+    - **A win and a fight:** done, with no problem reported.
+    - **Turning the phone to landscape: a problem found, recorded as a follow-up by the owner's decision** (`docs/backlog.md`, "Phone landscape: the tabs below the screen's edge"). The tabs (Explore, Hero, Gear, Map) were below the screen's edge. Resizing brought them into view, but then the browser's tab bar covered the hero bar. It is a layout height problem in the landscape side column, which existed before GP-1 and which GP-1's taller hero bar makes worse; GP-1 itself is not changed for it.
 - **Android,** other iPhone sizes, and Safari outside the Claude app's browser.
 - **Damage numbers over a world boss's Shared HP bar.** In a hunt they float in the boss's strip, over the bar at its foot, as they floated over it before. GP-H4 checks an ordinary fight's strips, not a hunt's.
 - **A cue's position if the layout changes while it shows** (for example turning the phone mid-cue): it is placed once, when it appears, and is gone 1.6 s later.

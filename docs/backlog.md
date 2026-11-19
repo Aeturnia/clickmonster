@@ -92,6 +92,22 @@ A separate staging Supabase project is dropped. The live sign-in session above c
 
 ## Follow-ups (not blocking)
 
+- **Phone landscape: the tabs below the screen's edge** (from GP-1's iPhone check, 2026-11-18; the owner chose to record it as a follow-up rather than change GP-1).
+  - **What the owner saw:** on an iPhone turned to landscape, on PR #51's deploy preview, the tabs (Explore, Hero, Gear, Map) were below the screen's edge. Resizing brought them into view, but then the browser's tab bar covered the hero bar.
+  - **The cause, measured in Chromium at 844 px wide:**
+    - In landscape the game uses the two-column layout. The right-hand column stacks the hero bar, the chat bar, the actions and the tabs, and nothing in it scrolls. When the column is taller than the visible height, the tabs fall off the bottom.
+    - Resizing shows them by moving the whole page up, which is why the hero bar went under the browser's tab bar.
+  - **It existed before GP-1, and GP-1 makes it worse.**
+    - At this column's width (about 300 px), the HP and XP bars sit one above the other. GP-1's bars carry their numbers and are taller, so the hero bar went from 65 px to 83 px.
+    - At 300 px of visible height, the tabs are 15 px off-screen while exploring before GP-1, and 34 px with it; in a fight, 0 px before and 7 px with it. At 340 px everything fits on both.
+    - On the phone, the home bar's space at the bottom (about 21 px, which the test browser doesn't have) and the browser's toolbars leave less height than that.
+  - **A possible fix, not scoped:**
+    - on short landscape screens, keep the HP and XP bars side by side, with the slimmer 1rem bar the gameplay polish scope already allows for a compact hero bar;
+    - and let the action area scroll when the column still doesn't fit, so the hero bar and the tabs always stay on screen.
+
+    Test at 844 × 300, exploring and in a fight; then check on the owner's iPhone, since the test browser can't reproduce its toolbars or the home bar's space.
+  - **This is not authorized:** neither the fix nor a scope for it.
+
 - **Cross-platform fonts and responsive layout** (from CI-A, 2026-11-14).
   - **What happened:** CI-A's first run (`43638208611`) ran the browser suite on Ubuntu, and five existing layout assertions failed. The browser job now runs on Windows by the owner's exception (`docs/ci-scope.md`, section 10). The Linux results stand, recorded in `docs/ci-a-report.md`.
   - **The likely cause** is Linux font metrics, but it isn't established. The game's stack is `system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`, and the thresholds were set with Segoe UI.
