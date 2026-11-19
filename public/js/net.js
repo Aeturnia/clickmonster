@@ -110,44 +110,90 @@ async function call(action, args) {
   return data;
 }
 
-// One renewal at a time: concurrent refusals share it, so they don't race the refresh token's
-// rotation. 'renewed', 'ended' (refused: the library has removed the session) or 'unavailable'.
+// ---------------------------------------------------------------- renewing after a refusal
+// The renewal after a 401 is our own request, not the library's refreshSession(): supabase-js
+// 2.45.4 removes the saved session itself on any renewal error but 502-504 and network failures,
+// so a temporary 500 or 429 would sign the player out (docs/sign-out-report.md, section 17).
+// Here only the measured refusal, refresh_token_not_found, ends a session; anything else keeps it.
+// A new session is handed to the library through its public setSession(). The library's own
+// background renewal is unchanged, with that limitation (report, section 18).
+const TOKEN_URL = `${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`;
+const RATE_LIMIT_MS = 30000; // after a 429 with no Retry-After, no renewal before this long
+let renewAfter = 0;
 let renewing = null;
-function renew() {
-  renewing ||= sb.auth.refreshSession()
-    .then(({ data, error }) => (data?.session && !error ? 'renewed' : error?.name === 'AuthRetryableFetchError' ? 'unavailable' : 'ended'))
+const stored = () => { try { return JSON.parse(localStorage.getItem(AUTH_STORAGE_KEY)); } catch { return null; } };
+const sessionOf = (s) => {
+  try { return JSON.parse(atob(s.access_token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).session_id ?? null; } catch { return null; }
+};
+
+// Renews the session the refused request was made with (`from`). 'renewed', 'ended' (refused:
+// that refresh token is no longer usable), 'unavailable' (the session kept), or 'changed' (this
+// browser's sign-in is no longer `from`: signed out, or another session, even of the same account).
+// One renewal at a time in this tab, and across the browser's tabs with a lock; whoever goes second
+// finds the session already renewed and sends nothing.
+function renew(from) {
+  const run = async () => {
+    const now = stored();
+    if (now?.refresh_token !== from.refresh_token) return now && sessionOf(now) === sessionOf(from) ? 'renewed' : 'changed';
+    if (Date.now() < renewAfter) return 'unavailable';
+    let res;
+    let body = {};
+    try {
+      res = await fetch(TOKEN_URL, {
+        method: 'POST',
+        headers: { apikey: SUPABASE_KEY, 'Content-Type': 'application/json', 'X-Supabase-Api-Version': '2024-01-01' },
+        body: JSON.stringify({ refresh_token: from.refresh_token }),
+      });
+      body = await res.json().catch(() => ({}));
+    } catch { return 'unavailable'; }
+    if (res.ok && body.access_token && body.refresh_token) {
+      // A late answer: only install it if this browser still holds the session it renewed.
+      const still = stored();
+      if (still?.refresh_token !== from.refresh_token) return still && sessionOf(still) === sessionOf(from) ? 'renewed' : 'changed';
+      const { error } = await sb.auth.setSession({ access_token: body.access_token, refresh_token: body.refresh_token });
+      return error ? 'unavailable' : 'renewed';
+    }
+    if (res.status === 429) {
+      const wait = Number(res.headers.get('retry-after'));
+      renewAfter = Date.now() + (wait > 0 ? wait * 1000 : RATE_LIMIT_MS);
+      return 'unavailable';
+    }
+    if (res.status === 400 && (body.code ?? body.error_code) === 'refresh_token_not_found') return 'ended';
+    return 'unavailable';
+  };
+  renewing ||= (globalThis.navigator?.locks ? navigator.locks.request('clickmonster.renew', run) : run())
     .catch(() => 'unavailable')
     .finally(() => { renewing = null; });
   return renewing;
 }
-const userOf = async () => (await sb.auth.getSession()).data.session?.user?.id || null;
 const stale = () => Object.assign(new Error('This request belongs to an earlier sign-in.'), { stale: true });
 
 // Send one game action to the server; returns { char }. isCurrent says whether the sign-in that
 // asked is still the page's (main.js: live(g)).
 // A 401 means the server refused the token, before changing anything (the function checks it
-// first), so after one renewal the request is sent once more (docs/sign-out-report.md, section 8):
-//   - renewal refused, or a second 401: err.ended, and the caller ends the session (endSession());
-//   - renewal couldn't reach the service: a 503, the session kept, the player can try again;
-//   - the sign-in changed meanwhile (signed out, or another account): err.stale, nothing re-sent.
+// first), so after one renewal the request is sent once more (docs/sign-out-report.md, section 9):
+//   - renewal refused, or a second 401 for the same session: err.ended, and the caller ends it;
+//   - renewal couldn't be done (outage, rate limit, unknown answer): a 503, the session kept;
+//   - this browser's sign-in changed meanwhile: err.stale, and nothing is sent again.
 // Nothing else is retried: a timeout or a 5xx may have happened after the server acted.
 export async function api(action, args = {}, isCurrent = () => true) {
-  const who = await userOf();
+  const from = stored();
   try {
     return await call(action, args);
   } catch (err) {
     if (err.status !== 401) throw err;
-    if (!isCurrent()) throw stale();
-    const renewal = await renew();
-    if (!isCurrent()) throw stale();
+    if (!isCurrent() || !from?.refresh_token) throw stale();
+    const renewal = await renew(from);
+    if (!isCurrent() || renewal === 'changed') throw stale();
     if (renewal === 'unavailable') throw Object.assign(new Error("Can't reach the sign-in service. Please try again."), { status: 503 });
     if (renewal === 'ended') throw Object.assign(err, { ended: true });
-    if (await userOf() !== who) throw stale();
     try {
       return await call(action, args);
     } catch (again) {
-      if (again.status === 401 && isCurrent() && await userOf() === who) again.ended = true;
-      else if (again.status === 401) throw stale();
+      if (again.status === 401) {
+        if (!isCurrent() || sessionOf(stored() || {}) !== sessionOf(from)) throw stale();
+        again.ended = true;
+      }
       throw again;
     }
   }

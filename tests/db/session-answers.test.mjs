@@ -146,3 +146,43 @@ test('SO-6b the game function answers 401 for an ended session token and for a m
   assert.deepEqual(await gameCall('not-a-jwt'), { status: 401, error: 'Please sign in again.' }, 'a malformed token');
 });
 
+
+// F-1 (the review of 543cbde): the client's own renewal after a 401, on GoTrue. A direct refresh
+// request, installed with setSession(), gives a working session; two renewals of the same refresh
+// token at once (the client's and the library's own) both succeed for the same session, within
+// GoTrue's reuse interval; an ended session's refresh token is refused with the one code the client
+// treats as final, refresh_token_not_found; and a malformed one with validation_failed, which the
+// client leaves as "unavailable". Statuses, codes and session ids only, never a token.
+test('F-1 a direct renewal installed with setSession() works; two renewals of one refresh token at once both succeed; the refusals', async () => {
+  const direct = (refresh) => fetch(`${API}/auth/v1/token?grant_type=refresh_token`, {
+    method: 'POST', headers: { apikey: ANON, 'Content-Type': 'application/json', 'X-Supabase-Api-Version': '2024-01-01' }, body: JSON.stringify({ refresh_token: refresh }),
+  });
+  const sessionOf = (t) => JSON.parse(Buffer.from(t.split('.')[1], 'base64url')).session_id;
+  const a = await account('renew');
+  const first = await session(a);
+  const [x, y] = await Promise.all([direct(first.refresh), direct(first.refresh)]);
+  const [bx, by] = [await x.json(), await y.json()];
+  console.log(`# F-1 two renewals of one refresh token at once: ${x.status} and ${y.status}; same session: ${sessionOf(bx.access_token) === sessionOf(by.access_token) && sessionOf(bx.access_token) === sessionOf(first.access)}`);
+  assert.equal(x.status, 200);
+  assert.equal(y.status, 200);
+  assert.equal(sessionOf(bx.access_token), sessionOf(first.access), 'the same session');
+  assert.equal(sessionOf(by.access_token), sessionOf(first.access), 'the same session');
+  assert.equal(await getUser(bx.access_token), null, 'the first renewal works');
+  assert.equal(await getUser(by.access_token), null, 'and so does the second');
+  // The client hands a renewal to the library with setSession(): it is saved, and works.
+  const c = anon();
+  const { error } = await c.auth.setSession({ access_token: bx.access_token, refresh_token: bx.refresh_token });
+  assert.equal(error, null, 'setSession() accepts the renewed session');
+  assert.equal(shape((await c.auth.getUser()).error), null, 'the installed session works');
+  // A refresh token of an ended session: the one refusal the client treats as final (also in SO-1b).
+  const ended = await session(a);
+  await logout(ended.access, 'local');
+  const gone = await direct(ended.refresh);
+  const goneBody = await gone.json();
+  assert.deepEqual({ status: gone.status, code: goneBody.code ?? goneBody.error_code }, { status: 400, code: 'refresh_token_not_found' });
+  // A malformed refresh token is refused as a validation failure, which the client leaves as
+  // "unavailable" (the session kept; Sign out always works): the conservative side.
+  const bad = await direct('not-a-refresh-token');
+  const badBody = await bad.json();
+  assert.deepEqual({ status: bad.status, code: badBody.code ?? badBody.error_code }, { status: 400, code: 'validation_failed' });
+});

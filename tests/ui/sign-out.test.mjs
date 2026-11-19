@@ -358,3 +358,136 @@ test('SO-13 two tabs: tab A\'s sign-out hangs while tab B signs in as another ac
   assert.equal(await savedUser(b), ACCOUNTS.fresh.id, 'B\'s session survives');
   await done(ctx, { pages: [a, b] });
 });
+
+// ---------------------------------------------------------------- F-1: the controlled renewal (review of 543cbde)
+// The renewal after a 401 is net.js's own request; only refresh_token_not_found ends a session, and
+// a new session is handed to the library through setSession() (docs/sign-out-report.md, section 18).
+
+const stored = (page) => page.evaluate((k) => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } }, AUTH_KEY);
+const sessionOf = (s) => s && JSON.parse(Buffer.from(s.access_token.split('.')[1], 'base64url')).session_id;
+async function playing(backend) {
+  const ctx = await open({ backend });
+  await signIn(ctx.page, env.url, 'player');
+  await inGame(ctx.page);
+  return ctx;
+}
+
+test('F-1 proof 1: a renewal is installed with setSession(), with no second renewal, and the new session works', async () => {
+  const backend = new FakeBackend();
+  const ctx = await playing(backend);
+  const { page } = ctx;
+  const before = await stored(page);
+  const r0 = renewals(backend);
+  backend.staleTokens = 1;
+  await page.click('[data-a="move"][data-v="n"]');
+  await settle(page);
+  const after = await stored(page);
+  assert.equal(renewals(backend) - r0, 1, 'one renewal request');
+  assert.notEqual(after.refresh_token, before.refresh_token, 'the renewed session is saved');
+  assert.equal(sessionOf(after), sessionOf(before), 'the same session, renewed');
+  await page.waitForTimeout(1500);
+  assert.equal(renewals(backend) - r0, 1, 'setSession() started no renewal of its own');
+  await page.click('[data-a="move"][data-v="s"]');
+  await settle(page);
+  assert.equal(renewals(backend) - r0, 1, 'the next request works with the new session, unrenewed');
+  assert.equal(gameCalls(backend, 'move'), 3, 'the refused move, its resend, and the next');
+  await done(ctx);
+});
+
+for (const [label, fail] of [['500', 500], ['429', { status: 429, retryAfter: 60 }], ['an unknown 400 code', { status: 400, code: 'something_new' }], ['a dropped connection', 'drop']]) {
+  test(`F-1 proof 2: a renewal answered with ${label} keeps the saved session, and the player can try again`, async () => {
+    const backend = new FakeBackend();
+    const ctx = await playing(backend);
+    const { page } = ctx;
+    const before = await stored(page);
+    backend.staleTokens = 1;
+    backend.refreshFail = fail;
+    await page.click('[data-a="move"][data-v="n"]');
+    await settle(page);
+    assert.deepEqual(await stored(page), before, 'the saved session is untouched');
+    assert.equal(await page.isVisible('#authform'), false, 'still in the game');
+    assert.match(await page.textContent('body'), /Can't reach the sign-in service/, 'the player is told, and the session kept');
+    if (label === '429') {
+      // Rate limited: a further refusal doesn't renew again before Retry-After.
+      const r = renewals(backend);
+      backend.staleTokens = 1;
+      await page.click('[data-a="move"][data-v="n"]');
+      await settle(page);
+      assert.equal(renewals(backend), r, 'no renewal request while rate limited');
+    } else {
+      await page.click('[data-a="move"][data-v="n"]');
+      await settle(page);
+      assert.equal(await page.isVisible('#authform'), false, 'trying again works');
+    }
+    await done(ctx);
+  });
+}
+
+test('F-1 proof 2: only refresh_token_not_found ends the session', async () => {
+  const backend = new FakeBackend();
+  const ctx = await playing(backend);
+  const { page } = ctx;
+  backend.staleTokens = 1;
+  backend.refreshFail = { status: 400, code: 'refresh_token_not_found' };
+  await page.click('[data-a="move"][data-v="n"]');
+  await theForm(page);
+  assert.match(await message(page), /Your session has ended/);
+  assert.equal(await savedUser(page), null);
+  await done(ctx);
+});
+
+for (const change of ['a new session of the same account', 'a sign-out']) {
+  test(`F-1 proof 5: a late renewal after ${change} installs nothing and sends nothing again`, async () => {
+    const backend = new FakeBackend();
+    const ctx = await playing(backend);
+    const { page } = ctx;
+    backend.staleTokens = 1;
+    const release = backend.holdAuth();
+    await page.evaluate(() => { window.__r = import(new URL('js/net.js', location.href)).then(({ api }) => api('move', { dir: 'n' })).then(() => 'sent', (e) => (e.stale ? 'stale' : `error ${e.status}`)); });
+    await page.waitForFunction(() => true);
+    await new Promise((r) => setTimeout(r, 400)); // the renewal request is now held
+    const replaced = change === 'a sign-out' ? null : JSON.stringify(savedSession(ACCOUNTS.player));
+    await page.evaluate(([k, v]) => { if (v) localStorage.setItem(k, v); else localStorage.removeItem(k); }, [AUTH_KEY, replaced]);
+    release();
+    assert.equal(await page.evaluate(() => window.__r), 'stale');
+    assert.equal(JSON.stringify(await stored(page)), replaced ?? 'null', 'what the browser saved meanwhile stays');
+    assert.equal(gameCalls(backend, 'move'), 1, 'the refused move only');
+    await ctx.context.close();
+  });
+}
+
+test('F-1 proof 6: the library\'s own renewal at the same moment leaves a working session of the same sign-in', async () => {
+  const backend = new FakeBackend();
+  const ctx = await playing(backend);
+  const { page } = ctx;
+  const before = await stored(page);
+  backend.staleTokens = 1;
+  const out = await page.evaluate(async () => {
+    const { api, client } = await import(new URL('js/net.js', location.href));
+    const sb = await client();
+    const [lib, call] = await Promise.allSettled([sb.auth.refreshSession(), api('move', { dir: 'n' })]);
+    return { lib: lib.status === 'fulfilled' && !lib.value.error, call: call.status };
+  });
+  assert.deepEqual(out, { lib: true, call: 'fulfilled' });
+  const after = await stored(page);
+  assert.equal(sessionOf(after), sessionOf(before), 'the same session');
+  await page.click('[data-a="move"][data-v="s"]');
+  await settle(page);
+  assert.equal(await page.isVisible('#authform'), false, 'and it works');
+  await done(ctx);
+});
+
+test('F-1 proof 4: refusals in two tabs at once share one renewal across the browser', async () => {
+  const backend = new FakeBackend();
+  const ctx = await playing(backend);
+  const { page: a } = ctx;
+  const b = await secondTab(ctx);
+  await b.goto(`${env.url}/`);
+  await inGame(b);
+  const r0 = renewals(backend);
+  backend.staleTokens = 2;
+  const go = (p) => p.evaluate(async () => { const { api } = await import(new URL('js/net.js', location.href)); return api('state').then(() => 'ok', (e) => `error ${e.status}`); });
+  assert.deepEqual(await Promise.all([go(a), go(b)]), ['ok', 'ok']);
+  assert.equal(renewals(backend) - r0, 1, 'one renewal request for both tabs');
+  await done(ctx, { pages: [a, b] });
+});
