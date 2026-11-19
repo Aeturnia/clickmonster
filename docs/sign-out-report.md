@@ -255,3 +255,27 @@ Every browser test was run against `main` at `bfad9b3` (`UI_PUBLIC_DIR`): **18 o
 
 **Rollback:** revert the merge, then redeploy `game` from the reverted `main`. No data is involved.
 
+## 17. The review of `543cbde`, and a finding at the gate
+
+**The review:** changes requested.
+- **F-1 (blocking):** `renew()` classed every renewal error other than a network failure as "ended". A temporary 500, a 429 or an unknown code would sign the player out, against R4. The fix asked for: "ended" only for a measured, definitive refusal, and everything else "unavailable", with the session kept and tested.
+- **F-2 (non-blocking):** the stuck-lock case in another tab, to be recorded as a separate investigation.
+
+**What checking F-1 found:** the classification in `renew()` is wrong, but correcting it alone can't keep the session.
+1. **supabase-js 2.45.4 treats only 502, 503, 504 and "no response" as temporary.** Its error handler throws `AuthRetryableFetchError` for those statuses only. A 500 or a 429 becomes an `AuthApiError`.
+2. **On any renewal error that isn't `AuthRetryableFetchError`,** the library's `_callRefreshToken()` itself removes the saved session and emits `SIGNED_OUT`, before `refreshSession()` returns to `renew()`.
+3. **Measured in the browser** (fake backend, a refresh answered 500, then 429): in both cases the saved session was gone and the sign-in form was shown, whatever `renew()` decided.
+4. **The same applies to the library's own background renewal** (`autoRefreshToken`, about an hour after each sign-in), outside this fix's 401 path. A temporary 500 or 429 there signs a player out on the live site today.
+
+**Why this stops at a gate:** keeping the session through a temporary renewal failure can't be done with `refreshSession()`, the approved, supported mechanism (review safeguard 1). The options:
+- **A. Our own renewal request on the 401 path.** `net.js` sends the refresh request itself (`/auth/v1/token?grant_type=refresh_token`, with the publishable key) and classifies the answer:
+  - "ended" only for the measured `refresh_token_not_found`;
+  - everything else "unavailable", with nothing removed;
+  - on success, the library saves the new session through its public `setSession()`.
+
+  One shared request, so no storm. **Proposed.** The library's background renewal keeps its behaviour and becomes a separate follow-up.
+- **B. A, and also turning off the library's background renewal** (`autoRefreshToken: false`), with `net.js` renewing ahead of expiry the same way. That covers the background case as well, but it is a larger change to how every session is kept.
+- **C. Keep `refreshSession()`, fix only the classification,** and document that the library still discards the session on a 500 or 429. That doesn't meet F-1 or R4.
+
+**Nothing has changed since `543cbde`.** F-1 waits for this decision; F-2 will be recorded as asked.
+
