@@ -7,7 +7,7 @@ export const SITE_NAME = 'Monstra Regna';
 export const SITE_ORIGIN = 'https://monstraregna.com';
 
 // The public pages' menu and footer (Monstra Regna scope, MR-B2, 4.2 and 4.3). The news pages draw
-// them from here. index.html and the static pages (guide/, leaderboard/, contact/) carry the same
+// them from here. index.html and the static pages (guide.html, leaderboard.html, contact.html) carry the same
 // markup as plain HTML, with no script; tests/site-pages.test.mjs checks they match these.
 // Contact is in because its address reaches a monitored inbox (D8, confirmed by the owner,
 // 2026-11-19). Discord joins the menu only once a permanent invite exists (D9). Privacy and Terms
