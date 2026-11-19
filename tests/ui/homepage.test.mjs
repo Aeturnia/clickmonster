@@ -132,7 +132,7 @@ test('B2-3 the menu: Home, Guide, Leaderboard and Contact, real links, Home curr
   await page.goto(`${env.url}/`);
   const items = await page.evaluate(() => [...document.querySelectorAll('#entry nav[aria-label="Site"] a')].map((a) => [a.textContent, a.getAttribute('href'), a.getAttribute('aria-current')]));
   assert.deepEqual(items, [['Home', '/', 'page'], ['Guide', '/guide', null], ['Leaderboard', '/leaderboard', null], ['Contact', '/contact', null]]);
-  for (const [, href] of items) assert.equal((await page.request.get(`${env.url}${href}`)).status(), 200, `${href} answers`);
+  for (const [, href] of items) assert.equal((await page.request.get(`${env.url}${href}`, { maxRedirects: 0 })).status(), 200, `${href} answers directly`);
   await done(ctx);
 });
 
@@ -143,6 +143,7 @@ for (const [path, heading] of [['/guide', 'Guide'], ['/leaderboard', 'Leaderboar
       const { page } = ctx;
       const res = await page.goto(`${env.url}${path}`);
       assert.equal(res.status(), 200);
+      assert.equal(res.request().redirectedFrom(), null, `${path}: reached without a redirect`);
       const s = await page.evaluate(() => ({
         h1: document.querySelector('h1').textContent,
         current: document.querySelector('nav[aria-label="Site"] [aria-current="page"]')?.textContent,
@@ -175,6 +176,22 @@ test('B2-4 the footer on the entrance and on the news pages; the same copyright 
   await page.click('[data-a="tab"][data-v="hero"]');
   await settle(page);
   assert.match(await page.textContent('#main'), /About\s*© 2026 Aeturnis Development Labs, LLC/);
+  await done(ctx);
+});
+
+// The routing correction (docs/monstra-regna-b2-report.md, section 7). The test server serves as
+// Netlify does: a directory's address without its slash gets a 301 before any rewrite. So this
+// fails if a page is ever a directory index again, as the first version was.
+test('B2-5 the first response for /guide, /leaderboard and /contact, and their slash forms, is the page itself: 200, no redirect', async () => {
+  const ctx = await open();
+  const { page } = ctx;
+  for (const p of ['/guide', '/leaderboard', '/contact']) {
+    for (const addr of [p, `${p}/`]) {
+      const r = await page.request.get(`${env.url}${addr}`, { maxRedirects: 0 });
+      assert.equal(r.status(), 200, `${addr}: answered directly, not redirected (${r.headers().location || ''})`);
+      assert.ok((await r.text()).includes(`<link rel="canonical" href="https://monstraregna.com${p}">`), `${addr}: the page, with its slashless canonical address`);
+    }
+  }
   await done(ctx);
 });
 

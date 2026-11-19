@@ -34,13 +34,35 @@ const ALLOWED_CDN = process.env.UI_PUBLIC_DIR ? /^https:\/\/cdn\.jsdelivr\.net\/
 
 // ---------------------------------------------------------------- static server
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.png': 'image/png' };
+// Netlify's serving, as far as the tests need it (MR-B2's routing correction,
+// docs/monstra-regna-b2-report.md, section 7), in its order:
+//   1. a file at the address is served as it is;
+//   2. a directory's address without its trailing slash answers 301 to the slash form, before any
+//      rewrite (this is what sent /guide to /guide/ in production);
+//   3. netlify.toml's 200 rewrites, read from the checkout being served (beside its public/);
+//   4. a directory with the slash serves its index.html; /x serves x.html if it exists.
+const REWRITES = (() => {
+  const toml = path.join(PUBLIC, '..', 'netlify.toml');
+  if (!fs.existsSync(toml)) return {};
+  const text = fs.readFileSync(toml, 'utf8').replace(/\r\n/g, '\n');
+  return Object.fromEntries([...text.matchAll(/\[\[redirects\]\]\n\s*from = "([^"]+)"\n\s*to = "([^"]+)"\n\s*status = 200\b/g)].map((m) => [m[1], m[2]]));
+})();
+const isFile = (f) => fs.existsSync(f) && fs.statSync(f).isFile();
+const isDir = (f) => fs.existsSync(f) && fs.statSync(f).isDirectory();
+
 export function startServer() {
   const server = http.createServer((req, res) => {
     const url = new URL(req.url, 'http://x');
-    let file = path.join(PUBLIC, decodeURIComponent(url.pathname));
+    const at = (p) => path.join(PUBLIC, decodeURIComponent(p));
+    let file = at(url.pathname);
     if (!file.startsWith(PUBLIC)) { res.writeHead(403).end(); return; }
-    if (fs.existsSync(file) && fs.statSync(file).isDirectory()) file = path.join(file, 'index.html');
-    if (!fs.existsSync(file)) { res.writeHead(404).end('not found'); return; }
+    if (!isFile(file)) {
+      if (isDir(file) && !url.pathname.endsWith('/')) { res.writeHead(301, { Location: `${url.pathname}/${url.search}` }).end(); return; }
+      if (REWRITES[url.pathname]) file = at(REWRITES[url.pathname]);
+      else if (isDir(file)) file = path.join(file, 'index.html');
+      else if (isFile(`${file}.html`)) file = `${file}.html`;
+    }
+    if (!isFile(file)) { res.writeHead(404).end('not found'); return; }
     res.writeHead(200, { 'Content-Type': TYPES[path.extname(file)] || 'application/octet-stream' });
     fs.createReadStream(file).pipe(res);
   });

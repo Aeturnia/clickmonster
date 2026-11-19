@@ -199,7 +199,9 @@ Read these first:
   - **`tools/news-public-check.mjs`** requires `--published` and `--hidden`.
 - **The public pages' menu and footer** (MR-B2) are defined once, in `public/js/site.js` (`menuHtml()`, `footerHtml()`, `COPYRIGHT_HTML`).
   - **The news pages** draw them from there.
-  - **`index.html` and the static pages** (`public/guide/`, `leaderboard/` and `contact/`, plain HTML with no script) carry the same markup, and `tests/site-pages.test.mjs` checks they match.
+  - **`index.html` and the static pages** (`public/guide.html`, `leaderboard.html` and `contact.html`, plain HTML with no script) carry the same markup, and `tests/site-pages.test.mjs` checks they match.
+  - **Each static page is a single file with a 200 rewrite** in `netlify.toml`, for its address and its slash form. Never a directory with an `index.html`: Netlify redirects such a directory's address to its slash form before any rewrite. That happened after MR-B2's first deployment.
+  - **`tools/public-pages-check.mjs`** checks the live pages read-only, from their first responses.
   - **To add a menu item** (Discord, once there is a permanent invite) or a footer link (Privacy and Terms, after the legal milestone): change `site.js`, then each HTML copy.
   - **Each January,** update the copyright year in `site.js` and its copies.
 - **Public news pages** are the Netlify Edge Function `netlify/edge-functions/news.js`, for `/news` and `/news/<slug>`.
@@ -236,8 +238,8 @@ Read these first:
 ## Testing
 
 ```
-npm test                 # engine, entrance file checks, the first-paint tripwire, the public pages, news rules, the news page handler, the town rule, the log rules and the session rule (70)
-npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (306)
+npm test                 # engine, entrance file checks, the first-paint tripwire, the public pages, news rules, the news page handler, the town rule, the log rules and the session rule (71)
+npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (308)
 npm run test:db          # database (pgTAP, 42) and API/function/recovery/session tests (17, plus 1 opt-in) on the LOCAL Supabase stack, with Mailpit
 npx playwright install chromium   # once
 ```
@@ -274,7 +276,7 @@ npx playwright install chromium   # once
 - **Memory:** on the owner's laptop (about 8 GB for Docker), don't run the browser suite while the stack is running. In L-3, the two together starved the browsers and the run was stopped. Stop the stack (`npx supabase stop`) before `npm run test:ui`.
 - **The functions run too,** at `127.0.0.1:54321/functions/v1/<name>`. The CLI mounts each imported file when the stack starts, so after adding or moving a shared file, stop and start the stack.
 
-**`tests/ui/harness.mjs`** answers every Supabase request with a fake backend built on the real engine. Any other host fails the test. supabase-js comes from `public/vendor/`; the CDN module is allowed only when `UI_PUBLIC_DIR` points at another checkout, which may be older code, and is cached in `tests/ui/.cache`. It provides:
+**`tests/ui/harness.mjs`** serves `public/` as Netlify does, as far as the tests need: a file first; then a directory's address without its slash redirected (301); then `netlify.toml`'s 200 rewrites; then `x.html` for `/x`. It answers every Supabase request with a fake backend built on the real engine. Any other host fails the test. supabase-js comes from `public/vendor/`; the CDN module is allowed only when `UI_PUBLIC_DIR` points at another checkout, which may be older code, and is cached in `tests/ui/.cache`. It provides:
 - **`FakeBackend({ hero, players, chat, events, zones, quests, reports, worldEvents, activeHunts })`**. Its admin actions write the audit log and refuse repeats the way `supabase/functions/admin/index.ts` does, so a duplicate request shows up as a duplicate audit entry (`backend.adminData().log`). Keep it in step when server behaviour changes. It also provides `failNext(action, status, msg)`, `hold(action)` (returns a release function) and `broadcast()` for Realtime. Recorded `calls` and `unexpected` requests are available for assertions.
 - **Test accounts:** `ACCOUNTS.player`, `admin`, `mod` (a moderator) and `fresh`.
 - **Auth:** `savedSession(acct, expiresIn)` builds a stored session to seed `localStorage` (a negative `expiresIn` gives an expired one). Refresh tokens are `refresh-<id>`; add one to `backend.revoked` to make the server refuse it. `backend.authCalls` lists the grant types requested, and `/auth/v1/signup` answers as with email confirmation on.

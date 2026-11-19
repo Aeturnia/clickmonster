@@ -1,6 +1,8 @@
 # MR-B2: homepage and navigation, report
 
-**Status: implemented; at the independent implementation review gate.** Nothing is merged or deployed.
+**Status: merged as PR #56 (`1679855`, 2026-11-19) after its independent review approved `d6134ed`, and published by Netlify.**
+- **A routing problem found after deployment:** `/guide`, `/leaderboard` and `/contact` answered with a 301, not 200.
+- **Its correction (section 7)** is a follow-up PR at its own review gate. Nothing in it is merged or deployed.
 - **Contract:** `docs/monstra-regna-scope.md`, section 4 (MR-B2), with D7 to D11 and the owner's answers in section 10.
 - **Authorization:** the owner authorized MR-B2 on 2026-11-19 ("Authorization granted for MR-B2, email is good and no permanent discord yet").
   - **D8:** mail to `support@monstraregna.com` reaches a monitored inbox, so Contact ships.
@@ -118,3 +120,83 @@
 - **Real phones:** the menu on a 320px screen with the phone's own fonts, and the skip link with a screen reader. The suites run in Chromium only.
 - **Screen readers.**
 - **Field performance:** the figures are lab measurements under one profile.
+
+## 7. After deployment: the static pages were redirected (B2-R1), and the correction
+
+### 7.1 What the live check found
+
+**After PR #56 was merged** (`1679855`), Netlify published the site in about 30 s.
+
+**Read-only checks of the live site** (first responses, no redirect followed; the full output is in `docs/ui-audit/mr-b2/live-1679855-check.txt`):
+
+| Address | Result |
+|---|---|
+| `/` | 200; the menu (Home current), the footer, the skip link; the removed sections gone |
+| `/news`, `/news/under-construction` | 200; the no-script policy, the canonical address, the menu and the footer |
+| **`/guide`, `/leaderboard`, `/contact`** | **301, `Location: /guide/`** (and so on). Not the page: no policy, no canonical address, no menu or footer |
+| `/guide/`, `/leaderboard/`, `/contact/` | 200, the no-script policy, the canonical address, the menu and the footer |
+
+**For visitors,** the pages worked, after one redirect each. **But:**
+- B2-5's "answer 200 at their addresses, rewritten, not redirected" did not hold;
+- every menu click cost an extra round trip;
+- each page's canonical address pointed at a redirect.
+
+### 7.2 The cause
+
+**Each page was a directory with an `index.html`** (`public/guide/index.html`). Netlify answers a directory's address without its trailing slash with a 301 to the slash form, before any rewrite in `netlify.toml` applies, so the 200 rewrites never ran. The owner's review confirmed this against Netlify's documentation and support guidance: a standalone `/guide.html` is served at `/guide`, while `/guide/index.html` redirects `/guide` to `/guide/`. The live 301s match.
+
+**Why the tests passed:** the test server served a directory's address directly, unlike Netlify. That is a gap in the test environment's fidelity, not in the homepage's design.
+
+### 7.3 The correction (option A, decided by the owner; a follow-up PR)
+
+**The pages and the rewrites:**
+- **Single files:** `public/guide.html`, `public/leaderboard.html` and `public/contact.html`, moved without change apart from a comment.
+- **The 200 rewrites** in `netlify.toml` point at them: `/guide` to `/guide.html`, and so on.
+- **The slash forms** (`/guide/`) are rewritten to the same file, so earlier links keep working, with no redirect.
+- **Unchanged:** the menu links, the slashless canonical addresses and the headers (`/guide*` covers all three forms).
+- **Not touched:** Netlify's site-wide "Pretty URLs" setting.
+
+**The test server now serves as Netlify does,** in Netlify's order:
+1. a file at the address;
+2. a directory's address without its slash: a 301 to the slash form;
+3. `netlify.toml`'s 200 rewrites, read from the checkout being served;
+4. a directory's `index.html`, or `x.html` for `/x`.
+
+With it, the tests reproduce the production 301s on `1679855`.
+
+**New regression checks:**
+- **Browser:** `/guide`, `/leaderboard` and `/contact`, and their slash forms, answer 200 on the first response, with no redirect followed, and are the page itself (its slashless canonical address).
+- **Tightened:** the menu test and the static-page tests also refuse a redirect.
+- **File check:** no public page is a directory with an `index.html`; each menu page is `public/<name>.html` with a 200 rewrite to it. It also covers pages still to come (Privacy, Terms).
+- **`tools/public-pages-check.mjs`:** the read-only live check, reusable. It reads first responses only and exits 1 on any difference. It is what showed the problem above.
+
+**Against `1679855`** (`UI_PUBLIC_DIR`, with that checkout's own `netlify.toml`): the five routing-related browser tests fail there, with the 301s, and pass here.
+
+**What Netlify should do after the merge:**
+- `/guide`, `/leaderboard` and `/contact` answer 200 directly, through the rewrites, with no directory left to trigger the slash redirect;
+- `/guide/` and the other slash forms answer 200 through their own rewrites;
+- `/guide.html` answers 200 (it is a file);
+- every one of them has the no-script policy.
+
+`tools/public-pages-check.mjs` confirms this, read-only, after the merge.
+
+### 7.4 Runs and CI for the correction
+
+**Local, on `d913056`** (the correction's code and tests as pushed), on the owner's Windows laptop:
+
+| Run | Engine and file tests | Browser |
+|---|---|---|
+| 1 | 71 of 71 | 307 of 307 |
+| 2 | 71 of 71 | 307 of 307 |
+| 3 | 71 of 71 | 307 of 307 |
+
+- **The counts:** engine 71 (70, plus the directory-index check); browser 307 (306, plus the first-response test).
+- **The test server's Netlify behaviour** (a directory's address without its slash redirected) broke no existing test.
+- **CI on the PR's own base** (run `44596307837`, head `4033a94`, merge commit `207b111`):
+  - **Attempt 1:** engine and database passed. Browser failed 1 of 307: `PR-4a a second tab with the saved session also shows the form` timed out.
+  - **The cause, from the trace:** a race in that test's setup, not this correction and not the runner. It is recorded on the PR and in `docs/backlog.md`.
+  - **Attempt 2,** the one authorized re-run: browser passed 307 of 307.
+- **The race was corrected separately,** test only, in PR #58 (`0029aea`), approved and merged first.
+- **Combined with PR #58:** the branch was brought up to date with `main` (`0029aea`); the routing change is unchanged. Browser total 308: 306, plus this correction's first-response test, plus PR #58's proof test.
+- **Combined CI:** recorded on the PR once its run completes.
+
