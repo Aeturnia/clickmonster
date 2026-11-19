@@ -145,19 +145,26 @@ A separate staging Supabase project is dropped. The live sign-in session above c
   - **Keep the tests:** the thresholds and assertions stay as they are. Any fix is to the layout, not the tests, and only once scoped.
   - **This is not authorized:** neither a CSS change nor the investigation as a milestone.
 
-- **An intermittent timeout in `PR-4a a second tab with the saved session also shows the form`** (`tests/ui/password-recovery.test.mjs:265`), seen twice on 2026-11-18.
+- **An intermittent timeout in `PR-4a a second tab with the saved session also shows the form`** (`tests/ui/password-recovery.test.mjs`): **cause found, a race in the test's setup; corrected on `claude/pr-4a-race`, pending review.**
   - **The failure:** the second tab's `untilHeading(…, 'Choose a new password')` times out after 15 s.
   - **Where it happened:**
     - CI run `44368408591` on PR #50's docs-only commit `2cef100`, Windows (passed on its one re-run);
-    - local run 2 of 3 for GP-1, Linux. Runs 1 and 3 passed, and so did CI on PR #51.
-  - **Not GP-1's:** it fails without any game change, and GP-1 doesn't touch the entrance or `entry-recover.js`.
-  - **Root cause not established.** It shouldn't be treated as a flake, and the test and its timeout stay as they are.
-  - **Next step, when authorized:** run it repeatedly with `UI_DIAGNOSTICS=1` to capture the trace and the second tab's DOM when it times out.
+    - local run 2 of 3 for GP-1, Linux. Runs 1 and 3 passed, and so did CI on PR #51;
+    - CI run `44596307837` on PR #57 (`4033a94`), Windows, 2026-11-19, the first time with diagnostics. Its failed job was re-run once, as authorized.
+  - **The cause** (from that run's trace):
+    - **The heading comes first.** The first tab shows the reset form from the link alone, before the library has read it. `entry.js` saves the session and the recovery marker only after that, once `/auth/v1/user` answers.
+    - **The test didn't wait for the save.** `arrive()` returned at the heading and the test opened the second tab at once. On the runner, the first tab's library load was slow (machine CPU about 51%), so the second tab loaded about 200 ms before the save. Finding no session, it rightly showed the sign-in form, and never loaded `entry-recover.js`, `net.js` or the library.
+    - **No defect elsewhere:** no page errors, failed requests or runner network faults, and nothing wrong in the application. The criterion is a new tab *with the saved session*, and this tab had none.
+    - **The two earlier failures** had no diagnostics; the same cause is likely but not shown.
+  - **The correction (test only):**
+    - **The wait:** the test now waits, by condition, until the first tab has saved both the session and the marker for this account, then opens the second tab. Its assertions are unchanged.
+    - **The proof:** a second test holds back the first tab's `/auth/v1/user` answer by 2.5 s and checks that nothing is saved when the heading shows. With the old setup it failed 3 of 3 times, with CI's error at the same line. With the correction it passed 3 of 3 times.
+  - **Eight passes in a row locally** (before the cause was known) did not show the test was sound: it depended on the machine's timing.
 - **`net::ERR_NO_BUFFER_SPACE` on the Windows browser runner** (CI run `44410857655`, 2026-11-18, PR #51 at `b60c6ae`).
   - **What happened:** `R1-02 an expired link (error_code only)…` failed when Chromium's request for `/js/data/items.js` from the harness's local server failed with a Windows socket-buffer error. The entrance showed "The game could not be loaded", as it should for a module that fails.
   - **The diagnostics:** `diag.json` showed no page errors, no bad responses, and low CPU and memory.
   - **The likely cause** is the runner's network stack under the suite's many short connections, after more than 200 tests. It isn't established.
-  - **Next step, when authorized:** see whether it recurs, and whether the harness's server should keep connections alive or the job should limit them. Unlike the `PR-4a` timeout above, this one has diagnostics; they are not known to share a cause.
+  - **Next step, when authorized:** see whether it recurs, and whether the harness's server should keep connections alive or the job should limit them. The `PR-4a` timeout above is a separate cause, a race in that test's setup: its third occurrence had no runner network error.
   - **It recurs.** It has been seen four times on 2026-11-18 and 19:
     - PR #47's docs-only commit (`/js/data/masteries.js`);
     - run `44410857655` above;
