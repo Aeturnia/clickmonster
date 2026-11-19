@@ -1,6 +1,6 @@
 # Sign-out and session recovery: scope
 
-**Status: draft, for independent scope review.** Documentation only: nothing is implemented, nothing is deployed, and no production auth setting is read or changed.
+**Status: draft, revised before review (the library's lock, and which tests fail on `main`), for independent scope review.** Documentation only: nothing is implemented, nothing is deployed, and no production auth setting is read or changed.
 - **Priority: P1,** a user-facing sign-in recovery defect. On current evidence it isn't a security incident.
 - **Ordered by:** the owner, 2026-11-19, after the defect was found on the live site. Implementing, merging and deploying each wait for this scope's approval and their own authorization.
 - **Kept separate from GP-1:** gameplay polish is closed; this defect isn't a GP-1 regression.
@@ -25,7 +25,9 @@
 - **Its sign-out scopes:** `global` (the default: every session of the account), `local` (this browser's session) and `others` (every other session).
 - **For `local` and `global`,** it first asks the server to end the session (`/auth/v1/logout?scope=…`), then removes the saved session and emits `SIGNED_OUT`.
 - **If the server's answer is an error,** the library treats only 401, 403 and 404 as "already gone" and clears anyway. Any other failure (another status, a network failure) is *returned* as `{ error }`, not thrown, and **the saved session is kept.**
-- **Before that,** it loads the session under a browser lock. If loading fails, the same `{ error }` comes back and nothing is cleared.
+- **Before that,** it loads the session. If loading fails, the same `{ error }` comes back and nothing is cleared.
+- **The lock:** `signOut()` first waits for the library's lock, with **no time limit**. In a browser with `navigator.locks` that is an exclusive lock shared by **every tab of the site**, and sign-in, renewal and session reads wait for the same lock.
+- **No time limit on the request:** the library sets none on its sign-out request. A request that never answers keeps the lock, and every later sign-out, sign-in or session read in any of the site's tabs waits behind it.
 - **Renewal:** when a saved session has expired, the library renews it. A refusal from the server (not retryable) removes the saved session and emits `SIGNED_OUT`; a network failure keeps it.
 - **Other tabs:** the library broadcasts its auth events to the browser's other tabs on a `BroadcastChannel` named after the storage key (`clickmonster.auth`).
 
@@ -53,9 +55,11 @@
 2. **Confirmed, from the code: the entrance has no way out of a refused session.**
    - **The desktop's saved session still looks valid,** for up to an hour, until its access token expires. So a refresh doesn't renew it: the entrance starts the game with it, and the `game` function refuses it with 401.
    - **The entrance then shows the gate:** Try again reuses the same refused session, and the form stays hidden.
-3. **Likely but not confirmed: Sign out didn't clear the saved session.** `net.signOut()` ignores the `{ error }` the library returns, so if the server's answer to signing out an already-ended session isn't 401, 403 or 404, or the request fails, nothing is cleared and nothing is shown.
-   - **What would confirm it:** the status of that `logout` request, which the owner wasn't able to capture before recovering.
-   - **The first implementation step** measures it on the local stack (real GoTrue): signing out with an ended session's token, and `getUser` with it (section 6, SO-1b).
+3. **Likely but not confirmed: Sign out didn't clear the saved session.** Two candidate causes, not exclusive:
+   - **A refused sign-out:** `net.signOut()` ignores the `{ error }` the library returns. If the server's answer to signing out an already-ended session isn't 401, 403 or 404, or the request fails, nothing is cleared and nothing is shown.
+   - **A sign-out that never finished:** the library's lock, or its sign-out request, never resolving (section 2). The click then waits for ever, with nothing shown, which matches "did nothing".
+   - **What would tell them apart:** the `logout` request's status, or whether it was sent at all. The owner wasn't able to capture it before recovering.
+   - **The first implementation step** measures the real server's answers on the local stack (GoTrue): signing out with an ended session's token, and `getUser` with it (SO-1b). The hang is checked in the browser with a sign-out request that never answers (SO-5).
 4. **Probably self-limiting, also not confirmed:** about an hour after the phone's sign-out, the desktop's access token expires. The renewal is then refused, and the library removes the session, so the form should come back. Nothing in the interface tells the player so.
 
 **The wider problem:** the client treats a saved session as proof of sign-in, and offers no way back when the server disagrees. The server stays authoritative on whether a session is valid. The browser must always be able to discard its own saved session and show the sign-in form. A failed server request must never make signing out on this device impossible.
@@ -83,16 +87,20 @@
 ### 5.1 Signing out: this device, and always clear (R1, R3, R6)
 
 `net.js`, `signOut()`:
-1. **`sb.auth.signOut({ scope: 'local' })`,** explicitly.
-2. **If that returns an error, or a saved session is still there afterwards:** remove `clickmonster.auth` from `localStorage`, then call `sb.auth.signOut({ scope: 'local' })` again.
-   - With no saved session left, the library sends nothing to the server. It removes what it holds and emits `SIGNED_OUT` to this tab's listener and, over its `BroadcastChannel`, to the browser's other tabs.
-   - It uses only the library's public API.
-3. **The same function serves every sign-out:**
+1. **`sb.auth.signOut({ scope: 'local' })`,** explicitly, **raced against a time limit** (proposed: 5 s).
+2. **The normal case:** it finishes in time and the saved session is gone. The library has emitted `SIGNED_OUT` to this tab's listener and, over its `BroadcastChannel`, to the other tabs. Nothing more is done.
+3. **The fallback,** when it returns an error, runs out of time, or leaves a saved session behind:
+   - **Remove `clickmonster.auth` from `localStorage` directly.** This is outside the library's API, deliberately: it is the one step that can't be blocked by the library's lock or the server.
+   - **Reload the page.** The library's lock may still be held by the unfinished request, and in this page every later sign-in would wait behind it; a reload releases this page's hold on it. The entrance then starts with no saved session and shows the form. A one-time flag in `sessionStorage` carries the message ("You have signed out." or "Your session has ended. Please sign in again."), so the reload doesn't lose it.
+   - **The other tabs:** removing the key fires the browser's `storage` event in them. `net.js` listens for the removal of `clickmonster.auth` and does the same there: the game stops and the entrance shows the form.
+   - **Not covered:** a lock held by *another* tab's stuck request (for example a hung renewal) still delays that tab's own library calls. Its own `storage` listener and the same fallback apply when its player signs out.
+4. **Idempotent:** with no saved session, the fallback has nothing to remove and simply shows the form; a second click changes nothing.
+5. **The same function serves every sign-out:**
    - the game's Sign out (`main.js:1627`);
    - the admin console's (`admin.js:898`, which today calls the library directly);
    - the entrance gate's (`entry.js:371`);
    - cancelling a reset (`entry.js:162`, already `local`).
-4. **A second entry point, `endSession()`,** does the same without marking the sign-out as the player's own. The entrance then says "Your session has ended" rather than "You have signed out".
+6. **A second entry point, `endSession()`,** does the same without marking the sign-out as the player's own. The entrance then says "Your session has ended" rather than "You have signed out".
 
 **Unchanged:** after a new password, `entry-recover.js` still signs out the account's **other** sessions (`others`), as the password recovery scope decided.
 
@@ -120,10 +128,11 @@ The entrance has **11 bytes of room** (33,989 of 34,000). The change to it is sm
 - **`enterGame()`:** after a 401, call `endSession()` instead of showing the gate.
 - **The gate's Sign out:** uses the new `signOut()` (no change in its line).
 - **The reset-cancel hook:** loses its now-default `{ scope: 'local' }`.
+- **The one-time message after a fallback reload:** read from `sessionStorage` at start-up and shown with the form.
 
 **The extraction that makes room:** `authError()` (`entry.js:61`–`:69`, 435 bytes with its comment) turns a failed sign-in into a message. It runs only after a sign-in attempt, when `net.js` has already loaded, and its subject is the sign-in service. It moves to `net.js` as `authMessage()`, outside the first paint.
 - **The entrance keeps one check:** a library that failed to load (`err.unavailable`) still shows its own message, so the move doesn't depend on `net.js` loading.
-- **Estimate:** about 370 bytes freed, and about 60 to 120 bytes added. The first paint would end near 33,700 to 33,750 bytes.
+- **Estimate:** about 370 bytes freed, and about 120 to 200 bytes added. The first paint would end near 33,800 to 33,850 bytes.
 - **The exact number** is measured in the implementation and reported. No comment is removed, no code is minified, and the budget isn't raised.
 
 ### 5.4 What stays as it is
@@ -135,7 +144,7 @@ The entrance has **11 bytes of room** (33,989 of 34,000). The change to it is sm
 
 ## 6. Acceptance criteria and tests
 
-Each test fails on `main` at `9fb022a`, except where stated, and is run there to show it (`UI_PUBLIC_DIR` for the browser tests).
+Each test is run against `main` at `9fb022a` (`UI_PUBLIC_DIR` for the browser tests). The last column says whether it fails there, and why. **Guards** pass on `main`: they keep behaviour that already works, or measure, and are not claimed to detect the defect.
 
 **The harness gains:**
 - **sessions that have ended on the server:** the `game` function answers 401, and `/auth/v1/user` answers 403 `session_not_found`;
@@ -143,22 +152,22 @@ Each test fails on `main` at `9fb022a`, except where stated, and is run there to
 - **a `game` function failure on demand:** a 503 or a dropped connection, as `failNext` does for actions;
 - **the scope of every sign-out,** already logged in `backend.logouts`.
 
-| ID | Criterion | Test |
-|---|---|---|
-| SO-1 | Signing out on one device leaves another signed in (R1) | Browser: Sign out sends only `scope=local`, in the game and in the admin console. Database (real GoTrue, local stack): two sessions of one account; signing out one with `local` leaves the other's `getUser` and renewal working |
-| SO-1b | The real server's answers, measured: `getUser` and `logout` with the token of a session ended elsewhere, and renewal with its refresh token | Database test, recording the statuses. It establishes or rules out section 3's third point; it doesn't fail on `main`, it measures |
-| SO-2 | A saved session the server has ended, still unexpired, at start-up: the form with "Your session has ended", the saved session removed, no gate (R2) | Browser |
-| SO-3 | The same during play: an action answered 401 returns to the entrance with the form, and the saved session is removed (R2) | Browser |
-| SO-4 | An expired session whose renewal is refused: the form; signing in again works without clearing anything by hand | Browser (LAC-5b extended with a sign-in) |
-| SO-5 | The player's Sign out when the server's sign-out fails (500, a dropped connection, no answer): signed out on this device anyway, the form shows, and a second Sign out is harmless (R3) | Browser, for the game's Sign out and the gate's |
-| SO-6 | A temporary failure at start-up (503, a dropped connection): the gate with Try again, the saved session kept; Try again starts the game once the service answers (R4) | Browser |
-| SO-6b | The server's rule: `sessionFailure()` gives "ended" for auth errors 401, 403 and 404 and for no token, and "unavailable" for 5xx, network and unknown errors; the `game` function answers 401 for an ended session's token and for a malformed one | Node (the rule), and database (the real function, local stack) |
-| SO-7 | After recovering, another account signs in and sees nothing of the first (R5) | Browser: its own hero, chat and messages |
-| SO-8 | Two tabs: signing out in one returns the other to the entrance, also when the server refused the sign-out (R6) | Browser, two pages sharing one browser context |
-| SO-9 | Phone and desktop: after SO-2, the form is on screen and reachable by keyboard at 390 x 844, 844 x 390 and 1440 x 900, with 0 axe violations (R7) | Browser |
-| SO-10 | The first paint stays within 34,000 bytes, with the number reported; no comment is removed | `tests/entrance-budget.test.mjs`, and the report |
-| SO-11 | A new password still signs out the other devices (`others`), and only them | The existing password recovery tests, kept |
-| SO-12 | Nothing logs or stores a token beyond the library's own saved session | Code review, and a check that the new code's log and message strings carry no token |
+| ID | Criterion | Test | On `main` |
+|---|---|---|---|
+| SO-1 | Signing out on one device leaves another signed in (R1) | Browser: Sign out sends only `scope=local`, in the game and in the admin console. Database (GoTrue, local stack): two sessions of one account; signing out one with `local` leaves the other's `getUser` and renewal working | **Browser part fails:** the sign-out sent is `global`. The database part is a guard: it tests GoTrue's `local` scope, not our code |
+| SO-1b | The real server's answers, measured: `getUser` and `logout` with the token of a session ended elsewhere, and renewal with its refresh token | Database test, recording the statuses | **Measurement,** not a pass or fail on `main`. It establishes or rules out the refused-sign-out cause in section 3 |
+| SO-2 | A saved session the server has ended, still unexpired, at start-up: the form with "Your session has ended", the saved session removed, no gate (R2) | Browser | **Fails:** the gate, with the form hidden |
+| SO-3 | The same during play: an action answered 401 returns to the entrance with the form, the saved session is removed, and the sign-out sent is `local` | Browser | **Fails only on its scope check:** `main` already returns to the form here, through a `global` sign-out |
+| SO-4 | An expired session whose renewal is refused: the form; signing in again works without clearing anything by hand | Browser (LAC-5b extended with a sign-in) | **Guard:** the library already handles this |
+| SO-5 | The player's Sign out when the server's sign-out fails: a 500, a dropped connection, and a request that never answers. Signed out on this device anyway, within the time limit plus a margin; the form shows; a second Sign out is harmless (R3) | Browser, for the game's Sign out and the gate's | **Fails:** nothing is cleared after a 500 or a dropped connection, and nothing happens while the request hangs |
+| SO-6 | A temporary failure at start-up (503, a dropped connection): the gate with Try again, the saved session kept; Try again starts the game once the service answers (R4) | Browser | **Guard:** `main` already does this; it must keep doing it |
+| SO-6b | The server's rule: `sessionFailure()` gives "ended" for auth errors 401, 403 and 404 and for no token, and "unavailable" for 5xx, network and unknown errors; the `game` function answers 401 for an ended session's token and for a malformed one | Node (the rule), and database (the real function, local stack) | **The Node test fails:** the rule doesn't exist, and today any failure is a 401. The database part is a guard: an ended or malformed token is already a 401 |
+| SO-7 | After recovering from SO-2, another account signs in and sees nothing of the first (R5) | Browser: its own hero, chat and messages | **Fails:** on `main` there is no recovery, so no second sign-in |
+| SO-8 | Two tabs: signing out in one returns the other to the entrance, including when the server refused the sign-out (R6) | Browser, two pages sharing one browser context | **The refused case fails;** the normal case is a guard (the library's broadcast) |
+| SO-9 | Phone and desktop: after SO-2, the form is on screen and reachable by keyboard at 390 x 844, 844 x 390 and 1440 x 900, with 0 axe violations (R7) | Browser | **Fails:** the gate, with the form hidden |
+| SO-10 | The first paint stays within 34,000 bytes, with the number reported; no comment is removed | `tests/entrance-budget.test.mjs`, and the report | **Guard** |
+| SO-11 | A new password still signs out the other devices (`others`), and only them | The existing password recovery tests, kept | **Guard** |
+| SO-12 | Nothing logs or stores a token beyond the library's own saved session | Code review, and a check that the new code's log and message strings carry no token | **Review,** not a test on `main` |
 
 **Tests that change:**
 - **LAC-21, "the first state call fails",** expects the gate after a failed `state` call. It is kept for a 503, and a 401 now leads to the form (SO-2).
