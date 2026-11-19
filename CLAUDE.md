@@ -145,7 +145,7 @@ Read these first:
   - **`api(action, args, isCurrent)`:** on a 401 from `game`, one renewal, then the request once more, only if the sign-in is unchanged (`err.stale` otherwise).
     - **The renewal is net.js's own request,** not `refreshSession()`: the library would itself remove the session on a 500 or 429. It runs one at a time, with a lock across tabs, and is installed with `setSession()`.
     - **Only `refresh_token_not_found` ends a session** (`err.ended`, with `err.session`), and only while the browser still holds that session. A 429 backs off; anything else keeps the session.
-    - **The library saves through a guard** (its `storage` option): a renewal being installed is refused at the save, inside the library's lock, if the browser no longer holds the renewed session. A late result of one session never overwrites or ends a newer one, even of the same account.
+    - **The library saves and removes through a guard** (its `storage` option). A renewal being installed is refused at the save, and the session's removal during this tab's sign-out is refused, if the browser no longer holds that session. Both happen inside the library's lock, before anything is announced. A late result of one session never overwrites, ends or removes a newer one, even of the same account.
     - **`endSession(expected)`** ends only that session.
     - **Nothing else is retried.**
     - **The library's own background renewal** still discards a session on a 500 or 429 (backlog).
@@ -224,7 +224,7 @@ Read these first:
 
 ```
 npm test                 # engine, entrance file checks, the startup budget, news rules, the news page handler, the town rule, the log rules and the session rule (65)
-npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (286)
+npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (288)
 npm run test:db          # database (pgTAP, 42) and API/function/recovery/session tests (17, plus 1 opt-in) on the LOCAL Supabase stack, with Mailpit
 npx playwright install chromium   # once
 ```

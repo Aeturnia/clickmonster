@@ -1,6 +1,6 @@
 # Sign-out and session recovery: report
 
-**Status: implemented, with the corrections for F-1 (section 18) and F-3 and F-4 (section 20); at the independent implementation review gate (2026-11-19).** Nothing is deployed or merged.
+**Status: implemented, with the corrections for F-1 (section 18), F-3 and F-4 (section 20), and F-5 (section 21); at the independent implementation review gate (2026-11-19).** Nothing is deployed or merged.
 - **The review gates on the way** (sections 4 to 8):
   - **First:** SO-1b showed that an ended session isn't an `AuthApiError`. The review of `4ac3740` approved the amended classification (section 5).
   - **Second:** an expired token is answered exactly as a malformed one. The review of `4853b02` approved one renewal before ending a session, with safeguards (section 9).
@@ -410,5 +410,46 @@ The first paint is **33,960 of 34,000 bytes.** The callers pass `err.session`.
 
 - **The browser count:** 286 is 281 plus the 5 F-3 and F-4 tests.
 - **The database suite** is unchanged since section 19; it runs in CI.
+- **CI:** recorded on PR #55 once the run on the pushed head completes.
+
+## 21. The review of `4218e2f`: F-5
+
+**The review:** F-3 is accepted, and F-4 is accepted with its documented limitation. CI run `44528115859` is verified. Changes requested for F-5: a late, successful sign-out of S1 could remove S2.
+
+**The race:** gotrue-js 2.65.0's `signOut()` asks the server, then removes the saved session without checking whose it is, and `signInWithPassword()` saves without the library's lock.
+
+**The sequence:**
+1. Tab A signs out S1, and its sign-out request is on its way.
+2. Tab B signs in again as S2, and saves it.
+3. A's request succeeds.
+4. The library removes the saved session, which is now S2.
+
+**Reproduced on `4218e2f`.** The test held A's sign-out request, signed B in as S2 (the same account), then answered A's request 204, within the 5 s limit. The saved session was then gone: `null`, not S2.
+
+**The correction:** the storage guard of F-4 also covers removals while this tab signs out.
+- **The removal is refused** if the saved session is no longer the sign-in being ended (`sameSession()`: the same refresh token, or the same session renewed).
+- **The refusal is thrown before the library announces `SIGNED_OUT`,** so no tab is told to stop.
+- **`leave()` then takes its existing fallback:** it removes the session only if it is still the same sign-in (here it isn't, so nothing is removed), and reloads. The tab then follows the browser's current sign-in, S2.
+- **The guard is lifted once the library's call has finished.** After a time-out it stays, because the call may still finish and the page reloads.
+- **Unchanged:** `scope=local`, the conditional cleanup, cross-tab behaviour, and the 5 s fallback.
+
+**Tests** (`tests/ui/sign-out.test.mjs`, "F-5"):
+1. **The sequence above.** S2 stays saved, B stays signed in, and a move works with S2. **It fails on `4218e2f`.**
+2. **The guard is lifted after a normal sign-out.** Signing in again and out again in the same tab removes the second session, with two local sign-outs. It guards the correction itself, and passes on `4218e2f`, where there was no guard to lift.
+
+**Still not covered:** the library's other unconditional removals, such as a renewal it starts itself and that is refused. They belong to the tracked background-renewal investigation.
+
+**Runs and CI:**
+
+**Local, on `937ffbd`** (the code and tests as pushed), with the local stack stopped:
+
+| Run | Engine and file tests | Browser |
+|---|---|---|
+| 1 | 65 of 65 | 288 of 288 |
+| 2 | 65 of 65 | 288 of 288 |
+| 3 | 65 of 65 | 288 of 288 |
+
+- **The browser count:** 288 is 286 plus the two F-5 tests. The SO-1 to SO-13 tests and the F-1 to F-4 proofs are all among them.
+- **On `4218e2f`:** the F-5 race test fails and the guard test passes, as stated above.
 - **CI:** recorded on PR #55 once the run on the pushed head completes.
 
