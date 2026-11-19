@@ -1,16 +1,12 @@
 # Sign-out and session recovery: report
 
-**Status: paused at a second review gate (2026-11-19), after the expired-token measurement (section 8).**
-- **The first gate** (section 4) was decided by the review of `4ac3740`: the amended classification of section 5 is approved.
-- **The second gate:** the expired token, measured as the review ordered, comes back exactly as a malformed one does. Under the approved client design, that would sign out a player whose session can still be renewed. No `sessionFailure()` or client code is written yet.
-- **Contract:** `docs/sign-out-scope.md`, approved at `0074459` and merged as PR #53 (`bfad9b3`).
-- **Authorization:** the owner authorized the implementation on 2026-11-19 ("Sign-out fix implementation authorized").
-- **Branch:** `claude/sign-out`, based on `main` at `bfad9b3`.
-- **Done so far:**
-  - SO-1b and SO-1 (`tests/db/session-answers.test.mjs`, with the recorded answers in `tests/session-answers.mjs`);
-  - this report.
-
-  Nothing else is implemented, and nothing is deployed.
+**Status: implemented; at the independent implementation review gate (2026-11-19).** Nothing is deployed or merged.
+- **The review gates on the way** (sections 4 to 8):
+  - **First:** SO-1b showed that an ended session isn't an `AuthApiError`. The review of `4ac3740` approved the amended classification (section 5).
+  - **Second:** an expired token is answered exactly as a malformed one. The review of `4853b02` approved one renewal before ending a session, with safeguards (section 9).
+- **Contract:** `docs/sign-out-scope.md`, approved at `0074459` and merged as PR #53 (`bfad9b3`), with the two amendments above.
+- **Authorization:** the owner authorized the implementation on 2026-11-19 ("Sign-out fix implementation authorized"). Merging and the `game` function redeploy each need their own.
+- **Branch:** `claude/sign-out` (PR #55), based on `main` at `bfad9b3`.
 
 ## 1. What was run
 
@@ -83,11 +79,11 @@ The scope expected the list to be set by evidence, but it fixed the error *type*
 - **Two sessions of one account:** signing out one with `scope=local` leaves the other's `getUser` and renewal working, and the signed-out session has ended.
 - **A late `logout?scope=local`** with an older session's token, sent after a newer session of the same account exists, leaves the newer one working. That is the server side of SO-13 (scope 5.1, point 5).
 
-## 7. Next, once the second gate is decided
+## 7. The order of the work
 
-1. **Write `sessionFailure()`** and its Node test from the recorded answers.
-2. **Then the client,** with the renewal step if approved (section 8), the `game` function, the harness, and the rest of SO-2 to SO-13.
-3. **Then the report's remaining sections:** evidence, runs and CI, deviations, and what wasn't verified.
+1. SO-1b and SO-1 (sections 2 to 6), then the first review gate.
+2. The expired-token measurement (section 8), then the second review gate.
+3. Then the rule, the function, the client and the tests (sections 9 to 16).
 
 ## 8. The expired token (measured 2026-11-19, as the review of `4ac3740` ordered)
 
@@ -121,4 +117,141 @@ The opt-in test is in `tests/db/session-answers.test.mjs` (run with `SO1B_EXPIRE
 - **One criterion gains a case:** SO-2 and SO-3, where a 401 for an expired but renewable token renews and carries on (start-up and play), and an ended session still reaches the form.
 
 **The alternative,** a separate server answer for an expired token (decoding the token's `exp` when GoTrue says `bad_jwt`), is not proposed. It puts token parsing in the function, and the client would still need the renewal step.
+
+**Decided** by the review of `4853b02`: approved, with safeguards (section 9).
+
+## 9. The renewal amendment, and its safeguards
+
+**The behaviour** (`net.js`, `api()`), on a 401 from the `game` function:
+
+| Condition | Behaviour |
+|---|---|
+| The renewal succeeds | The request is sent once more |
+| The second answer succeeds | Carry on |
+| A second 401 | The session ends (`err.ended`), only if the sign-in is still the one that asked |
+| The renewal is refused | The library removes the session and emits `SIGNED_OUT`; `err.ended` |
+| The renewal can't reach the service | A 503, the session kept; the player can try again |
+| A 503 or any other answer | Unchanged: nothing is retried |
+
+**The review's safeguards, and how each is met:**
+1. **Supported renewal, no storms:** `sb.auth.refreshSession()`, through one shared promise. Concurrent refusals wait for the same renewal, and the library also serialises its own renewals under its lock. SO-3 sends three refused requests at once: one renewal, and all three succeed.
+2. **One resend:** after a successful renewal, the request is sent exactly once more; a second 401 is final. There is no loop.
+3. **Account and generation before resending:**
+   - `api()` takes an `isCurrent()` check (`main.js` passes `live(g)`; `start()` passes its own);
+   - it notes the signed-in user before the first request, and checks both after the renewal;
+   - if either changed, nothing is resent and the caller gets `err.stale`, which `runRemote()` drops.
+
+   SO-3 holds a renewal while the sign-in changes: the refused request isn't sent again.
+4. **Refusal before any change:** the `game` function's sign-in check is the first thing it does after the method check (`index.ts`, before the body is read), so a 401 means nothing was done. SO-3 moves with an expired token: two calls, and exactly one step. Nothing else is retried: a timeout or a 5xx may have come after the server acted.
+5. **A refused renewal:** the form, through the library's own `SIGNED_OUT` or `endSession()` (SO-2, SO-3).
+6. **An unreachable service during renewal:** a 503, the session kept, the action can be pressed again.
+7. **A second 401 ends the session only for the same sign-in:** otherwise it is `err.stale`.
+8. **Tests:** the renewable cases are in SO-2 and SO-3, with concurrent refusals, a sign-in change during a renewal, and no duplicate move.
+
+## 10. What changed
+
+| Where | Change |
+|---|---|
+| `public/js/engine/session.js` (new) | `sessionFailure(token, error)`: "ended" for no token, `AuthSessionMissingError`, or an `AuthApiError` with `bad_jwt`, `user_not_found` or `session_not_found`; "unavailable" for anything else. Shared with the server |
+| `supabase/functions/game/index.ts` | The sign-in check answers 401 for "ended" and 503 "Can't reach the sign-in service. Please try again." for "unavailable", before anything else |
+| `public/js/net.js` | **Signing out:** `signOut()` and `endSession()` sign out this device only (`scope: 'local'`), with a 5 s limit. On an error, a time-out or a leftover session, the fallback removes the saved session only if it is still the one being ended, keeps the message in `sessionStorage` (`clickmonster.note`), and reloads. **Other tabs:** a `storage` listener returns them to the entrance when the saved session is removed. **`api()`:** the renewal of section 9. **`authMessage()`:** the sign-in error wording, moved from the entrance |
+| `public/js/entry.js` | A session the server ended goes to the form, not the gate (`err.ended`); the message kept across a fallback reload is shown; `authError()` moved out; the reset-cancel hook uses the default local sign-out |
+| `public/js/main.js` | `api()` gets the generation check; `endSession()` replaces the global sign-out after a 401; stale answers are dropped |
+| `public/js/admin.js` | The console's Sign out goes through `net.js`, so it is local |
+| `supabase/config.toml` | Local only: `[functions.game] verify_jwt = false`, matching how it is deployed (`tools/deploy-functions.mjs`), so the local function checks its own token (deviation 2) |
+
+**Unchanged:**
+- the `admin` function (Q2: deferred, tracked);
+- the password recovery's sign-out of other devices (`others`);
+- `entry.js` as the page's only auth listener;
+- L-1's account isolation.
+
+**The startup budget:** the first paint is **33,949 of 34,000 bytes** (33,989 before). `authError()` moved out and the session-note line came in; no comment was removed and nothing was minified.
+
+## 11. Acceptance criteria (scope, section 6)
+
+Every browser test was run against `main` at `bfad9b3` (`UI_PUBLIC_DIR`): **18 of the 23 fail there, and 5 pass as guards.**
+
+| ID | Status | On `bfad9b3` |
+|---|---|---|
+| SO-1 | **Met.** The game's and the admin console's Sign out send `scope=local`. On the local stack, a local sign-out leaves the account's other session working, and a late one with an older token leaves a newer session working | **Browser fails** (a `global` sign-out). The database part is a guard |
+| SO-1b | **Done:** the answers recorded (sections 2 and 8); the test fails if they change | Measurement |
+| SO-2 | **Met.** An ended session at start-up: the form with "Your session has ended. Please sign in again.", the saved session gone, no Try again, one refused renewal. **And:** an expired but renewable token renews once, the request is sent again, and the game starts | **Both fail:** the gate |
+| SO-3 | **Met.** An ended session during play: back to the form, the saved session gone, no `global` sign-out. **And:** a renewable token during play renews once and moves one step; three concurrent refusals share one renewal; a sign-in change during a renewal stops the resend | **All four fail** |
+| SO-4 | **Met.** An expired session with a refused renewal: the form; signing in again works | **Guard** |
+| SO-5 | **Met** for a 500, a dropped connection and a sign-out that never answers (the form within the 5 s limit plus a margin), and for the gate's Sign out. A second Sign out is harmless | **All fail:** nothing is cleared, or nothing happens |
+| SO-6 | **Met** for a 503 and a dropped connection at start-up: the gate with Try again, the session kept, no renewal; Try again starts the game | **Guard** |
+| SO-6b | **Met.** The rule's Node test covers every recorded answer and nine kinds of failure that must stay "unavailable". The real function on the local stack answers 401 "Please sign in again." for an ended session's token and for a malformed one | The rule is new. The database part ran on the fixed function only |
+| SO-7 | **Met.** After recovering, the `fresh` account signs in: hero creation, no hero carried over, no hero bar of the first | **Fails:** no recovery |
+| SO-8 | **Met.** Two tabs: signing out in one returns the other to the entrance, also when the server refused it | **The refused case fails;** the normal case is a guard |
+| SO-9 | **Met** at 390 x 844, 844 x 390 and 1440 x 900: the form on screen, the email field focusable, 0 axe violations | **All fail:** the gate |
+| SO-10 | **Met:** 33,949 bytes | Guard |
+| SO-11 | **Met:** the password recovery tests pass unchanged | Guard |
+| SO-12 | **Reviewed:** the new code logs nothing and keeps no token. The message kept across a reload is the message's text only, and the comparison before removing is made in memory | Review |
+| SO-13 | **Met.** This tab: a hung sign-out falls back, the player signs in again, the late answer clears nothing, and the game works. Compare before removing: a session saved meanwhile is left alone. Two tabs: A's sign-out hangs while B signs in as another account; B's session survives A's late answer | **This tab and two tabs fail.** Compare-before-removing passes as a guard: the old code never removes anything |
+
+## 12. Evidence
+
+`tools/sign-out-evidence.mjs`, run on `bfad9b3` and on this branch the same way (fake backend). The screenshots and `summary.json` are in `docs/ui-audit/sign-out/before/` and `after/`.
+
+| Measure, at 390 and 1440 | Before | After |
+|---|---|---|
+| An ended session at start-up | The gate: Try again and Sign out, no form, the session still saved | The form, "Your session has ended. Please sign in again.", nothing saved |
+| Then Sign out, if offered | **Nothing changes:** the gate stays, the session still saved (the owner's lockout) | Not needed: the form is already there |
+| The game's Sign out when the server answers 500 (390) | Still in the game, the session saved; a `global` sign-out was sent | The form, "You have signed out.", nothing saved; a `local` sign-out was sent |
+| Axe, after | 0 violations | 0 violations |
+
+**A correction to the harness, found by the evidence.** The fake backend first answered an ended session's token without GoTrue's API version header. supabase-js then read a plain 403, and on the old code the gate's Sign out appeared to work, unlike on the owner's desktop. With the header, as GoTrue sends it, the fake gives exactly the measured `AuthSessionMissingError`, and the before evidence shows the lockout.
+
+## 13. Deviations
+
+1. **The amendments of sections 5 and 8,** decided at their review gates.
+2. **`supabase/config.toml`:** `[functions.game] verify_jwt = false`, local only. The local edge runtime otherwise refused a malformed token before the function ran, unlike production, where the deploy script turns that check off. Without it, SO-6b's database part couldn't reach the function.
+3. **The harness's ended-session answers carry GoTrue's API version header** (section 12).
+4. **SO-13, two tabs:** after A's fallback reload, A shows either the form or B's new account. B's sign-in can finish before or after A's page starts again, and both are correct; the test accepts either, and requires that A has left the player's game.
+5. **SO-13's compare-before-removing case is a guard on `bfad9b3`,** not a detector: the old code never removed anything.
+6. **`api()` reads the signed-in user before each call** (`getSession()`, from storage, under the library's lock), to compare it after a renewal. `functions.invoke` already does the same read.
+7. **The scope expected LAC-21 and the L-1 sign-out tests to change.** They pass unchanged.
+8. **A new storage key, `clickmonster.note`** (`sessionStorage`), follows the existing `clickmonster.*` keys (MR-B1's D2), and is added deliberately to the identity test's list of allowed technical identifiers (`tests/identity.test.mjs`). The MR-B1 report's list is a record of its time; the test is the current list.
+9. **The opt-in expired-token test** needs a short local `jwt_expiry` and is skipped otherwise, including in CI. Its recorded answer is checked by the rule's Node test, which runs everywhere.
+
+## 14. Runs and CI
+
+**Local, on the owner's Windows laptop, with the local stack stopped:**
+
+| Run | Engine and file tests | Browser |
+|---|---|---|
+| 1 | 65 of 65 | 271 of 271 |
+| 2 | 65 of 65 | 271 of 271 |
+| 3 | 65 of 65 | 271 of 271 |
+
+- **Browser** runs on `0713613`. Every later commit leaves `public/` and `tests/ui/` unchanged.
+- **Engine** runs after the identity test's list gained `clickmonster.note` (deviation 8). The first three engine runs failed only that test, which caught the new key: 64 of 65.
+- **The counts:** engine 65 (63 before; the two `sessionFailure()` tests); browser 271 (248 before; the 23 tests of `tests/ui/sign-out.test.mjs`).
+- **The database suite,** run once locally with the stack up: pgTAP 42 of 42, and 16 of 16 API, recovery and session tests, plus the opt-in expired-token test, skipped. It is 13 before, plus SO-1b, SO-1 and SO-6b's function test.
+
+**CI:** recorded on PR #55 once the run on the pushed head completes.
+
+## 15. Not verified
+
+- **The hosted sign-in service's answers.** The answers were measured on the local stack (CLI 2.122.0). An unknown answer falls to "unavailable", the safe side.
+- **Edge,** the owner's browser, and **real devices.** The suites run in Chromium.
+- **A lock held by another tab's stuck request** (for example a hung renewal). It delays that tab's own library calls; its Sign out has the same fallback. This case is not tested.
+- **Screen readers.**
+- **The production behaviour,** until the `game` function is redeployed (section 16).
+
+## 16. Deployment, when authorized (scope, section 8)
+
+1. **Before the merge is scheduled:** the owner's authorization for the `game` function redeploy.
+2. **Merge.** Netlify publishes the client.
+3. **Straight after:** `npm run deploy:functions -- game`.
+4. **The owner's live check:**
+   - signed in on the phone and the desktop, sign out on the phone: the desktop keeps playing;
+   - Sign out on the desktop: the form, at once.
+
+**The order is safe either way:**
+- an old page treats the function's new 503 as a failure with Try again;
+- the new page handles the old function's 401s with one renewal, then the form.
+
+**Rollback:** revert the merge, then redeploy `game` from the reverted `main`. No data is involved.
 

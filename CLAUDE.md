@@ -31,7 +31,7 @@ Read these first:
     - **What it covers:** the entrance's news and maintenance line (`js/entry-news.js`, loaded after the first paint) and the article pages (`netlify/edge-functions/news.js`).
     - **Findings:** L4-01 (the maintenance notice expires while the page is open), L4-02 (405 headers) and L4-03 (an open-ended notice under way comes first) are closed.
   - **Final baseline** on `main` at `d754dad`: engine 47/47 and browser 178/178, in each of 3 runs.
-  - **The entrance's startup budget** (LAC-2) is 34,000 decoded bytes: revised to 32,000 in the L-4 review, then to 34,000 by the owner for password recovery (2026-11-17). It is 33,987 with R-1, and 33,989 with MR-B1's rename ("Monstra Regna" is one character longer, in the title and the heading). Don't strip comments to meet it.
+  - **The entrance's startup budget** (LAC-2) is 34,000 decoded bytes: revised to 32,000 in the L-4 review, then to 34,000 by the owner for password recovery (2026-11-17). It is 33,987 with R-1, 33,989 with MR-B1's rename ("Monstra Regna" is one character longer, in the title and the heading), and 33,949 after the sign-out fix moved the sign-in error wording to `net.js`. Don't strip comments to meet it.
   - **Still open:**
     - the backlog's release checks: before release, sign-in on the live site and unpublishing; after release, the live maintenance line and the rest;
     - `/news` pagination (a follow-up);
@@ -67,7 +67,10 @@ Read these first:
     - no HP bars on the fight screen, except a world boss's Shared HP.
   - **F2 is a game rule in the shared engine,** enforced by the live server since the redeploy.
   - **Follow-ups:** the phone-landscape tabs below the screen's edge, and the Windows runner's `ERR_NO_BUFFER_SPACE` (`docs/backlog.md`).
-- **P1: sign-out on one device locks another out** (found 2026-11-19, live). Its scope, `docs/sign-out-scope.md`, is in PR #53 for independent review; nothing is implemented or deployed until it is approved.
+- **P1: sign-out on one device locks another out** (found 2026-11-19, live).
+  - **Scope:** `docs/sign-out-scope.md`, PR #53 (`bfad9b3`), with two amendments decided at review gates.
+  - **The fix is implemented on `claude/sign-out` (PR #55), at the implementation review gate.** See `docs/sign-out-report.md`.
+  - **Not merged or deployed:** merging, and the `game` function redeploy, each need the owner's authorization.
 - **Development moved to the owner's Windows laptop.** `npm run deploy:functions` now runs from any shell (PR #15) and needs `SUPABASE_ACCESS_TOKEN` set in the environment.
 - **Don't start another milestone, or make gameplay or server changes,** until the owner approves it.
 - **Release verification** is in `docs/backlog.md`. The owner split it on 2026-11-14, because there aren't the resources to test every device before release.
@@ -109,6 +112,8 @@ Read these first:
 
 ## Hard constraints
 
+- **Signing out never depends on the server** (`docs/sign-out-scope.md`, 5.5). The browser must always be able to discard its own saved session and return to the sign-in form, whatever the server answers or however long it takes. The server stays authoritative on whether a session is valid. Every change to sign-in or sign-out keeps this; `tests/ui/sign-out.test.mjs` (SO-5, SO-8, SO-13) tests it.
+
 - **Vanilla JS, no build.** No production dependencies; dev dependencies only with a justification (Playwright 1.63.0 and axe-core 4.10.2 are pinned).
 - **Unchanged unless the task is explicitly about them:** game rules, database schema, API contracts and moderation consequences. UI work is client-only.
 - **The server is authoritative.** Client checks only explain the rules (for example, the moderator 7-day sanction limit); never rely on hiding a control for security.
@@ -133,7 +138,13 @@ Read these first:
   - **Failures stay separate.** If the library, Supabase, the game's code or the first `state` call fails, the entrance stays with a message. A module that failed to load stays failed for the page, so Try again reloads in that case.
   - **Account isolation in `main.js`** (L-1 review, L1-01 and L1-02). Per-account UI state comes from `freshUi()`, and `stop()` replaces it. Every `start()` and `stop()` advances `gameGen`. Anything that awaits (an action in `runRemote()`, `loadBoard`, `refreshPlayers`, `loadHunts` and the other reads) records `gameGen` first and drops its result unless `live(g)`. New async game code must do the same.
   - **The entrance's CSS never reads `data-layout`.** Its colour tokens copy `style.css` `:root`, and `tests/entrance-files.test.mjs` checks they match.
-- **The Supabase client:** `net.js` owns the one client. `client()` loads `vendor/supabase-js@2.45.4/supabase.js` (Supabase's UMD build, byte-identical to the npm package; hashes and update steps in `public/vendor/README.md`) and creates the client once. `sb` is a live binding, and `signOut()` marks a player's own sign-out. Nothing else may call `createClient`. The admin console uses `await client()`.
+- **The Supabase client:** `net.js` owns the one client. `client()` loads `vendor/supabase-js@2.45.4/supabase.js` (Supabase's UMD build, byte-identical to the npm package; hashes and update steps in `public/vendor/README.md`) and creates the client once. `sb` is a live binding. Nothing else may call `createClient`. The admin console uses `await client()`.
+- **Signing out and refused sessions** (`net.js`; `docs/sign-out-report.md`):
+  - **`signOut()` and `endSession()`** end this device's session only (`scope: 'local'`), with a 5 s limit. If the library errs, runs out of time or leaves a session saved, they remove `clickmonster.auth` themselves (only if it is still the session being ended), keep the message in `sessionStorage` (`clickmonster.note`) and reload. `signOut()` is the player's own; `endSession()` says "Your session has ended".
+  - **Other tabs** follow a removed session through a `storage` listener.
+  - **`api(action, args, isCurrent)`:** on a 401 from `game`, one shared renewal, then the request once more, only if the sign-in is unchanged (`err.stale` otherwise). A refused renewal or a second 401 is `err.ended`, and callers end the session. Nothing else is retried.
+  - **The server:** the `game` function answers 401 only when `sessionFailure()` (`engine/session.js`) says "ended", and 503 otherwise. Its list comes from GoTrue's measured answers (`tests/session-answers.mjs`).
+  - **Watch out:** supabase-js reports GoTrue's `session_not_found` as `AuthSessionMissingError`, not as an `AuthApiError`, and its own `signOut()` then keeps the saved session.
 - **Game UI** is `public/js/main.js`:
   - `render()` paints regions with `paint(id, html)`, which keeps focus by key (`focusKey`: `id` or `data-a` + `data-v`).
   - Actions go through one delegated click handler. `handleLocal` covers view-only actions; `remoteCall`/`runRemote` call the server.
@@ -178,7 +189,7 @@ Read these first:
   - **Tests:** the handler is tested in Node (`tests/news-pages.test.mjs`), and the harness serves `/news` through it.
   - **The entrance's news** (`js/entry-news.js`) loads only after the first contentful paint, and failures show nothing.
 - **Password recovery: R-1 implemented and accepted,** pending production activation. It was merged as PR #45 (`48be811`, 2026-11-17). See `docs/password-recovery-r1-report.md`; the scope is `docs/password-recovery-scope.md`, PR #44 (`031a026`).
-  - **The startup budget** has only 11 bytes of room (33,989 of 34,000, after MR-B1). Plan for that before touching `entry.js`, `index.html` or `entry.css`.
+  - **The startup budget** has 51 bytes of room (33,949 of 34,000, after the sign-out fix moved the sign-in error wording to `net.js`). Plan for that before touching `entry.js`, `index.html` or `entry.css`.
   - **The guard** is in `entry.js`, in the first paint. A reset link, its error, a `PASSWORD_RECOVERY` event, or the `clickmonster.recovery` marker for the saved session's user holds the game back: no start and no preload. It is a UI guard, not server-enforced.
   - **The rest** is lazily loaded: `js/entry-recover.js`.
   - **`entry.js` stays the only auth listener;** the module gets sessions through hooks.
@@ -206,9 +217,9 @@ Read these first:
 ## Testing
 
 ```
-npm test                 # engine, entrance file checks, the startup budget, news rules, the news page handler, the town rule and the log rules (63)
-npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (248)
-npm run test:db          # database (pgTAP, 42) and API/function/recovery tests (13) on the LOCAL Supabase stack, with Mailpit
+npm test                 # engine, entrance file checks, the startup budget, news rules, the news page handler, the town rule, the log rules and the session rule (65)
+npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (271)
+npm run test:db          # database (pgTAP, 42) and API/function/recovery/session tests (16, plus 1 opt-in) on the LOCAL Supabase stack, with Mailpit
 npx playwright install chromium   # once
 ```
 

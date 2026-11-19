@@ -33,7 +33,7 @@ function files(dir) {
 // The technical identifiers that keep the old name (D2: changing them would sign everyone out,
 // or break the test hook). Nothing else may.
 const ALLOWED = [
-  /clickmonster\.(auth|prefs|recovery|seenAnnouncement)\b/g, // browser storage keys
+  /clickmonster\.(auth|prefs|recovery|seenAnnouncement|note)\b/g, // browser storage keys (note: the sign-out fix's message, docs/sign-out-report.md)
   /window\.clickmonster\b/g, // the read-only hook the browser tests use
 ];
 
@@ -48,7 +48,7 @@ test('B1-1 no old name in anything players see; only the listed technical identi
   assert.deepEqual(found, [], 'old name outside the technical identifiers');
   // The list in the MR-B1 report; a new technical use has to be added here deliberately.
   assert.deepEqual([...technical].sort(), [
-    'clickmonster.auth', 'clickmonster.prefs', 'clickmonster.recovery', 'clickmonster.seenAnnouncement', 'window.clickmonster',
+    'clickmonster.auth', 'clickmonster.note', 'clickmonster.prefs', 'clickmonster.recovery', 'clickmonster.seenAnnouncement', 'window.clickmonster',
   ]);
 });
 
