@@ -588,9 +588,13 @@ async function cdnFetch(route) {
   await route.fulfill({ response: res, body });
 }
 
-function json(route, status, body) {
-  return route.fulfill({ status, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(body) });
+function json(route, status, body, headers = {}) {
+  return route.fulfill({ status, contentType: 'application/json', headers: { 'access-control-allow-origin': '*', ...headers }, body: JSON.stringify(body) });
 }
+// GoTrue's answer for a token whose session has ended. With the API version header, as GoTrue sends
+// it, supabase-js reads the code and reports AuthSessionMissingError (tests/session-answers.mjs).
+const sessionGone = (route) => json(route, 403, { code: 'session_not_found', msg: 'Session from session_id claim in JWT does not exist' },
+  { 'x-supabase-api-version': '2024-01-01', 'access-control-expose-headers': 'x-supabase-api-version' });
 
 export async function attach(context, backend, baseUrl) {
   await context.route('**/*', async (route) => {
@@ -645,13 +649,12 @@ export async function attach(context, backend, baseUrl) {
         }
         return json(route, 200, { id: user.id, email: user.email, aud: 'authenticated', role: 'authenticated' });
       }
-      const SESSION_GONE = { code: 'session_not_found', msg: 'Session from session_id claim in JWT does not exist' };
-      if (p === '/auth/v1/user' && backend.ended(token)) return json(route, 403, SESSION_GONE);
+      if (p === '/auth/v1/user' && backend.ended(token)) return sessionGone(route);
       if (p === '/auth/v1/user') return user ? json(route, 200, { id: user.id, email: user.email, aud: 'authenticated', role: 'authenticated' }) : json(route, 401, { msg: 'no user' });
       if (p === '/auth/v1/logout') {
         const scope = url.searchParams.get('scope') || 'global';
         backend.logouts.push(scope);
-        if (backend.ended(token)) return json(route, 403, SESSION_GONE); // as GoTrue answers (tests/session-answers.mjs)
+        if (backend.ended(token)) return sessionGone(route); // as GoTrue answers (tests/session-answers.mjs)
         if (scope !== 'others' && backend.logoutFail) {
           const f = backend.logoutFail;
           backend.logoutFail = null;
