@@ -1,7 +1,7 @@
 # Gameplay polish GP-1: report
 
-**Status: implemented, with the correction pass for scope amendment 1 (section 9); at the independent implementation review gate.** Nothing is deployed.
-- **Amendment 1's acceptance gate:** the owner's check on the affected iPhone (scope 14.7), after this push. Its result is recorded in section 9.6 when reported.
+**Status: complete (2026-11-19).** Conditionally approved in its independent implementation review at `a4b7c4e`, merged as PR #51 (`9fb022a`), and deployed: the `game` function is at version 13, and the owner's live check passed. The record is section 10.
+- **Amendment 1's acceptance gate,** the owner's check on the affected iPhone (scope 14.7), passed for the meters, a win and a fight (section 9.6). Turning the phone found a landscape layout problem, recorded as a follow-up by the owner's decision.
 - **The F2 town rule needs its own production step.** It is in the shared engine, so the live server enforces it only after the `game` function is redeployed. That redeploy is **not** authorized here; under the scope's section 7, its authorization is obtained before the merge is scheduled.
 - **Contract:** `docs/gameplay-polish-scope.md`, accepted at `9882a02` and merged as PR #50 (`cc736b5`); amendment 1 (its section 14) accepted at `74dc4da` and merged as PR #52 (`99357cb`).
 - **Authorization:** the owner authorized GP-1 implementation on 2026-11-18 ("GP-1 authorized."), and the correction pass for amendment 1 the same day ("Merge PR #52, then start the GP-1 correction pass").
@@ -164,6 +164,8 @@ Each test was run against the old code where the scope asks for it.
 
 ## 8. Deployment, when authorized (scope, section 7)
 
+The plan as written before the merge. What was done is in section 10.
+
 1. **Before the merge is scheduled:** obtain the owner's authorization for the function redeploy.
 2. **Merge.** Netlify publishes the client.
 3. **Right after Netlify's deploy:** run `npm run deploy:functions` from the merged `main` (needs `SUPABASE_ACCESS_TOKEN`).
@@ -277,4 +279,29 @@ The fake backend's win gives +71 XP, not the +767 the owner saw live, so the cue
 - **Damage numbers over a world boss's Shared HP bar.** In a hunt they float in the boss's strip, over the bar at its foot, as they floated over it before. GP-H4 checks an ordinary fight's strips, not a hunt's.
 - **A cue's position if the layout changes while it shows** (for example turning the phone mid-cue): it is placed once, when it appears, and is gone 1.6 s later.
 - **Screen readers:** unchanged behaviour (the cues are `aria-hidden`, as the chips were); not listened to.
+
+## 10. Merge, deployment and live check (2026-11-19)
+
+**The review:** the independent implementation review conditionally approved `a4b7c4e`. Its conditions:
+1. CI on the final reviewed head: run `44430271906`, tested merge commit `31989f2`. Engine 63/63; database 42/42 pgTAP and 13/13 API; browser 248/248. Recorded on PR #51.
+2. Recording the run: also on PR #51, rather than in a commit, so the reviewed head stayed `a4b7c4e`.
+3. Keeping the landscape follow-up and the verification limits: kept (`docs/backlog.md`; sections 7 and 9.6).
+4. and 5. The owner's authorization for the redeploy before the merge, and the merge and redeploy coordinated as in scope section 7: the owner authorized the `game` function redeploy ("game function redeploy authorized. Proceed as planned").
+
+**What was done, in order:**
+1. **Before the merge,** a read-only check of the `game` function through the Management API: version 12, active, last updated 2026-11-12.
+2. **The merge:** PR #51, checked mergeable at `a4b7c4e`, merged with that head pinned, as `9fb022a`.
+3. **Netlify:** about 30 s after the merge, the live site's `js/main.js` and `js/engine/world.js` matched `main` byte for byte (SHA-256).
+4. **The redeploy, straight after:** `npm run deploy:functions -- game`, from a clean local `main` at `9fb022a` whose `public/js/engine`, `public/js/data` and `supabase/functions/game/index.ts` matched GitHub. The API answered 201, and the function went to **version 13**, active, at 2026-11-19 00:51:09 UTC. Its endpoint answered.
+   - **Only `game`:** that was the authorization. The `admin` function also bundles the shared engine, but GP-1 changed only `engine/battle.js` and `engine/world.js`, and `admin` uses from them only `respawnPoint()` (through `engine/hunt.js`), which is unchanged. So `admin` behaves as before, and was not redeployed.
+5. **The owner's live check** (2026-11-19): the town tile and fights work as intended. On the town tile the town message shows and no monster can be fought; one tile out, a fight starts.
+
+**CI after the merge,** the `push` run on `main` at `9fb022a` (run `44432245764`):
+- **Attempt 1:** engine 63/63 and database passed. The browser job failed 1 of 248: `GP-B4` couldn't open its page (`page.goto: net::ERR_NO_BUFFER_SPACE`). That is the Windows runner's network error already in the backlog; it is its third occurrence. The same code had passed all 248 on the PR.
+- **Attempt 2,** the one re-run of the failed job, authorized by the owner, with no test changed: the browser job passed 248/248, and the run's conclusion is success.
+- **What the re-run shows:** it supports the runner diagnosis. It doesn't show the runner fault is gone; the backlog entry stays.
+
+**Rollback, if ever needed:** revert `9fb022a`, then redeploy `game` from the reverted `main`. No data is involved.
+
+**Found after the merge, and not part of GP-1:** signing out on one device left another device unable to sign in again, on the live site, which the owner saw on the desktop. It is a sign-in defect in the entrance and `net.js` that existed before GP-1, rated P1, and has its own scope (PR #53; `docs/backlog.md`, "Sign-out on one device locks another out").
 
