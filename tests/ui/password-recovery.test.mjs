@@ -262,9 +262,24 @@ test('PR-4a a reload during an unfinished reset shows the form again, with no ga
   await done(ctx);
 });
 
-test('PR-4a a second tab with the saved session also shows the form', async () => {
-  const ctx = await open();
-  await arrive(ctx);
+// The tab's saved recovery state: the session and the marker, both for `acct`. entry.js writes them
+// only once the library has read the link, which is after the reset form shows (from the link alone).
+async function untilSaved(page, acct = ACCOUNTS.player) {
+  await page.waitForFunction(([ak, rk, id]) => {
+    try { return JSON.parse(localStorage.getItem(ak))?.user?.id === id && localStorage.getItem(rk) === id; } catch { return false; }
+  }, [AUTH_KEY, RECOVERY_KEY, acct.id], { timeout: 15000 });
+}
+const savedNow = (page) => page.evaluate(([ak, rk]) => ({ session: localStorage.getItem(ak) !== null, marker: localStorage.getItem(rk) }), [AUTH_KEY, RECOVERY_KEY]);
+// Holds back this page's /auth/v1/user answer, which the library awaits before it saves the session
+// from a link. Only this page: a tab opened later in the context is not delayed.
+async function slowAuth(page, ms) {
+  await page.route('**/auth/v1/user', async (route) => { await new Promise((r) => setTimeout(r, ms)); await route.fallback(); });
+}
+// "A new tab with the saved session" (PR-4a): so the first tab must have saved it before the second
+// opens. Opening it as soon as the heading shows raced the save, and the second tab, finding no
+// session, rightly showed the sign-in form (docs/backlog.md: the PR-4a timeout, now explained).
+async function secondTabShowsForm(ctx) {
+  await untilSaved(ctx.page);
   const second = await ctx.context.newPage();
   const log = track(second, env.url);
   await second.goto(`${env.url}/`);
@@ -272,6 +287,24 @@ test('PR-4a a second tab with the saved session also shows the form', async () =
   await second.waitForTimeout(800);
   assert.equal(stateCalls(ctx.backend), 0, 'no state call from either tab');
   assert.deepEqual(log.filter((p) => p === '/js/main.js'), [], 'no game code in the second tab');
+}
+
+test('PR-4a a second tab with the saved session also shows the form', async () => {
+  const ctx = await open();
+  await arrive(ctx);
+  await secondTabShowsForm(ctx);
+  await done(ctx);
+});
+
+// The race, made certain: the first tab's save is held back well past its heading, so a second tab
+// opened at the heading would find no session (as on CI run 44596307837). The test checks that the
+// delay does hold the save back, then that the second tab, opened once the save is done, keeps the guard.
+test('PR-4a a second tab opened after a late save also shows the form', async () => {
+  const ctx = await open();
+  await slowAuth(ctx.page, 2500);
+  await arrive(ctx);
+  assert.deepEqual(await savedNow(ctx.page), { session: false, marker: null }, 'nothing saved yet when the heading shows');
+  await secondTabShowsForm(ctx);
   await done(ctx);
 });
 
