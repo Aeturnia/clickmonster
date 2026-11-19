@@ -12,7 +12,7 @@
 // address comes from SITE_ORIGIN, never from the request.
 import { SUPABASE_URL, SUPABASE_KEY } from '../../public/js/config.js';
 import { SLUG_RE, NEWS_KIND_LABEL, newsBodyHtml } from '../../public/js/data/news.js';
-import { SITE_NAME, SITE_ORIGIN } from '../../public/js/site.js';
+import { SITE_NAME, SITE_ORIGIN, menuHtml, footerHtml } from '../../public/js/site.js';
 
 const COLS = 'slug,kind,title,summary,body,published_at,revised_at,maintenance_starts_at,maintenance_ends_at';
 const LIST_COLS = 'slug,kind,title,summary,published_at,revised_at';
@@ -75,11 +75,13 @@ ${description ? `<meta name="description" content="${esc(description)}">\n` : ''
 <div class="n-page">
 <header class="n-top">
 <a class="n-brand" href="/">${esc(SITE_NAME)}</a>
-<nav class="n-nav" aria-label="News"><a href="/news">All news</a><a href="/">Enter the realm</a></nav>
+${menuHtml(null)}
+<nav class="n-nav" aria-label="News"><a href="/news">All news</a></nav>
 </header>
 <main class="n-main">
 ${body}
 </main>
+${footerHtml()}
 </div>
 </body>
 </html>

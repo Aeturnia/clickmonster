@@ -1,10 +1,6 @@
 /* The entrance's news (landing L-4), loaded with js/entry-news.js only when there is news to show,
    so it never weighs on the first paint. Scoped like entry.css. */
-.entry .e-wrap { grid-template-areas: "id" "gate" "news" "about"; }
-@media (min-width: 52em) {
-  .entry .e-wrap { grid-template-areas: "id gate" "news gate" "about gate"; grid-template-rows: auto auto 1fr; }
-}
-.entry .e-news { grid-area: news; }
+/* Its place in the grid ("news") is in entry.css (MR-B2). */
 .entry .e-news .e-h { font-size: 1.125rem; margin-bottom: .5rem; }
 .entry .e-news-list { list-style: none; margin: 0; padding: 0; display: grid; gap: .1rem; }
 .entry .e-news-item { display: grid; gap: .1rem; padding: .55rem 0; border-bottom: 1px solid var(--line); }

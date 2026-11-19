@@ -232,7 +232,7 @@ test('a choice made on the entrance applies on sign-in; one made in the game sho
 // ---------------------------------------------------------------- LAC-9: the entrance never changes with it
 
 test('LAC-9 the entrance looks the same under every choice and every game layout', async () => {
-  const measure = (page) => page.evaluate(() => ['#entry .e-id', '#entry .e-gate', '#authform', '#iface', '#entry .e-about'].map((s) => {
+  const measure = (page) => page.evaluate(() => ['#entry .e-id', '#entry .site-nav', '#entry .e-gate', '#authform', '#iface', '#entry .site-foot'].map((s) => { // since MR-B2: the menu and footer, in place of the removed "The realm"
     const r = document.querySelector(s).getBoundingClientRect();
     return [s, Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)];
   }));

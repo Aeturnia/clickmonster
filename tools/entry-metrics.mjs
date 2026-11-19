@@ -30,7 +30,12 @@
 //   throttled          time from navigation to the visible sign-in form with Chrome's network
 //                      throttling (150ms latency, 1.6 Mbit/s down) and 4x CPU slowdown, median of
 //                      3 runs. Only requests that really go over the network are throttled; the
-//                      CDN module is answered from the harness cache, so it is an underestimate
+//                      CDN module is answered from the harness cache, so it is an underestimate.
+//                      Since MR-B2 (scope 4.5), the same runs also report, from the browser's own
+//                      performance entries: lcpMs (largest contentful paint), cls (cumulative layout
+//                      shift, 2 s after the form, so the news that loads after paint is included) and
+//                      focusMs (focusing the email field to the next frame, a scripted interaction;
+//                      not INP, which is a field metric). Lab figures under this profile only.
 //   shots              the sign-in screen at each size, with axe at all impacts
 // Bytes are decoded sizes as served locally, not the compressed sizes Netlify and the CDN send.
 // The counts include requests that finished up to 300ms after the form appeared.
@@ -158,8 +163,14 @@ for (const [name, pattern, how] of [
 // Throttled timing (see the caveat above).
 {
   const times = [];
+  const lab = [];
   for (let i = 0; i < 3; i++) {
     const { page, context } = await h.page();
+    await page.addInitScript(() => {
+      window.__lab = { lcp: 0, cls: 0 };
+      new PerformanceObserver((l) => { for (const e of l.getEntries()) window.__lab.lcp = e.startTime; }).observe({ type: 'largest-contentful-paint', buffered: true });
+      new PerformanceObserver((l) => { for (const e of l.getEntries()) if (!e.hadRecentInput) window.__lab.cls += e.value; }).observe({ type: 'layout-shift', buffered: true });
+    });
     const cdp = await context.newCDPSession(page);
     await cdp.send('Network.enable');
     await cdp.send('Network.emulateNetworkConditions', { offline: false, latency: 150, downloadThroughput: 1.6e6 / 8, uploadThroughput: 750e3 / 8 });
@@ -168,10 +179,18 @@ for (const [name, pattern, how] of [
     await page.goto(h.url + '/');
     await page.waitForSelector('#authform', { state: 'visible' });
     times.push(Date.now() - t0);
+    await page.waitForTimeout(2000);
+    const focusMs = await page.evaluate(() => new Promise((resolve) => {
+      const t = performance.now();
+      document.getElementById('email').focus();
+      requestAnimationFrame(() => setTimeout(() => resolve(performance.now() - t), 0));
+    }));
+    lab.push({ ...(await page.evaluate(() => window.__lab)), focusMs });
     await context.close();
   }
   times.sort((a, b) => a - b);
-  result.throttled = { msToForm: times[1], runs: times };
+  const median = (k) => lab.map((x) => x[k]).sort((a, b) => a - b)[1];
+  result.throttled = { msToForm: times[1], runs: times, lcpMs: Math.round(median('lcp')), cls: +median('cls').toFixed(4), focusMs: Math.round(median('focusMs')), labRuns: lab.map((x) => ({ lcp: Math.round(x.lcp), cls: +x.cls.toFixed(4), focus: Math.round(x.focusMs) })) };
 }
 
 // The sign-in screen at each size, with axe.

@@ -24,3 +24,10 @@
 .n-item p:last-child { margin: 0; color: var(--muted); }
 .n-empty, .n-message p { color: var(--muted); }
 .n-links { display: flex; flex-wrap: wrap; gap: .25rem 1.5rem; }
+/* The site menu and footer (MR-B2), on these pages and the static ones: the menu sits in the header
+   row, left-aligned; the footer closes the page. */
+.n-top .site-nav ul { justify-content: flex-start; }
+.n-page .site-foot { margin-top: 2.5rem; }
+.n-static p { font-size: 1.0625rem; line-height: 1.6; }
+.n-static p a { color: var(--gold); font-weight: 600; }
+

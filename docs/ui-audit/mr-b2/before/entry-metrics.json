@@ -1,0 +1,195 @@
+{
+  "entryModule": "js/entry.js",
+  "staticDepth": 1,
+  "gameDepth": 7,
+  "visitor": {
+    "requests": 7,
+    "bytes": 40880,
+    "byType": {
+      "document": {
+        "requests": 1,
+        "bytes": 5744
+      },
+      "css": {
+        "requests": 1,
+        "bytes": 10667
+      },
+      "ownJs": {
+        "requests": 3,
+        "bytes": 24465
+      },
+      "api": {
+        "requests": 2,
+        "bytes": 4
+      }
+    },
+    "modules": 3,
+    "gameModules": 1,
+    "library": false,
+    "loadedBeforeForm": [
+      "css",
+      "ownJs",
+      "api"
+    ],
+    "beforePaint": {
+      "firstContentfulPaintMs": 84,
+      "requests": 3,
+      "decodedBytes": 34666,
+      "resources": [
+        "/css/entry.css",
+        "/js/entry.js"
+      ]
+    },
+    "idle10s": {
+      "requests": 7,
+      "bytes": 40880,
+      "byType": {
+        "document": {
+          "requests": 1,
+          "bytes": 5744
+        },
+        "css": {
+          "requests": 1,
+          "bytes": 10667
+        },
+        "ownJs": {
+          "requests": 3,
+          "bytes": 24465
+        },
+        "api": {
+          "requests": 2,
+          "bytes": 4
+        }
+      },
+      "modules": 3,
+      "gameModules": 1,
+      "library": false
+    },
+    "afterFocus": {
+      "requests": 9,
+      "bytes": 167377,
+      "byType": {
+        "document": {
+          "requests": 2,
+          "bytes": 116541
+        },
+        "css": {
+          "requests": 1,
+          "bytes": 10667
+        },
+        "ownJs": {
+          "requests": 4,
+          "bytes": 40165
+        },
+        "api": {
+          "requests": 2,
+          "bytes": 4
+        }
+      },
+      "modules": 4,
+      "gameModules": 1,
+      "library": true
+    }
+  },
+  "returning": {
+    "requests": 48,
+    "bytes": 476960,
+    "byType": {
+      "api": {
+        "requests": 15,
+        "bytes": 12923
+      },
+      "document": {
+        "requests": 2,
+        "bytes": 116541
+      },
+      "css": {
+        "requests": 2,
+        "bytes": 79285
+      },
+      "ownJs": {
+        "requests": 29,
+        "bytes": 268211
+      }
+    },
+    "modules": 29,
+    "gameModules": 26,
+    "library": true
+  },
+  "formBlockedBy": {
+    "libraryDown": {
+      "formAppeared": true,
+      "screenText": "A PERSISTENT FANTASY WORLD Monstra Regna Exploration, combat and adventure, in a world every player shares. Enter the re"
+    },
+    "zonesDown": {
+      "formAppeared": true,
+      "screenText": "A PERSISTENT FANTASY WORLD Monstra Regna Exploration, combat and adventure, in a world every player shares. Enter the re"
+    }
+  },
+  "throttled": {
+    "msToForm": 689,
+    "runs": [
+      674,
+      689,
+      712
+    ],
+    "lcpMs": 608,
+    "cls": 0,
+    "focusMs": 11,
+    "labRuns": [
+      {
+        "lcp": 608,
+        "cls": 0,
+        "focus": 10
+      },
+      {
+        "lcp": 616,
+        "cls": 0,
+        "focus": 11
+      },
+      {
+        "lcp": 592,
+        "cls": 0,
+        "focus": 11
+      }
+    ]
+  },
+  "shots": [
+    {
+      "size": "320x640",
+      "formTop": 279,
+      "formBottomInView": true,
+      "violations": []
+    },
+    {
+      "size": "390x844",
+      "formTop": 242,
+      "formBottomInView": true,
+      "violations": []
+    },
+    {
+      "size": "844x390",
+      "formTop": 94,
+      "formBottomInView": true,
+      "violations": []
+    },
+    {
+      "size": "1024x768",
+      "formTop": 123,
+      "formBottomInView": true,
+      "violations": []
+    },
+    {
+      "size": "1440x900",
+      "formTop": 134,
+      "formBottomInView": true,
+      "violations": []
+    },
+    {
+      "size": "1920x1080",
+      "formTop": 148,
+      "formBottomInView": true,
+      "violations": []
+    }
+  ]
+}
