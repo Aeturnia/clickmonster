@@ -163,6 +163,7 @@ export class FakeBackend {
     this.staleTokens = 0; // the next n game calls answer 401, as for an expired access token that still renews
     this.logoutFail = null; // the next sign-out (local or global): a status, 'drop' or 'hang'
     this.authHold = null; // a promise the token endpoint waits for (a slow renewal)
+    this.stepHolds = {}; // 'password' or 'user' -> a promise that step waits for (holdStep())
     this.authCalls = []; // grant types requested from /auth/v1/token, in order
     // Password recovery: reset requests ({ email, redirectTo }), changed passwords by user id, password
     // updates and sign-out scopes, in order. recoverStatus = 429 refuses a reset request;
@@ -189,6 +190,9 @@ export class FakeBackend {
   endedRefresh(t) { const r = refreshOf(t); return !!r?.acct && (r.session || 0) <= (this.endedBefore[r.acct.id] ?? -1); }
   // Hold the token endpoint (sign-in and renewal) until the returned function is called.
   holdAuth() { let release; this.authHold = new Promise((r) => { release = r; }); return () => { this.authHold = null; release(); }; }
+  // Hold only sign-ins (password grants), or only the token check (GET /auth/v1/user, which
+  // supabase-js's setSession() makes under its lock), until the returned function is called.
+  holdStep(step) { let release; this.stepHolds[step] = new Promise((r) => { release = r; }); return () => { delete this.stepHolds[step]; release(); }; }
 
   // Keep requests for an action waiting (a slow server) until the returned function is called.
   hold(action) {
@@ -637,6 +641,7 @@ export async function attach(context, backend, baseUrl) {
         // Refresh tokens are refresh-<account id>~<session>~<n>; one of an ended session, or of an
         // account in `revoked` (refresh-<account id>), is refused, as GoTrue refuses it.
         const renewal = url.searchParams.get('grant_type') === 'refresh_token';
+        if (!renewal && backend.stepHolds.password) await backend.stepHolds.password;
         const r = renewal ? refreshOf(body.refresh_token) : null;
         const acct = renewal
           ? (!r?.acct || backend.revoked.has(`refresh-${r.acct.id}`) || backend.endedRefresh(body.refresh_token) ? null : r.acct)
@@ -668,6 +673,7 @@ export async function attach(context, backend, baseUrl) {
         }
         return json(route, 200, { id: user.id, email: user.email, aud: 'authenticated', role: 'authenticated' });
       }
+      if (p === '/auth/v1/user' && req.method() === 'GET' && backend.stepHolds.user) await backend.stepHolds.user;
       if (p === '/auth/v1/user' && backend.ended(token)) return sessionGone(route);
       if (p === '/auth/v1/user') return user ? json(route, 200, { id: user.id, email: user.email, aud: 'authenticated', role: 'authenticated' }) : json(route, 401, { msg: 'no user' });
       if (p === '/auth/v1/logout') {

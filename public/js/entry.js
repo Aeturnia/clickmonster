@@ -257,7 +257,7 @@ async function enterGame(my) {
     hideApp();
     root.classList.remove('resuming', 'entering');
     status.textContent = '';
-    if (err?.ended) return net.endSession(); // the server ended it: the form, not Try again
+    if (err?.ended) return net.endSession(err.session); // the server ended it: the form, not Try again
     form.hidden = true;
     modeBtn.parentElement.hidden = true;
     iface.hidden = true;

@@ -9,6 +9,35 @@ import { SUPABASE_URL, SUPABASE_KEY } from './config.js';
 const LIBRARY = new URL('../vendor/supabase-js@2.45.4/supabase.js', import.meta.url).href;
 export const AUTH_STORAGE_KEY = 'clickmonster.auth';
 
+// ---------------------------------------------------------------- the saved session
+// The saved session, read directly (never through the library, which may renew it first).
+const stored = () => { try { return JSON.parse(localStorage.getItem(AUTH_STORAGE_KEY)); } catch { return null; } };
+const sessionOf = (s) => {
+  try { return JSON.parse(atob(s.access_token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).session_id ?? null; } catch { return null; }
+};
+// The same sign-in: the same refresh token, or the same session renewed (GoTrue's session_id).
+const sameSession = (a, b) => !!a && !!b && (a.refresh_token === b.refresh_token || (sessionOf(a) != null && sessionOf(a) === sessionOf(b)));
+
+// The library saves through this guard (supabase-js's `storage` option), always inside its lock,
+// which every tab of the site shares. A renewal being installed (renew(), below) is saved only if the
+// browser still holds the session it renewed: if another tab signed in, or this one signed out, in
+// between, the save is refused before the library announces anything, and nothing of the old
+// session comes back (docs/sign-out-report.md, section 20, F-4). Every other save passes unchanged.
+let installing = null; // { from: the renewed session's refresh token, to: the new one }
+class Superseded extends Error {}
+const guardedStorage = {
+  getItem: (k) => localStorage.getItem(k),
+  setItem: (k, v) => {
+    if (installing && k === AUTH_STORAGE_KEY) {
+      let next = null;
+      try { next = JSON.parse(v).refresh_token; } catch { /* not a session */ }
+      if (next === installing.to && stored()?.refresh_token !== installing.from) throw new Superseded('superseded');
+    }
+    localStorage.setItem(k, v);
+  },
+  removeItem: (k) => localStorage.removeItem(k),
+};
+
 // The client, once created (a live binding: importers see it as soon as client() has resolved).
 export let sb = null;
 let loading = null;
@@ -33,7 +62,7 @@ export function client() {
   if (sb) return Promise.resolve(sb);
   loading ||= loadLibrary().then(() => {
     sb ||= globalThis.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
-      auth: { persistSession: true, autoRefreshToken: true, storageKey: AUTH_STORAGE_KEY },
+      auth: { persistSession: true, autoRefreshToken: true, storageKey: AUTH_STORAGE_KEY, storage: guardedStorage },
     });
     return sb;
   }).catch((err) => { loading = null; throw err; });
@@ -58,9 +87,12 @@ const ENDED = 'Your session has ended. Please sign in again.';
 let userSignOut = false;
 const saved = () => { try { return localStorage.getItem(AUTH_STORAGE_KEY); } catch { return null; } };
 
-async function leave(byPlayer) {
+// `expected`: when the server refused a particular session, only that one is ended; if this
+// browser has since signed in again, even as the same account, nothing is done (F-3).
+async function leave(byPlayer, expected) {
+  if (expected && !sameSession(stored(), expected)) return;
   userSignOut = byPlayer;
-  const ending = saved();
+  const ending = stored();
   let done = false;
   try {
     const timeUp = new Promise((resolve) => setTimeout(resolve, SIGN_OUT_MS, 'time'));
@@ -68,14 +100,16 @@ async function leave(byPlayer) {
     done = result !== 'time' && !result?.error;
   } catch { /* falls back */ }
   if (done && !saved()) return; // the library cleared it and told this tab and the others
-  try { if (saved() === ending) localStorage.removeItem(AUTH_STORAGE_KEY); } catch { /* storage unavailable */ }
+  // Remove it only if it is still the sign-in being ended (renewed or not), never a newer one.
+  try { if (sameSession(stored(), ending)) localStorage.removeItem(AUTH_STORAGE_KEY); } catch { /* storage unavailable */ }
   try { sessionStorage.setItem(NOTE_KEY, byPlayer ? SIGNED_OUT : ENDED); } catch { /* the form shows without it */ }
   location.reload();
 }
 // The player's own sign-out, from the game, the admin console or the entrance.
 export const signOut = () => leave(true);
-// The server has ended the session: the same, said as "Your session has ended".
-export const endSession = () => leave(false);
+// The server has ended the session: the same, said as "Your session has ended". Given the session
+// the server refused (err.session from api()), it ends that one only.
+export const endSession = (expected) => leave(false, expected);
 export function takeUserSignOut() { const was = userSignOut; userSignOut = false; return was; }
 
 // Another tab removed the saved session (its own fallback): end this tab's too. The library finds
@@ -121,20 +155,18 @@ const TOKEN_URL = `${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`;
 const RATE_LIMIT_MS = 30000; // after a 429 with no Retry-After, no renewal before this long
 let renewAfter = 0;
 let renewing = null;
-const stored = () => { try { return JSON.parse(localStorage.getItem(AUTH_STORAGE_KEY)); } catch { return null; } };
-const sessionOf = (s) => {
-  try { return JSON.parse(atob(s.access_token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).session_id ?? null; } catch { return null; }
-};
 
 // Renews the session the refused request was made with (`from`). 'renewed', 'ended' (refused:
 // that refresh token is no longer usable), 'unavailable' (the session kept), or 'changed' (this
 // browser's sign-in is no longer `from`: signed out, or another session, even of the same account).
 // One renewal at a time in this tab, and across the browser's tabs with a lock; whoever goes second
 // finds the session already renewed and sends nothing.
+// What became of `from` if this browser no longer holds its refresh token: renewed by someone
+// else (the same session), or replaced (signed out, or another session, even of the same account).
+const moved = (from) => (sameSession(stored(), from) ? 'renewed' : 'changed');
 function renew(from) {
   const run = async () => {
-    const now = stored();
-    if (now?.refresh_token !== from.refresh_token) return now && sessionOf(now) === sessionOf(from) ? 'renewed' : 'changed';
+    if (stored()?.refresh_token !== from.refresh_token) return moved(from);
     if (Date.now() < renewAfter) return 'unavailable';
     let res;
     let body = {};
@@ -147,18 +179,25 @@ function renew(from) {
       body = await res.json().catch(() => ({}));
     } catch { return 'unavailable'; }
     if (res.ok && body.access_token && body.refresh_token) {
-      // A late answer: only install it if this browser still holds the session it renewed.
-      const still = stored();
-      if (still?.refresh_token !== from.refresh_token) return still && sessionOf(still) === sessionOf(from) ? 'renewed' : 'changed';
-      const { error } = await sb.auth.setSession({ access_token: body.access_token, refresh_token: body.refresh_token });
-      return error ? 'unavailable' : 'renewed';
+      // A late answer: install it only if this browser still holds the session it renewed. Checked
+      // here, and again by the guard as the library saves it, inside its lock (F-4).
+      if (stored()?.refresh_token !== from.refresh_token) return moved(from);
+      installing = { from: from.refresh_token, to: body.refresh_token };
+      try {
+        const { error } = await sb.auth.setSession({ access_token: body.access_token, refresh_token: body.refresh_token });
+        return error ? 'unavailable' : 'renewed';
+      } catch (e) {
+        if (e instanceof Superseded) return moved(from);
+        return 'unavailable';
+      } finally { installing = null; }
     }
     if (res.status === 429) {
       const wait = Number(res.headers.get('retry-after'));
       renewAfter = Date.now() + (wait > 0 ? wait * 1000 : RATE_LIMIT_MS);
       return 'unavailable';
     }
-    if (res.status === 400 && (body.code ?? body.error_code) === 'refresh_token_not_found') return 'ended';
+    // A refusal of `from`'s token ends `from` only while this browser still holds it (F-3).
+    if (res.status === 400 && (body.code ?? body.error_code) === 'refresh_token_not_found') return stored()?.refresh_token === from.refresh_token ? 'ended' : moved(from);
     return 'unavailable';
   };
   renewing ||= (globalThis.navigator?.locks ? navigator.locks.request('clickmonster.renew', run) : run())
@@ -172,7 +211,8 @@ const stale = () => Object.assign(new Error('This request belongs to an earlier 
 // asked is still the page's (main.js: live(g)).
 // A 401 means the server refused the token, before changing anything (the function checks it
 // first), so after one renewal the request is sent once more (docs/sign-out-report.md, section 9):
-//   - renewal refused, or a second 401 for the same session: err.ended, and the caller ends it;
+//   - renewal refused, or a second 401 for the same session: err.ended, with err.session, the
+//     session refused; the caller ends that one only (endSession(err.session));
 //   - renewal couldn't be done (outage, rate limit, unknown answer): a 503, the session kept;
 //   - this browser's sign-in changed meanwhile: err.stale, and nothing is sent again.
 // Nothing else is retried: a timeout or a 5xx may have happened after the server acted.
@@ -186,13 +226,13 @@ export async function api(action, args = {}, isCurrent = () => true) {
     const renewal = await renew(from);
     if (!isCurrent() || renewal === 'changed') throw stale();
     if (renewal === 'unavailable') throw Object.assign(new Error("Can't reach the sign-in service. Please try again."), { status: 503 });
-    if (renewal === 'ended') throw Object.assign(err, { ended: true });
+    if (renewal === 'ended') throw Object.assign(err, { ended: true, session: from });
     try {
       return await call(action, args);
     } catch (again) {
       if (again.status === 401) {
-        if (!isCurrent() || sessionOf(stored() || {}) !== sessionOf(from)) throw stale();
-        again.ended = true;
+        if (!isCurrent() || !sameSession(stored(), from)) throw stale();
+        Object.assign(again, { ended: true, session: stored() });
       }
       throw again;
     }

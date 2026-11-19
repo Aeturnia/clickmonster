@@ -1578,7 +1578,7 @@ async function runRemote(a, v, el) {
     if (action === 'create') ui.createError = message; // shown next to the name field
     else addError(err.status == null ? `Can't reach the game server. ${message}` : message, err.status == null ? 'connection' : action);
     render();
-    if (err.ended) await endSession(); // the server refused it even after a renewal (net.js api())
+    if (err.ended) await endSession(err.session); // the server refused it even after a renewal (net.js api())
     return;
   }
   // The answer belongs to the session that asked. If that session has ended (signed out, or

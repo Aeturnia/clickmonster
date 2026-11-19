@@ -491,3 +491,90 @@ test('F-1 proof 4: refusals in two tabs at once share one renewal across the bro
   assert.equal(renewals(backend) - r0, 1, 'one renewal request for both tabs');
   await done(ctx, { pages: [a, b] });
 });
+
+// ---------------------------------------------------------------- F-3 and F-4: a late result of session S1 has no authority over S2
+// (the review of ef20c15)
+
+test('F-3 a late refresh_token_not_found for S1, after S2 of the same account was signed in, leaves S2 signed in and working', async () => {
+  const backend = new FakeBackend();
+  const ctx = await playing(backend);
+  const { page } = ctx;
+  backend.staleTokens = 1;
+  const release = backend.holdAuth();
+  await page.evaluate(() => { window.__r = import(new URL('js/net.js', location.href)).then(({ api }) => api('state')).then(() => 'sent', (e) => (e.stale ? 'stale' : e.ended ? 'ended' : `error ${e.status}`)); });
+  await new Promise((r) => setTimeout(r, 400)); // S1's renewal is held
+  const s2 = savedSession(ACCOUNTS.player); // another tab signs in again: S2, the same account
+  await page.evaluate(([k, v]) => localStorage.setItem(k, v), [AUTH_KEY, JSON.stringify(s2)]);
+  backend.refreshFail = { status: 400, code: 'refresh_token_not_found' }; // S1's refresh token is refused
+  release();
+  assert.equal(await page.evaluate(() => window.__r), 'stale', 'not "ended": S1 is no longer this browser\'s session');
+  await page.waitForTimeout(800);
+  assert.equal((await stored(page))?.refresh_token, s2.refresh_token, 'S2 stays saved');
+  assert.equal(await page.isVisible('#authform'), false, 'and signed in');
+  await page.click('[data-a="move"][data-v="n"]');
+  await settle(page);
+  assert.equal(await page.isVisible('#authform'), false, 'S2 works');
+  await done(ctx);
+});
+
+test('F-3 endSession() for S1 when S2 is saved ends nothing', async () => {
+  const backend = new FakeBackend();
+  const ctx = await playing(backend);
+  const { page } = ctx;
+  const s1 = await stored(page);
+  const s2 = savedSession(ACCOUNTS.player);
+  await page.evaluate(([k, v]) => localStorage.setItem(k, v), [AUTH_KEY, JSON.stringify(s2)]);
+  await page.evaluate(async (old) => { window.__same = true; const { endSession } = await import(new URL('js/net.js', location.href)); await endSession(old); }, s1);
+  await page.waitForTimeout(800);
+  assert.equal(await page.evaluate(() => window.__same), true, 'no reload');
+  assert.equal((await stored(page))?.refresh_token, s2.refresh_token, 'S2 stays saved');
+  assert.equal(backend.logouts.length, 0, 'nothing signed out');
+  await done(ctx);
+});
+
+test("F-4 another tab signs in (S2) while S1's renewal is being installed: S1's renewal is not saved over S2", async () => {
+  const backend = new FakeBackend();
+  const ctx = await playing(backend);
+  const { page: a } = ctx;
+  const b = await secondTab(ctx);
+  await b.goto(`${env.url}/`);
+  await inGame(b);
+  // A's request is refused and its renewal fetched; its setSession() is then held at its token
+  // check (GET /auth/v1/user), inside the library's lock: after A's own check, before the save.
+  const releaseCheck = backend.holdStep('user');
+  backend.staleTokens = 1;
+  const aCall = a.evaluate(async () => { const { api } = await import(new URL('js/net.js', location.href)); return api('state').then(() => 'sent', (e) => (e.stale ? 'stale' : `error ${e.status}`)); });
+  await new Promise((r) => setTimeout(r, 800));
+  // Meanwhile B signs in again: S2, a new session of the same account, saved now.
+  const s2 = await b.evaluate(async ([email, password]) => {
+    const { client } = await import(new URL('js/net.js', location.href));
+    const { data, error } = await (await client()).auth.signInWithPassword({ email, password });
+    return error ? error.message : JSON.parse(atob(data.session.access_token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).session_id;
+  }, [ACCOUNTS.player.email, ACCOUNTS.player.password]);
+  assert.equal(typeof s2, 'number', `B signed in (${s2})`);
+  releaseCheck();
+  assert.equal(await aCall, 'stale', "A's renewal is refused at the save, and nothing is resent");
+  await a.waitForTimeout(500);
+  assert.equal(sessionOf(await stored(a)), s2, "S2, B's sign-in, is still the saved session");
+  await done(ctx, { pages: [a, b] });
+});
+
+for (const timing of ['before the time limit', 'after the time limit']) {
+  test(`F-4 Sign out while a renewal's setSession() is pending (${timing}): signed out, and the renewal is not reinstalled`, async () => {
+    const backend = new FakeBackend();
+    const ctx = await playing(backend);
+    const { page } = ctx;
+    const releaseUser = backend.holdStep('user'); // setSession() checks the token, inside the library's lock
+    backend.staleTokens = 1;
+    await page.evaluate(() => { window.__r = import(new URL('js/net.js', location.href)).then(({ api }) => api('state')).then(() => 'sent', (e) => (e.stale ? 'stale' : `error ${e.status}`)); });
+    await new Promise((r) => setTimeout(r, 600)); // the renewal is fetched; setSession() is pending
+    await signOutInGame(page);
+    if (timing === 'before the time limit') { await new Promise((r) => setTimeout(r, 800)); releaseUser(); }
+    await theForm(page, SIGN_OUT_MS + 10000);
+    if (timing === 'after the time limit') releaseUser();
+    await page.waitForTimeout(800);
+    assert.equal(await savedUser(page), null, 'nothing is saved: the renewal did not restore the session');
+    assert.ok(await page.isVisible('#authform'));
+    await ctx.context.close();
+  });
+}
