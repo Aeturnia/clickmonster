@@ -182,5 +182,15 @@ With it, the tests reproduce the production 301s on `1679855`.
 
 ### 7.4 Runs and CI for the correction
 
-RUNS_R1
+**Local, on `d913056`** (the correction's code and tests as pushed), on the owner's Windows laptop:
+
+| Run | Engine and file tests | Browser |
+|---|---|---|
+| 1 | 71 of 71 | 307 of 307 |
+| 2 | 71 of 71 | 307 of 307 |
+| 3 | 71 of 71 | 307 of 307 |
+
+- **The counts:** engine 71 (70, plus the directory-index check); browser 307 (306, plus the first-response test).
+- **The test server's Netlify behaviour** (a directory's address without its slash redirected) broke no existing test.
+- **CI:** recorded on the PR once its run completes.
 
