@@ -32,3 +32,37 @@
   for = "/vendor/*"
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
+
+# The public static pages (Monstra Regna scope, MR-B2, 4.4): plain HTML in public/<name>/index.html,
+# served at /<name> without a redirect, with the news pages' headers: no script, nothing loaded from
+# another host, not framed.
+[[redirects]]
+  from = "/guide"
+  to = "/guide/index.html"
+  status = 200
+
+[[redirects]]
+  from = "/leaderboard"
+  to = "/leaderboard/index.html"
+  status = 200
+
+[[redirects]]
+  from = "/contact"
+  to = "/contact/index.html"
+  status = 200
+
+[[headers]]
+  for = "/guide*"
+  [headers.values]
+    Content-Security-Policy = "default-src 'none'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+
+[[headers]]
+  for = "/leaderboard*"
+  [headers.values]
+    Content-Security-Policy = "default-src 'none'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+
+[[headers]]
+  for = "/contact*"
+  [headers.values]
+    Content-Security-Policy = "default-src 'none'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+

@@ -1,6 +1,7 @@
 // UI layer. Game rules live in ./engine (the server runs the same code); this file
 // renders the screen and sends actions. Text only by design: no icons or emoji.
 import { RACES, affinityLabel } from './data/races.js';
+import { COPYRIGHT_HTML } from './site.js';
 import { STATS, STAT_LABEL, STAT_SHORT, STAT_DESC, POINTS_PER_LEVEL } from './data/stats.js';
 import { ITEMS, SLOTS, SLOT_LABEL, WEAPON_TYPES, tierRoman, itemDef } from './data/items.js';
 import { MASTERIES, MASTERY_LABEL, masteryCap, raceSpecialties } from './data/masteries.js';
@@ -828,7 +829,9 @@ function viewHero() {
     ${viewLayoutPicker()}
     <h3>Account</h3>
     <p class="small muted">Signed in as ${esc(session?.user?.email || '')}. Your hero is saved online.</p>
-    <div class="choose" style="grid-template-columns:1fr 1fr">${btn('signout', null, 'Sign out')}${btn('delete', null, 'Delete hero', 'danger')}</div>`;
+    <div class="choose" style="grid-template-columns:1fr 1fr">${btn('signout', null, 'Sign out')}${btn('delete', null, 'Delete hero', 'danger')}</div>
+    <h3>About</h3>
+    <p class="small muted">${COPYRIGHT_HTML}</p>`; // the public pages' copyright (MR-B2, 4.3); no footer in the game
 }
 
 // The interface choice (landing L-2): native radio buttons, with what is in use and why.

@@ -310,6 +310,12 @@ function showEntrance(fromGame) {
 }
 
 // ---------------------------------------------------------------- events
+// "Skip to sign in" (MR-B2): to what the panel shows. The heading while a saved session is restored,
+// else its first usable control: the email field, the reset panel's first, or Try again.
+document.querySelector('.e-skip').addEventListener('click', (e) => {
+  const to = root.classList.contains('resuming') ? gateH : [...document.querySelectorAll('.e-gate :is(input, button, a)')].find((c) => c.getClientRects().length && !c.disabled);
+  if (to) { e.preventDefault(); to.focus(); }
+});
 function warm() {
   interacted = true;
   loadNet().catch(() => { /* reported when the form is sent */ });

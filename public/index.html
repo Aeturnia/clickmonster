@@ -20,12 +20,13 @@
   <!-- The entrance (docs/landing-scope.md). Plain HTML, styled by entry.css, drawn before any
        script runs. entry.js signs in and starts the game; no game code loads before that. -->
   <main id="entry" class="entry">
+    <a class="e-skip" href="#email">Skip to sign in</a>
     <div class="e-wrap">
       <header class="e-id">
-        <p class="e-kicker">A persistent fantasy world</p>
         <h1 class="e-title">Monstra Regna</h1>
-        <p class="e-sub">Exploration, combat and adventure, in a world every player shares.</p>
       </header>
+      <nav class="site-nav" aria-label="Site"><ul><li><a href="/" aria-current="page">Home</a></li><li><a href="/guide">Guide</a></li><li><a href="/leaderboard">Leaderboard</a></li><li><a href="/contact">Contact</a></li></ul></nav>
+      <!-- MR-S1 adds the realm status line here, in the grid's "status" area (docs/monstra-regna-scope.md, 4.1). -->
 
       <section class="e-gate" aria-labelledby="gate-h">
         <h2 id="gate-h" class="e-h" tabindex="-1">Enter the realm</h2>
@@ -64,15 +65,7 @@
         <p class="e-news-all"><a href="/news">All news</a></p>
       </section>
 
-      <section class="e-about" aria-labelledby="about-h">
-        <h2 id="about-h" class="e-h">The realm</h2>
-        <p>Choose your race and set out into lands that grow more dangerous the further you travel. Every zone has its level, its monsters and its rewards; some let heroes fight each other.</p>
-        <ul class="e-points">
-          <li>There are no classes. You decide where every point goes, and your stats have no cap.</li>
-          <li>Win gold, gems and relic gear in battle, and master the weapons and elements you fight with.</li>
-          <li>Take on quests, join world events and boss hunts, and talk with the realm in chat.</li>
-        </ul>
-      </section>
+      <footer class="site-foot"><p>&copy; 2026 Aeturnis Development Labs, LLC</p><ul><li><a href="/contact">Contact</a></li></ul></footer>
     </div>
   </main>
 
