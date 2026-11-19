@@ -12,6 +12,7 @@ import { startHuntBattle, huntExchange, huntShares } from './js/engine/hunt.js';
 import { buy, buyAndEquip, sell, equip, unequip, socketGem, extractGem, deposit, withdraw } from './js/engine/inventory.js';
 import { duel } from './js/engine/pvp.js';
 import { hourBucket, generateQuests, accept, questMatches, grantQuestReward, questTitle } from './js/engine/quests.js';
+import { sessionFailure } from './js/engine/session.js';
 
 const admin = createClient(
   Deno.env.get('SUPABASE_URL')!,
@@ -515,9 +516,16 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
 
+  // The sign-in check comes before anything else, so a refused request has changed nothing and the
+  // client can renew and send it again (docs/sign-out-scope.md 5.2). 401 only when the sign-in
+  // service has definitively refused the token; 503 when it couldn't be asked.
   const token = (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '');
-  const { data: auth } = await admin.auth.getUser(token);
-  if (!auth?.user) return json({ error: 'Please sign in again.' }, 401);
+  const { data: auth, error: authError } = await admin.auth.getUser(token);
+  if (!auth?.user) {
+    return sessionFailure(token, authError) === 'ended'
+      ? json({ error: 'Please sign in again.' }, 401)
+      : json({ error: "Can't reach the sign-in service. Please try again." }, 503);
+  }
 
   let body: any;
   try { body = await req.json(); } catch { return json({ error: 'Bad request' }, 400); }

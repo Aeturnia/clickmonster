@@ -128,3 +128,21 @@ test('SO-1 signing out with scope=local leaves the account\'s other session work
   assert.equal(await getUser(newer.access), null, 'the newer session is unaffected');
   assert.equal(await renew(newer.refresh), null, 'and can still renew');
 });
+
+// SO-6b, the real function: the game function's sign-in check answers 401 for a token the sign-in
+// service has refused (here, an ended session's and a malformed one), before doing anything else.
+// An outage can't be made on the local stack; the rule's Node test covers it (tests/session-rule.test.mjs).
+test('SO-6b the game function answers 401 for an ended session token and for a malformed one', async () => {
+  const gameCall = async (token) => {
+    const res = await fetch(`${API}/functions/v1/game`, { method: 'POST', headers: { apikey: ANON, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'state', args: {} }) });
+    return { status: res.status, error: (await res.json().catch(() => ({}))).error };
+  };
+  const a = await account('fn');
+  const device = await session(a);
+  const other = await session(a);
+  assert.equal((await gameCall(device.access)).status, 200, 'the session works before');
+  await logout(other.access, 'global');
+  assert.deepEqual(await gameCall(device.access), { status: 401, error: 'Please sign in again.' }, 'an ended session');
+  assert.deepEqual(await gameCall('not-a-jwt'), { status: 401, error: 'Please sign in again.' }, 'a malformed token');
+});
+

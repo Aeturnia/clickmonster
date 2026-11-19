@@ -1,6 +1,6 @@
 // Admin and moderator console. All checks happen on the server (`admin` edge function);
 // this page only renders what the server allows, and never relies on hiding a control for safety.
-import { client, fetchZoneDefs } from './net.js';
+import { client, fetchZoneDefs, signOut } from './net.js';
 import { setupZones } from './admin-zones.js';
 import { setupNews } from './admin-news.js';
 import { loadZones } from './data/zones.js';
@@ -895,7 +895,7 @@ document.addEventListener('click', async (e) => {
     ($('#alerts [data-a="dismissProblem"]') || $('.a-tabs [aria-current]'))?.focus();
     return;
   }
-  if (a === 'signout') { await sb.auth.signOut(); return; }
+  if (a === 'signout') { await signOut(); return; } // this device only (docs/sign-out-scope.md)
   if (a === 'navgroup') { st.navGroup = v; render(); $(`[data-a="navgroup"][data-v="${v}"]`)?.focus(); return; }
   if (a === 'tab') showTab(v);
   if (a === 'refresh') load();

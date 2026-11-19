@@ -18,7 +18,7 @@ import { monsterCombatant } from './engine/monster.js';
 import { meleeChance, spellChance, meleeBase, spellBase } from './engine/combat.js';
 import { shopItems, isEquipped, sellPrice } from './engine/inventory.js';
 import { PVP_LEVEL_GAP } from './engine/pvp.js';
-import { sb, api, playersAt, recentEvents, fetchZoneDefs, signOut } from './net.js';
+import { sb, api, playersAt, recentEvents, fetchZoneDefs, signOut, endSession } from './net.js';
 import { setupChat } from './chat-ui.js';
 import { questTitle, canAccept } from './engine/quests.js';
 import { setWorld, activeEvents, MULT_LABEL, MULT_KEYS } from './engine/world-config.js';
@@ -1568,9 +1568,9 @@ async function runRemote(a, v, el) {
   markPending();
   let res;
   try {
-    res = await api(action, args);
+    res = await api(action, args, () => live(g));
   } catch (err) {
-    if (!live(g)) return; // the account changed while this was on its way: not ours to report
+    if (!live(g) || err.stale) return; // the account changed while this was on its way: not ours to report
     ui.busy = false;
     ui.pendingKey = null;
     markPending();
@@ -1578,7 +1578,7 @@ async function runRemote(a, v, el) {
     if (action === 'create') ui.createError = message; // shown next to the name field
     else addError(err.status == null ? `Can't reach the game server. ${message}` : message, err.status == null ? 'connection' : action);
     render();
-    if (err.status === 401) await sb.auth.signOut();
+    if (err.ended) await endSession(); // the server refused it even after a renewal (net.js api())
     return;
   }
   // The answer belongs to the session that asked. If that session has ended (signed out, or
@@ -1870,7 +1870,7 @@ export async function start(newSession, isCurrent = () => true) {
   ui.phase = 'idle';
   await zonesReady();
   if (!current()) return false;
-  const res = await api('state');
+  const res = await api('state', {}, current);
   if (!current()) return false;
   char = res.char;
   ui.sanctions = res.sanctions || null;
