@@ -23,7 +23,11 @@ const sameSession = (a, b) => !!a && !!b && (a.refresh_token === b.refresh_token
 // browser still holds the session it renewed: if another tab signed in, or this one signed out, in
 // between, the save is refused before the library announces anything, and nothing of the old
 // session comes back (docs/sign-out-report.md, section 20, F-4). Every other save passes unchanged.
+// Likewise, while this tab signs out (leave(), below), the library's removal of the saved session
+// is refused if what is saved is no longer the sign-in being ended: another tab signed in meanwhile
+// (F-5). The refusal comes before the library announces SIGNED_OUT, so no tab is told to stop.
 let installing = null; // { from: the renewed session's refresh token, to: the new one }
+let leaving = null; // the session this tab is signing out
 class Superseded extends Error {}
 const guardedStorage = {
   getItem: (k) => localStorage.getItem(k),
@@ -35,7 +39,10 @@ const guardedStorage = {
     }
     localStorage.setItem(k, v);
   },
-  removeItem: (k) => localStorage.removeItem(k),
+  removeItem: (k) => {
+    if (leaving && k === AUTH_STORAGE_KEY && stored() && !sameSession(stored(), leaving)) throw new Superseded('superseded');
+    localStorage.removeItem(k);
+  },
 };
 
 // The client, once created (a live binding: importers see it as soon as client() has resolved).
@@ -93,12 +100,18 @@ async function leave(byPlayer, expected) {
   if (expected && !sameSession(stored(), expected)) return;
   userSignOut = byPlayer;
   const ending = stored();
+  leaving = ending;
   let done = false;
+  let timedOut = false;
   try {
     const timeUp = new Promise((resolve) => setTimeout(resolve, SIGN_OUT_MS, 'time'));
     const result = await Promise.race([sb ? sb.auth.signOut({ scope: 'local' }) : null, timeUp]);
-    done = result !== 'time' && !result?.error;
-  } catch { /* falls back */ }
+    timedOut = result === 'time';
+    done = !timedOut && !result?.error;
+  } catch { /* falls back (including a removal refused by the guard: a newer session is saved) */ }
+  // The library's call has finished, so the guard is lifted. After a time-out it stays: the call may
+  // still finish, and the page reloads anyway.
+  if (!timedOut) leaving = null;
   if (done && !saved()) return; // the library cleared it and told this tab and the others
   // Remove it only if it is still the sign-in being ended (renewed or not), never a newer one.
   try { if (sameSession(stored(), ending)) localStorage.removeItem(AUTH_STORAGE_KEY); } catch { /* storage unavailable */ }

@@ -578,3 +578,49 @@ for (const timing of ['before the time limit', 'after the time limit']) {
     await ctx.context.close();
   });
 }
+
+// ---------------------------------------------------------------- F-5: a late successful sign-out of S1 can't remove S2
+// (the review of 4218e2f)
+
+test('F-5 tab A signs out S1; while its sign-out is on its way, tab B signs in as S2; A\'s sign-out then succeeds: S2 stays signed in and working', async () => {
+  const backend = new FakeBackend();
+  const ctx = await playing(backend);
+  const { page: a } = ctx;
+  const b = await secondTab(ctx);
+  await b.goto(`${env.url}/`);
+  await inGame(b);
+  backend.logoutFail = 'hang'; // A's sign-out request is held, then answered 204 below
+  await signOutInGame(a);
+  await new Promise((r) => setTimeout(r, 500));
+  // B signs in again: S2, a new session of the same account.
+  const s2 = await b.evaluate(async ([email, password]) => {
+    const { client } = await import(new URL('js/net.js', location.href));
+    const { data, error } = await (await client()).auth.signInWithPassword({ email, password });
+    return error ? error.message : JSON.parse(atob(data.session.access_token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).session_id;
+  }, [ACCOUNTS.player.email, ACCOUNTS.player.password]);
+  assert.equal(typeof s2, 'number', `B signed in (${s2})`);
+  await backend.hungLogout.fulfill({ status: 204 }); // A's sign-out of S1 succeeds, within the time limit
+  await b.waitForTimeout(1500);
+  assert.equal(sessionOf(await stored(b)), s2, 'S2 is still the saved session');
+  assert.equal(await b.isVisible('#authform'), false, 'B is still signed in');
+  await b.click('[data-a="move"][data-v="n"]');
+  await settle(b);
+  assert.equal(await b.isVisible('#authform'), false, 'and S2 works');
+  await ctx.context.close();
+});
+
+test('F-5 after a normal sign-out the guard is lifted: signing in again and out again in the same tab works', async () => {
+  const backend = new FakeBackend();
+  const ctx = await playing(backend);
+  const { page } = ctx;
+  await page.evaluate(() => { window.__samePage = true; });
+  await signOutInGame(page);
+  await theForm(page);
+  await signIn(page, env.url, 'player');
+  await inGame(page);
+  await signOutInGame(page);
+  await theForm(page);
+  assert.equal(await savedUser(page), null, 'the second session is removed');
+  assert.deepEqual(backend.logouts, ['local', 'local']);
+  await done(ctx);
+});
