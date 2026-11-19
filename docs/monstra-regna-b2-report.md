@@ -192,5 +192,11 @@ With it, the tests reproduce the production 301s on `1679855`.
 
 - **The counts:** engine 71 (70, plus the directory-index check); browser 307 (306, plus the first-response test).
 - **The test server's Netlify behaviour** (a directory's address without its slash redirected) broke no existing test.
-- **CI:** recorded on the PR once its run completes.
+- **CI on the PR's own base** (run `44596307837`, head `4033a94`, merge commit `207b111`):
+  - **Attempt 1:** engine and database passed. Browser failed 1 of 307: `PR-4a a second tab with the saved session also shows the form` timed out.
+  - **The cause, from the trace:** a race in that test's setup, not this correction and not the runner. It is recorded on the PR and in `docs/backlog.md`.
+  - **Attempt 2,** the one authorized re-run: browser passed 307 of 307.
+- **The race was corrected separately,** test only, in PR #58 (`0029aea`), approved and merged first.
+- **Combined with PR #58:** the branch was brought up to date with `main` (`0029aea`); the routing change is unchanged. Browser total 308: 306, plus this correction's first-response test, plus PR #58's proof test.
+- **Combined CI:** recorded on the PR once its run completes.
 
