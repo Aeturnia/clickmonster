@@ -92,6 +92,11 @@ A separate staging Supabase project is dropped. The live sign-in session above c
 
 ## Follow-ups (not blocking)
 
+- **The `admin` function answers 401 for any sign-in check failure** (from the sign-out scope's review, 2026-11-19; deferred there by decision, Q2).
+  - **What it does:** `supabase/functions/admin/index.ts:672` answers 401 whenever `getUser` gives no user: an ended session, a bad token, or the sign-in service being briefly unreachable. Staff can't tell an outage from a session that has ended.
+  - **The fix:** the same classification as the `game` function's, once that exists (`docs/sign-out-scope.md`, 5.2): 401 only for a definitive refusal, 503 otherwise, from the shared `sessionFailure()` rule.
+  - **Not authorized;** it needs an `admin` redeploy.
+
 - **Sign-out on one device locks another out (P1, a user-facing sign-in recovery defect;** found by the owner on the live site, 2026-11-19).
   - **What happened:** signed in as the same account on a phone and a desktop, the owner signed out on the phone. The desktop then showed "Please sign in again". After a refresh, the entrance showed it again with Try again and Sign out. Try again failed the same way, Sign out did nothing visible, and the sign-in form stayed hidden, so no account could sign in on that browser. The phone kept working.
   - **Not GP-1's:** it is in the entrance and `net.js`, and existed before GP-1.
