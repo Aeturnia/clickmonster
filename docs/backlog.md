@@ -143,7 +143,12 @@ A separate staging Supabase project is dropped. The live sign-in session above c
     - run `44410857655` above;
     - the `push` run on `main` after GP-1's merge (run `44432245764`, attempt 1): `GP-B4` failed at `page.goto: net::ERR_NO_BUFFER_SPACE`.
 
-    Each time, one re-run of the failed job, authorized by the owner, passed in full. The re-runs support the diagnosis but don't fix the fault.
+    **The re-runs:**
+    - PR #47's run (`44238281270`): attempt 2, authorized by the owner, passed.
+    - Run `44410857655`: attempt 2 was started and then cancelled, most likely when the next push to the PR superseded it; it gave no result.
+    - The `push` run after GP-1's merge (`44432245764`): attempt 2, authorized by the owner, passed 248/248.
+
+    The passing re-runs support the diagnosis but don't fix the fault.
 
 - **Pagination of `/news`** (from the L-4 review). The public list (`netlify/edge-functions/news.js`, `LIST_LIMIT = 100`) shows the 100 newest published articles. Older ones stay reachable by their address but drop off the list. Add pages (for example `/news?page=2`, or a link to older articles) before there are 100.
 
