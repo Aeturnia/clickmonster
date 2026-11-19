@@ -31,7 +31,12 @@ Read these first:
     - **What it covers:** the entrance's news and maintenance line (`js/entry-news.js`, loaded after the first paint) and the article pages (`netlify/edge-functions/news.js`).
     - **Findings:** L4-01 (the maintenance notice expires while the page is open), L4-02 (405 headers) and L4-03 (an open-ended notice under way comes first) are closed.
   - **Final baseline** on `main` at `d754dad`: engine 47/47 and browser 178/178, in each of 3 runs.
-  - **The entrance's startup budget** (LAC-2) is 34,000 decoded bytes: revised to 32,000 in the L-4 review, then to 34,000 by the owner for password recovery (2026-11-17). It is 33,987 with R-1, 33,989 with MR-B1's rename ("Monstra Regna" is one character longer, in the title and the heading), and 33,960 after the sign-out fix moved the sign-in error wording to `net.js`. Don't strip comments to meet it.
+  - **The entrance's first paint** is under MR-B2's performance contract (`docs/monstra-regna-scope.md`, 4.5), which replaced LAC-2's hard limit (32,000, then 34,000):
+    - **the tripwire:** at most 48,000 decoded bytes, failing CI;
+    - **the review threshold:** above 40,000, the milestone's report explains the increase;
+    - **hard checks:** at most 3 requests before the form, no game code for an anonymous visitor, and the news after the first paint.
+
+    It is 35,620 with MR-B2. Don't strip comments to meet it.
   - **Still open:**
     - the backlog's release checks: before release, sign-in on the live site and unpublishing; after release, the live maintenance line and the rest;
     - `/news` pagination (a follow-up);
@@ -51,7 +56,10 @@ Read these first:
   - **Step 3: the applicable checks passed** under the current production authentication configuration (owner-reported, 2026-11-18): session kept and the reset link worked end to end on `monstraregna.com`. **Sign-up confirmation was not performed:** email confirmation is off in production (since the first setup). It is deferred until email confirmation and delivery are separately authorized and configured; don't enable it as part of other work.
   - **Step 4 passed** (2026-11-18): titles, manifest, and news canonical and `og:url` on `monstraregna.com`, checked by the owner and independently by authorized read-only requests.
   - **Next gate: the announcement (QB-2)**, published by the owner before the redirect; then the redirect PR (step 5), which needs its own go-ahead. Don't open or merge the redirect (prepared on `claude/mr-b1-redirect`, `b00a5c7`), and don't touch the Supabase allow-list, without authorization.
-  - **MR-B2 and MR-S1** each need their own authorization.
+  - **MR-B2, the homepage and navigation,** was authorized on 2026-11-19 and is implemented on `claude/mr-b2`, at its review gate. See `docs/monstra-regna-b2-report.md`.
+    - **What it adds:** "Skip to sign in", the site menu (Home, Guide, Leaderboard, Contact), a footer on every public page, and the static pages `/guide`, `/leaderboard` and `/contact`.
+    - **Not yet:** Discord waits for a permanent invite (D9); Privacy and Terms wait for the legal milestone (D7).
+  - **MR-S1** needs its own authorization.
 - **Gameplay polish: complete** (2026-11-19). Scope `docs/gameplay-polish-scope.md` (PR #50, `cc736b5`; amendment 1 in its section 14, PR #52, `99357cb`). GP-1 was merged as PR #51 (`9fb022a`) and the `game` function redeployed (version 13); the owner's live check passed. See `docs/gameplay-polish-report.md`, section 10.
   - **The fixes:**
     - A: the XP cue plays once;
@@ -189,13 +197,18 @@ Read these first:
   - **Production checks:** `supabase/checks/news_precheck.sql` before applying, and `news_verify.sql` after. Both are read-only.
   - **The deploy procedure,** including how the migration history is read and reconciled, is in `docs/landing-l3-report.md`, section 4. Every step needs the owner's authorization.
   - **`tools/news-public-check.mjs`** requires `--published` and `--hidden`.
+- **The public pages' menu and footer** (MR-B2) are defined once, in `public/js/site.js` (`menuHtml()`, `footerHtml()`, `COPYRIGHT_HTML`).
+  - **The news pages** draw them from there.
+  - **`index.html` and the static pages** (`public/guide/`, `leaderboard/` and `contact/`, plain HTML with no script) carry the same markup, and `tests/site-pages.test.mjs` checks they match.
+  - **To add a menu item** (Discord, once there is a permanent invite) or a footer link (Privacy and Terms, after the legal milestone): change `site.js`, then each HTML copy.
+  - **Each January,** update the copyright year in `site.js` and its copies.
 - **Public news pages** are the Netlify Edge Function `netlify/edge-functions/news.js`, for `/news` and `/news/<slug>`.
   - **Data:** published rows only, read through the public REST API with the publishable key.
   - **Pages:** no script, a strict policy, `no-store`, and the canonical address from `public/js/site.js` (`SITE_ORIGIN`, which also holds `SITE_NAME`).
   - **Tests:** the handler is tested in Node (`tests/news-pages.test.mjs`), and the harness serves `/news` through it.
   - **The entrance's news** (`js/entry-news.js`) loads only after the first contentful paint, and failures show nothing.
 - **Password recovery: R-1 implemented and accepted,** pending production activation. It was merged as PR #45 (`48be811`, 2026-11-17). See `docs/password-recovery-r1-report.md`; the scope is `docs/password-recovery-scope.md`, PR #44 (`031a026`).
-  - **The startup budget** has 40 bytes of room (33,960 of 34,000, after the sign-out fix moved the sign-in error wording to `net.js`). Plan for that before touching `entry.js`, `index.html` or `entry.css`.
+  - **The first paint** is 35,620 bytes, against MR-B2's 48,000-byte tripwire and 40,000 review threshold (see above).
   - **The guard** is in `entry.js`, in the first paint. A reset link, its error, a `PASSWORD_RECOVERY` event, or the `clickmonster.recovery` marker for the saved session's user holds the game back: no start and no preload. It is a UI guard, not server-enforced.
   - **The rest** is lazily loaded: `js/entry-recover.js`.
   - **`entry.js` stays the only auth listener;** the module gets sessions through hooks.
@@ -223,8 +236,8 @@ Read these first:
 ## Testing
 
 ```
-npm test                 # engine, entrance file checks, the startup budget, news rules, the news page handler, the town rule, the log rules and the session rule (65)
-npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (288)
+npm test                 # engine, entrance file checks, the first-paint tripwire, the public pages, news rules, the news page handler, the town rule, the log rules and the session rule (70)
+npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (306)
 npm run test:db          # database (pgTAP, 42) and API/function/recovery/session tests (17, plus 1 opt-in) on the LOCAL Supabase stack, with Mailpit
 npx playwright install chromium   # once
 ```
@@ -248,7 +261,7 @@ npx playwright install chromium   # once
   - **Every test** also writes resource measurements (duration, Node event-loop delay and CPU, machine CPU, memory) to `tests/ui/artifacts/metrics/`. CI uploads them on every run as `browser-metrics-attempt-<n>`.
   - **The trace has no screenshots,** to reduce load on the two-core runner. `UI_TRACE_SCREENSHOTS=1` turns them back on, for comparison only.
   - **Reading the event-loop delay on Windows:** an idle process reads about 31 ms.
-- **The startup budget** is now a test (`tests/entrance-budget.test.mjs`): the document plus every stylesheet and script `index.html` loads, counted as LF, at most 34,000 bytes.
+- **The first paint** is a test (`tests/entrance-budget.test.mjs`): the document plus every stylesheet and script `index.html` loads, counted as LF. At most 48,000 bytes (MR-B2's tripwire); above 40,000 is reported.
 
 **The local Supabase stack** (landing L-3) runs in Docker Desktop. The pinned CLI is a dev dependency.
 - **Start it:**
