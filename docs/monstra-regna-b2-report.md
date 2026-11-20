@@ -252,6 +252,10 @@ With it, the tests reproduce the production 301s on `1679855`.
 **The second live check** (the revised checker, read-only): **all public pages as expected, exit 0.** Its evidence is `docs/ui-audit/mr-b2/live-577a253-recheck.txt`.
 - **The test server, checked the same way,** gives the same statuses and redirect targets for all six addresses. It sends no security headers, which `tests/site-pages.test.mjs` checks in `netlify.toml` instead.
 
+**Runs** (local, on `56b8ebc`, Windows): engine 71 of 71; browser **308 of 308 in each of 3 runs**. The counts are unchanged: B2-5 and the file test were revised, not added.
+
+**CI:** recorded on the PR once its run completes.
+
 **The audit trail is kept:**
 - the first, failing check (`live-577a253-check.txt`);
 - the failure before the correction (`live-1679855-check.txt`);
