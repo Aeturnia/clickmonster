@@ -39,8 +39,11 @@ const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/cs
 //   1. a file at the address is served as it is;
 //   2. a directory's address without its trailing slash answers 301 to the slash form, before any
 //      rewrite (this is what sent /guide to /guide/ in production);
-//   3. netlify.toml's 200 rewrites, read from the checkout being served (beside its public/);
-//   4. a directory with the slash serves its index.html; /x serves x.html if it exists.
+//   3. an address with a trailing slash, where there is no such directory but there is an x.html,
+//      answers 301 to the slashless address, also before any rewrite (Pretty URLs, as measured live
+//      after the correction's deployment: /guide/ to /guide; report section 7.5);
+//   4. netlify.toml's 200 rewrites, read from the checkout being served (beside its public/);
+//   5. a directory with the slash serves its index.html; /x serves x.html if it exists.
 const REWRITES = (() => {
   const toml = path.join(PUBLIC, '..', 'netlify.toml');
   if (!fs.existsSync(toml)) return {};
@@ -58,6 +61,8 @@ export function startServer() {
     if (!file.startsWith(PUBLIC)) { res.writeHead(403).end(); return; }
     if (!isFile(file)) {
       if (isDir(file) && !url.pathname.endsWith('/')) { res.writeHead(301, { Location: `${url.pathname}/${url.search}` }).end(); return; }
+      const bare = url.pathname.replace(/\/$/, '');
+      if (bare && bare !== url.pathname && !isDir(file) && isFile(`${at(bare)}.html`)) { res.writeHead(301, { Location: `${bare}${url.search}` }).end(); return; }
       if (REWRITES[url.pathname]) file = at(REWRITES[url.pathname]);
       else if (isDir(file)) file = path.join(file, 'index.html');
       else if (isFile(`${file}.html`)) file = `${file}.html`;
