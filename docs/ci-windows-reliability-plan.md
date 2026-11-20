@@ -235,7 +235,7 @@ So the next measurement is M2.
 **What it records** (`tools/ci-tcp-sampler.ps1`, run by three steps in the browser job):
 - **When:**
   - a **start** snapshot before the browser suite;
-  - a **sample every 5 s** while it runs;
+  - a **sample about every 5 to 6 s** while it runs. The loop sleeps 5 s after each sample, and a sample itself takes a fraction of a second, so the time between sample starts is a little over 5 s (on the runner, a median of 5.4 s and at most 5.8 s);
   - an **end** snapshot after it.
 - **What each line holds:**
   - a UTC timestamp;
@@ -263,7 +263,15 @@ So the next measurement is M2.
 - **Loopback `TimeWait`:** 0 at the start, at most **554** during the suite, and 310 at the end.
 - **Machine-wide:** at most 567 `TimeWait`; at most 55 `Established` and 6 `CloseWait`.
 
-So on the laptop, the suite's `TIME_WAIT` stayed at about 3.4% of the dynamic range. Whether the runner is the same is what M2 will show.
+So on the laptop, the suite's `TIME_WAIT` entries peaked at a number equal to about 3.4% of the dynamic range. Whether the runner is the same is what M2 will show.
+
+**How to read the `TimeWait` counts:**
+- **What they are:** a count of TCP connection entries in that state, not a direct measure of how many ephemeral ports are unavailable.
+- **Why the two differ:**
+  - an entry belongs to a connection (a pair of endpoints), not to a port, and the counts don't show which side's port it holds;
+  - they don't show whether Windows could still allocate that port for another connection;
+  - other limits (kernel buffers, per-process handles) aren't in these counts at all.
+- **What they're for:** a measure of connection churn, set against the dynamic range as an order of magnitude, not as port occupancy.
 
 **For correlation:**
 - **Timestamps in the metrics:** each test's M1/M3 metrics line now carries `endedAt` (UTC), and the file summaries do too. That is the only change to the harness in this PR.

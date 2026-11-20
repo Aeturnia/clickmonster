@@ -4,7 +4,8 @@
 # never prints addresses or ports of individual connections.
 #
 #   -Mode snapshot -Label start|end   one line, with the dynamic port ranges and the runner image
-#   -Mode loop                        a line every -IntervalSeconds, until the stop file appears
+#   -Mode loop                        a line, then a pause of -IntervalSeconds (so a little over that
+#                                     between samples), until the stop file appears
 #                                     (<Out>/stop) or -MaxMinutes pass, then a closing line with the
 #                                     sampler's own CPU time (its overhead)
 #

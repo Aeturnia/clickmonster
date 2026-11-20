@@ -279,7 +279,7 @@ npx playwright install chromium   # once
     - **per file:** a summary line when its last test ends, and another at process exit.
 
     They only count, and change no connection behaviour.
-  - **The runner's TCP table** (M2, `tools/ci-tcp-sampler.ps1`): the browser job samples it every 5 s, as aggregate counts by state, machine-wide and loopback. It also takes snapshots, with the dynamic port range, before and after. The results go in the `browser-tcp-attempt-<n>` artifact.
+  - **The runner's TCP table** (M2, `tools/ci-tcp-sampler.ps1`): the browser job samples it about every 5 to 6 s (a 5 s pause after each sample), as aggregate counts by state, machine-wide and loopback. It also takes snapshots, with the dynamic port range, before and after. The results go in the `browser-tcp-attempt-<n>` artifact.
     - **The steps** are `continue-on-error`, and the test step is unchanged, so they can't change its result.
     - **Correlating:** the metrics lines' `endedAt` (UTC) line up with the samples' `t`. `docs/ci-windows-reliability-plan.md`, section 8.3, says how to read them with a failure.
   - **The trace has no screenshots,** to reduce load on the two-core runner. `UI_TRACE_SCREENSHOTS=1` turns them back on, for comparison only.

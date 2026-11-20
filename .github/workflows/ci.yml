@@ -96,7 +96,7 @@ jobs:
         # No --with-deps: it installs Linux system packages, and Windows needs none.
         run: npx playwright install chromium
       # Windows CI M2 (docs/ci-windows-reliability-plan.md): the runner's TCP table, as aggregate counts
-      # by state (machine-wide and loopback), sampled every 5 s while the browser suite runs, with
+      # by state (machine-wide and loopback), sampled about every 5 to 6 s while the browser suite runs, with
       # snapshots and the dynamic port range before and after, in ci-output/tcp/. Observation only:
       # these steps are continue-on-error and the test step below is unchanged, so they can't change
       # or hide its result.
