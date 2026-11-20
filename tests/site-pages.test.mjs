@@ -4,8 +4,8 @@
 //     own page) and footer; the news pages draw them from site.js.
 //   - The static pages load no script and nothing from another host.
 //   - netlify.toml serves each at /<name> with a 200 rewrite to public/<name>.html, with the news
-//     pages' no-script policy. (/<name>/ answers one 301 to /<name>, from Netlify itself: report
-//     section 7.5.)
+//     pages' no-script policy, and has no rule for /<name>/, which answers one 301 to /<name> from
+//     Netlify itself (report sections 7.5 and 7.6).
 //   - No public page is a directory index (the routing correction, report section 7).
 //   - No dead links: every menu and footer link is a page that exists.
 import { test } from 'node:test';
@@ -57,12 +57,13 @@ test('B2-5 the static pages: plain HTML, no script, only the site stylesheets, s
   assert.ok(read('public/contact.html').includes(`href="mailto:${CONTACT_EMAIL}"`), 'the contact page gives the address (D8)');
 });
 
-// The slash forms' rewrites in netlify.toml are not required: Netlify answers /<name>/ with a 301 to
-// /<name> before they apply (report section 7.5).
-test('B2-5 netlify.toml serves each static page at its canonical address by a 200 rewrite, with the no-script policy', () => {
+// The slash forms have no rule: Netlify answers /<name>/ with a 301 to /<name> before any rewrite
+// applies, so one would never be reached (report sections 7.5 and 7.6).
+test('B2-5 netlify.toml serves each static page at its canonical address by a 200 rewrite, with the no-script policy, and has no rule for its slash form', () => {
   const toml = read('netlify.toml');
   for (const [path] of STATIC) {
     assert.ok(toml.includes(rewrite(path, `${path}.html`)), `${path}: rewritten to ${path}.html, not redirected`);
+    assert.ok(!toml.includes(`from = "${path}/"`), `${path}/: no rule (Netlify redirects it first)`);
     assert.ok(toml.includes(`for = "${path}*"\n  [headers.values]\n    Content-Security-Policy = "${NEWS_CSP}"`), `${path}: the news pages' policy`);
   }
 });

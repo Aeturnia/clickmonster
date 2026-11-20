@@ -209,7 +209,7 @@ A separate staging Supabase project is dropped. The live sign-in session above c
 
     The passing re-runs support the diagnosis but don't fix the fault.
 
-- **B2-6 read the first-paint entry before the browser published it** (`tests/ui/homepage.test.mjs`): **cause found, a race in the test; corrected on `claude/b2-6-fcp`, pending review.**
+- **B2-6 read the first-paint entry before the browser published it** (`tests/ui/homepage.test.mjs`): **cause found, a race in the test; corrected in PR #62 (`b84e7b0`, merged 2026-11-19).**
   - **The failure:** CI run `44650435250` on PR #61 (`c521979`), Windows, 2026-11-19: `page.evaluate: TypeError: Cannot read properties of undefined (reading 'startTime')`. It was not re-run.
   - **The cause:** B2-6 read `performance.getEntriesByType('paint')`'s `first-contentful-paint` entry as soon as `#authform` was visible. The browser publishes that entry asynchronously, so the form can be visible first.
   - **The correction (test only):**
@@ -219,6 +219,57 @@ A separate staging Supabase project is dropped. The live sign-in session above c
   - **The proof:**
     - **The late entry:** with the old code, the second case failed 3 of 3 times with CI's error. With the correction it passed 3 of 3.
     - **The limit still holds:** with a fourth request before the paint (an extra stylesheet in a copy of `public/`), both cases fail with "requests before the form: /, /css/entry.css, /css/news.css, /js/entry.js".
+- **F-1 proof 4's fixture can refuse a renewed request and accept an expired one** (`tests/ui/sign-out.test.mjs`, `F-1 proof 4: refusals in two tabs at once share one renewal across the browser`): **cause found, in the test's fixture, not the client; corrected on `claude/f1-fixture`, pending review.**
+  - **The failure:** once, locally, 2026-11-19 (run 2 of 3 on `claude/b2-6-fcp`): `['error 401', 'ok']` instead of `['ok', 'ok']`. It had no diagnostics.
+  - **The investigation** (authorized by the owner; the probe is `docs/ui-audit/f1-proof-4/probe.mjs`):
+    - **What it records:** each request's tab, the access token it carried, its arrival order and its answer, plus the renewals and every write to `clickmonster.auth` in both tabs.
+    - **How it controls the order:** page routes hold chosen requests.
+  - **The cause: the fixture's refusal is a counter.** `backend.staleTokens = 2` refuses whichever two `game` calls come next, whatever their token.
+    - **The sequence:** if tab A's resend (with the renewed token) arrives before tab B's first call (with the expired token), A's resend takes the second refusal. B's expired token is then accepted.
+    - **Reproduced deterministically** (B's first call held until A had finished), 3 of 3: `['error 401 ended', 'ok']`, one renewal. A's resend carried the renewed token and was refused; B's first call carried the expired token and got 200.
+    - **The client behaves correctly** under the same order when the refusal is tied to the expired token, as the real server's is: `['ok', 'ok']`, one renewal, both resends with the renewed token, 3 of 3.
+  - **The requirement still detects broken coordination.** With both first calls held until both are in, a token-tied refusal, and the cross-tab lock removed (`navigator.locks` undefined), there are **2 renewals**, 3 of 3, which the test's "one renewal" check catches. With the lock: one renewal, `['ok', 'ok']`, 10 of 10.
+  - **A second fixture flaw, found on the way:** the fake mints access tokens deterministically from the account, session id and expiry, and the expiry is in whole seconds (`fakeJwt()` in `tests/ui/harness.mjs`). So a renewal in the same second as the token it replaces is byte-identical to it.
+    - **How it showed up:** in the probe's token-tied mode this made both tabs end, 4 of 11 runs.
+    - **Why it isn't the client:** the auth-storage trace showed the renewal installed correctly: one write, by `setSession()` through `net.js`'s guard, with the rotated refresh token. The "renewed" access token was simply identical to the old one.
+    - **Confirmed:** with the renewal moved to a later second, 10 of 10 runs passed. Real GoTrue never issues an identical token.
+  - **The correction** (test fixture only, authorized by the owner; first proposed as follows):
+    1. **Make each fake access token unique** (a counter claim, such as `jti`, in `fakeJwt()`), so a renewal can never equal the token it replaces.
+    2. **Tie F-1 proof 4's refusal to the expired token:** a fake-backend option that refuses requests carrying the tokens issued before a point (for example `backend.expireIssuedTokens()`), not a count of the next calls.
+    3. **Add a barrier to F-1 proof 4:** hold both tabs' first calls until both have arrived, so "two refusals at once" is guaranteed rather than assumed.
+
+    **Kept:** both calls succeed, with one renewal. The proof would be the probe's modes as tests: the old fixture fails under the controlled order, the corrected one passes, and without the cross-tab lock the test fails.
+  - **Other tests using `staleTokens`:**
+    - **Exposed to the same flaw:** `SO-3 concurrent refusals share one renewal…` sends three requests at once in one tab with `staleTokens = 3`, so a resend could also take a refusal meant for a first call. It is less exposed: all three first calls leave in the same tick, before any renewal round trip. It isn't known to have failed.
+    - **One request at a time:** the other uses (`staleTokens = 1`) have no other request to take their refusal.
+
+    None is changed by the proposal unless the owner extends it.
+  - **As made** (on `claude/f1-fixture`):
+    - **Unique tokens:** `fakeJwt()` adds `jti`, the next number of a deterministic issuance counter (`ISSUED`), so every access token differs, renewals included.
+    - **Refusal by identity:** `backend.expireIssuedTokens({ together })` expires every token issued so far. The `game` function refuses a request carrying one (401), whichever request it is, and accepts a later token. `backend.tokenLog` records each such call as `expired` or `renewed`.
+    - **The barrier:** `together: n` holds the first n refusals until all n have arrived, then answers them at once. It stops waiting after 5 s and sets `together.timedOut`, so a client that sends fewer fails an assertion instead of hanging.
+    - **F-1 proof 4** uses `together: 2`, and **SO-3 concurrent refusals** uses `together: 3`. Both keep their assertions (every call succeeds, one renewal) and add two: the barrier didn't time out, and `tokenLog` shows every first call refused, then every resend accepted with the renewed token.
+    - **`staleTokens` is kept,** unchanged, for the single-request tests.
+    - **A new test,** `F-1 fixture: every fake access token is distinct…`, makes two tokens of one session in the same second and checks they differ.
+  - **The proof** (3 of 3 runs each):
+
+    | Case | Result |
+    | --- | --- |
+    | F-1 proof 4, the old counter, B's first call held until A is done | `['error 401', 'ok']`: the old test fails |
+    | The same order, the new refusal by identity, no barrier | `['ok', 'ok']`, 1 renewal, `tokenLog` `expired, renewed, expired, renewed` |
+    | The new fixture with the barrier, the cross-tab lock removed | 2 renewals: the corrected test fails |
+    | SO-3 concurrent, the old counter, the third first call held until a resend is answered | `['rejected', 'fulfilled', 'fulfilled']`: the old test fails. The same flaw, now shown |
+    | The same order, the new refusal by identity | all fulfilled, 1 renewal |
+    | SO-3 with the barrier, the in-tab shared renewal and the lock both removed (`net.js` served modified, for this case only) | 3 renewals: the corrected test fails |
+
+    **The uniqueness test fails on the old harness:** "a renewal never repeats the token it replaces".
+- **GP-B7 assumed the XP cue's animation had started by the forced tick** (`tests/ui/gameplay-polish.test.mjs`): **cause found, a timing assumption in the test, not an application defect. A correction is proposed, not authorized.**
+  - **The failure:** PR #59's CI run `44643826518`, attempt 2, Windows: `its animation started once`, `0 !== 1`.
+  - **The cause** (from that run's trace):
+    - **The forced tick came too soon:** it came 8.3 ms after the cue was inserted, under one frame.
+    - **So the event hadn't fired:** the browser fires `animationstart`, which `watchCues()` counts, asynchronously at the next frame, and it hadn't yet.
+    - **The cue itself was fine:** attached, at opacity 1, with no sign of a restart.
+  - **The proposed correction:** pull the tick forward only after the cue's first `animationstart`. The test would then still check that the tick neither replaces the cue nor restarts its animation, and that `starts` is 1 at removal.
 
 - **Pagination of `/news`** (from the L-4 review). The public list (`netlify/edge-functions/news.js`, `LIST_LIMIT = 100`) shows the 100 newest published articles. Older ones stay reachable by their address but drop off the list. Add pages (for example `/news?page=2`, or a link to older articles) before there are 100.
 
