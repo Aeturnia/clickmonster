@@ -95,12 +95,45 @@ jobs:
       - name: Install Chromium for Playwright
         # No --with-deps: it installs Linux system packages, and Windows needs none.
         run: npx playwright install chromium
+      # Windows CI M2 (docs/ci-windows-reliability-plan.md): the runner's TCP table, as aggregate counts
+      # by state (machine-wide and loopback), sampled every 5 s while the browser suite runs, with
+      # snapshots and the dynamic port range before and after, in ci-output/tcp/. Observation only:
+      # these steps are continue-on-error and the test step below is unchanged, so they can't change
+      # or hide its result.
+      - name: Start the TCP sampler (M2, observation only)
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          ./tools/ci-tcp-sampler.ps1 -Out ci-output/tcp -Mode snapshot -Label start
+          $p = Start-Process pwsh -ArgumentList '-NoProfile', '-File', 'tools/ci-tcp-sampler.ps1', '-Out', 'ci-output/tcp' -PassThru -WindowStyle Hidden
+          Set-Content -Path ci-output/tcp/sampler.pid -Value $p.Id
       - name: npm run test:ui (Playwright and axe, against the fake backend)
         # Failure diagnostics (tests/ui/diagnostics.mjs, CI-A review CI-A-01): a trace, screenshot, DOM
         # and page state for each failed test, under tests/ui/artifacts/failures/. Records only.
         env:
           UI_DIAGNOSTICS: '1'
         run: mkdir -p ci-output && npm run test:ui 2>&1 | tee ci-output/browser.txt
+      - name: Stop the TCP sampler (M2)
+        if: always()
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          New-Item -ItemType File -Force -Path ci-output/tcp/stop | Out-Null
+          $id = Get-Content -Path ci-output/tcp/sampler.pid -ErrorAction SilentlyContinue
+          if ($id) {
+            $p = Get-Process -Id $id -ErrorAction SilentlyContinue
+            if ($p -and -not $p.WaitForExit(20000)) { Stop-Process -Id $id -Force }
+          }
+          ./tools/ci-tcp-sampler.ps1 -Out ci-output/tcp -Mode snapshot -Label end
+      - name: Keep the TCP samples (M2)
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: browser-tcp-attempt-${{ github.run_attempt }}
+          path: ci-output/tcp/
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Keep the output of a failed run
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

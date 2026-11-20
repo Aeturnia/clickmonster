@@ -3,9 +3,10 @@
 **Status: a plan (2026-11-19), with M0's results (section 7) and M1 and M3's counters in place (2026-11-20).** Authorized by the owner as "a separate, documentation-first investigation plan covering connection counts, socket lifecycle, HTTP keep-alive, browser-context cleanup and resource pressure". **What the owner has authorized** (2026-11-20):
 - **M0:** reading the CI history and its artifacts. The results are in section 7.
 - **M1 and M3:** observation-only counters in the test harness (`tests/ui/diagnostics.mjs`), in their own reviewed PR.
-- **M4:** passive correlation, once the counters have data.
+- **M4:** passive correlation, once the counters have data. Its first case is in section 8.1.
+- **M2:** prepared as its own observation-only PR, for review before it runs on `main` (section 8.2).
 
-**Not authorized:** M2 (a workflow change), M5, and any change to connection behaviour, keep-alive settings, concurrency, timeouts or retries.
+**Not authorized:** M5, and any change to connection behaviour, keep-alive settings, concurrency, timeouts or retries.
 
 ## 1. The problem
 
@@ -195,3 +196,89 @@ Section 1 lists seven occurrences, gathered from the PRs. **From the artifacts, 
 - **The rate is measured:** about 1 in 7 executions since 2026-11-17. With the fault this frequent, the next occurrence with M1 and M3's counters should come within a handful of runs (M4).
 - **H4 (CPU or memory pressure) is weakened:** most failures came at low CPU, with ample free memory. Kernel buffer pressure isn't measured by these figures, though.
 - **Still open:** H1 (ports in `TIME_WAIT`), H2 and H3 (sockets held by keep-alive), which M1 and M3 will show. The first local measurements already show sockets staying open for a few seconds after a test's context closes. In `entrance.test`, 168 connections were opened for 37 contexts, with 4 still open when the tests ended and none at exit.
+
+## 8. M4's first case, and M2
+
+### 8.1 M4: the first failure with the counters running (2026-11-20)
+
+**The run:** `44746165354`, the `push` run on `main` at `5936e06` (PR #66's merge, documentation only), runner image `win25-vs2026 20261103.298.1`. Browser failed 1 of 313.
+- **The test:** `AC-8 axe: new layouts have no serious or critical violations` (`responsive.test`, test 267). It failed in its setup.
+- **The cause, from its failure artifact:** `GET /js/data/items.js` failed with `net::ERR_NO_BUFFER_SPACE`, 439 ms into the page, so the page showed "The game could not be loaded".
+- **The page:** no page errors and nothing in flight. Machine CPU 26.8%, 5.7 GB free.
+- **Not in M0's dataset:** M0's record (`docs/ui-audit/ci-m0/`) keeps its own cut-off and doesn't include this run.
+
+**`responsive.test`'s M1 and M3 counters, against its four passing executions since the counters merged** (runs `44738983110`, `44743950052`, `44744044196`, `44744194439`):
+
+| | Failing run | Passing runs |
+| --- | --- | --- |
+| Connections in the file | 168 | 144, 154, 168, 168 |
+| The most open at once | 6 | 6 in all four |
+| Open when the tests ended / at exit | 0 / 0 | 0 / 0 in all four |
+| Contexts created / closed when the tests ended | 28 / 27 (the failed test's context still open) | 28 / 28 |
+| Connections opened by AC-8 itself | 18 | 18 in all four |
+| Connections in the file before AC-8 | 108 | 84, 94, 108, 108 |
+| Connections in the run before `responsive.test` (14 files) | 1,695 | 1,712 to 1,743 |
+| Minutes from the run's start to `responsive.test` | 10.6 | 8.7 to 10.0 |
+| The run's total | 2,125 | 2,128 to 2,173 |
+
+**What this shows:** M1 and M3 found no anomalous harness connection counts in the failing run, relative to the four passing runs. The only differences follow from the failure itself.
+
+**What it doesn't show:** **neither port exhaustion nor pressure on networking resources outside the harness is ruled out.** These counters see only the harness server's open connections. They can't see:
+- connections in `TIME_WAIT` (closed, but still holding a port);
+- connections made by other processes;
+- the kernel's socket resources.
+
+So the next measurement is M2.
+
+### 8.2 M2: the runner's TCP table (authorized by the owner, 2026-11-20)
+
+**What it records** (`tools/ci-tcp-sampler.ps1`, run by three steps in the browser job):
+- **When:**
+  - a **start** snapshot before the browser suite;
+  - a **sample every 5 s** while it runs;
+  - an **end** snapshot after it.
+- **What each line holds:**
+  - a UTC timestamp;
+  - TCP connections counted by state (`TimeWait`, `Established`, `CloseWait`, `Bound`, `Listen` and the rest), **machine-wide** and **loopback-only** (local address 127.0.0.1 or `::1`, where the harness's server and Chromium's connections to it are).
+- **The snapshots also record:**
+  - the **dynamic TCP port range** (IPv4 and IPv6, from `netsh int … show dynamicport tcp`);
+  - the runner image.
+- **The closing line** records the sampler's own CPU time and number of samples: its overhead.
+- **Aggregate counts only:** no address, port or process of any connection is written.
+- **Where:** a dedicated artifact, `browser-tcp-attempt-<n>`, uploaded whether the suite passes or fails.
+
+**It can't change or hide the suite's result:**
+- **The test step is unchanged:** `npm run test:ui`, with its exit status, under the workflow's `bash` with `pipefail`.
+- **The three new steps** (start, stop, upload) are `continue-on-error`, so if one fails, the job's result is still the test step's. And `failure()`, which keeps the failure artifact, still reflects only the test step.
+- **The stop step** runs `if: always()`. It writes a stop file, waits up to 20 s for the sampler to end, and otherwise stops it. The sampler also stops by itself after 35 minutes, and the job's own cleanup ends any process left.
+- **Nothing else changes:** no connection behaviour, keep-alive, concurrency, timeout or retry.
+
+**Overhead, measured on the owner's Windows laptop** (the CI runner's own figures come from its first run's closing line):
+- **The sampler alone, idle, for 30 s:** about 180 to 240 ms per sample (1 to 2 s for the first, while the module loads), and 1.3 s of CPU over about 35 s including startup.
+- **During a full browser suite** (`UI_DIAGNOSTICS=1`): 124 samples over 11.6 minutes, with no sampling errors. Each sample took a median of 667 ms (95th percentile 998 ms, at most 1.12 s) under the suite's load. The sampler used 14.9 s of CPU in all, about 2% of one core.
+- **The suite's result:** **313 of 313** with the sampler running, in 11.7 minutes, in line with runs without it.
+
+**The first figures, from that laptop run** (not the CI runner; one run):
+- **The dynamic port range:** start port 49152, 16,384 ports, for both IPv4 and IPv6.
+- **Loopback `TimeWait`:** 0 at the start, at most **554** during the suite, and 310 at the end.
+- **Machine-wide:** at most 567 `TimeWait`; at most 55 `Established` and 6 `CloseWait`.
+
+So on the laptop, the suite's `TIME_WAIT` stayed at about 3.4% of the dynamic range. Whether the runner is the same is what M2 will show.
+
+**For correlation:**
+- **Timestamps in the metrics:** each test's M1/M3 metrics line now carries `endedAt` (UTC), and the file summaries do too. That is the only change to the harness in this PR.
+- **Timestamps in failures:** a failure's `diag.json` already has `capturedAt`.
+
+### 8.3 How to read M2 with a future `ERR_NO_BUFFER_SPACE`
+
+1. **Find the failure:** from the failure artifact's `diag.json`, take `capturedAt` and the failed request's `at` (milliseconds into the page). The failure happened shortly before `capturedAt`, by about the test's timeout.
+2. **Find the samples:** in that attempt's `browser-tcp-attempt-<n>/tcp.jsonl`, take the samples in the minute before. Compare `all.byState.TimeWait` and `loopback.byState.TimeWait`, and the totals, with:
+   - the **start** snapshot;
+   - the dynamic port range (`numberOfPorts`);
+   - the same point in a passing run (by time since the start snapshot, or by the matching test's `endedAt` in the metrics).
+3. **Read it:**
+   - **`TIME_WAIT` growing towards the dynamic range before the failure:** connection churn and ephemeral ports deserve attention (H1).
+   - **`TIME_WAIT` staying low, with headroom in the range and normal M1 counts:** simple port exhaustion becomes much weaker. The investigation turns to Windows socket allocation, kernel resources or the runner (H4, H5).
+   - **Machine-wide counts rising while loopback stays flat:** pressure from outside the harness.
+
+   Neither outcome by itself identifies a fix.
