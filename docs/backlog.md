@@ -219,7 +219,7 @@ A separate staging Supabase project is dropped. The live sign-in session above c
   - **The proof:**
     - **The late entry:** with the old code, the second case failed 3 of 3 times with CI's error. With the correction it passed 3 of 3.
     - **The limit still holds:** with a fourth request before the paint (an extra stylesheet in a copy of `public/`), both cases fail with "requests before the form: /, /css/entry.css, /css/news.css, /js/entry.js".
-- **F-1 proof 4's fixture can refuse a renewed request and accept an expired one** (`tests/ui/sign-out.test.mjs`, `F-1 proof 4: refusals in two tabs at once share one renewal across the browser`): **cause found, in the test's fixture, not the client. A correction is proposed, not authorized.**
+- **F-1 proof 4's fixture can refuse a renewed request and accept an expired one** (`tests/ui/sign-out.test.mjs`, `F-1 proof 4: refusals in two tabs at once share one renewal across the browser`): **cause found, in the test's fixture, not the client; corrected on `claude/f1-fixture`, pending review.**
   - **The failure:** once, locally, 2026-11-19 (run 2 of 3 on `claude/b2-6-fcp`): `['error 401', 'ok']` instead of `['ok', 'ok']`. It had no diagnostics.
   - **The investigation** (authorized by the owner; the probe is `docs/ui-audit/f1-proof-4/probe.mjs`):
     - **What it records:** each request's tab, the access token it carried, its arrival order and its answer, plus the renewals and every write to `clickmonster.auth` in both tabs.
@@ -233,7 +233,7 @@ A separate staging Supabase project is dropped. The live sign-in session above c
     - **How it showed up:** in the probe's token-tied mode this made both tabs end, 4 of 11 runs.
     - **Why it isn't the client:** the auth-storage trace showed the renewal installed correctly: one write, by `setSession()` through `net.js`'s guard, with the rotated refresh token. The "renewed" access token was simply identical to the old one.
     - **Confirmed:** with the renewal moved to a later second, 10 of 10 runs passed. Real GoTrue never issues an identical token.
-  - **The proposed correction** (test fixture only; not made, needs authorization):
+  - **The correction** (test fixture only, authorized by the owner; first proposed as follows):
     1. **Make each fake access token unique** (a counter claim, such as `jti`, in `fakeJwt()`), so a renewal can never equal the token it replaces.
     2. **Tie F-1 proof 4's refusal to the expired token:** a fake-backend option that refuses requests carrying the tokens issued before a point (for example `backend.expireIssuedTokens()`), not a count of the next calls.
     3. **Add a barrier to F-1 proof 4:** hold both tabs' first calls until both have arrived, so "two refusals at once" is guaranteed rather than assumed.
@@ -244,6 +244,25 @@ A separate staging Supabase project is dropped. The live sign-in session above c
     - **One request at a time:** the other uses (`staleTokens = 1`) have no other request to take their refusal.
 
     None is changed by the proposal unless the owner extends it.
+  - **As made** (on `claude/f1-fixture`):
+    - **Unique tokens:** `fakeJwt()` adds `jti`, the next number of a deterministic issuance counter (`ISSUED`), so every access token differs, renewals included.
+    - **Refusal by identity:** `backend.expireIssuedTokens({ together })` expires every token issued so far. The `game` function refuses a request carrying one (401), whichever request it is, and accepts a later token. `backend.tokenLog` records each such call as `expired` or `renewed`.
+    - **The barrier:** `together: n` holds the first n refusals until all n have arrived, then answers them at once. It stops waiting after 5 s and sets `together.timedOut`, so a client that sends fewer fails an assertion instead of hanging.
+    - **F-1 proof 4** uses `together: 2`, and **SO-3 concurrent refusals** uses `together: 3`. Both keep their assertions (every call succeeds, one renewal) and add two: the barrier didn't time out, and `tokenLog` shows every first call refused, then every resend accepted with the renewed token.
+    - **`staleTokens` is kept,** unchanged, for the single-request tests.
+    - **A new test,** `F-1 fixture: every fake access token is distinct…`, makes two tokens of one session in the same second and checks they differ.
+  - **The proof** (3 of 3 runs each):
+
+    | Case | Result |
+    | --- | --- |
+    | F-1 proof 4, the old counter, B's first call held until A is done | `['error 401', 'ok']`: the old test fails |
+    | The same order, the new refusal by identity, no barrier | `['ok', 'ok']`, 1 renewal, `tokenLog` `expired, renewed, expired, renewed` |
+    | The new fixture with the barrier, the cross-tab lock removed | 2 renewals: the corrected test fails |
+    | SO-3 concurrent, the old counter, the third first call held until a resend is answered | `['rejected', 'fulfilled', 'fulfilled']`: the old test fails. The same flaw, now shown |
+    | The same order, the new refusal by identity | all fulfilled, 1 renewal |
+    | SO-3 with the barrier, the in-tab shared renewal and the lock both removed (`net.js` served modified, for this case only) | 3 renewals: the corrected test fails |
+
+    **The uniqueness test fails on the old harness:** "a renewal never repeats the token it replaces".
 - **GP-B7 assumed the XP cue's animation had started by the forced tick** (`tests/ui/gameplay-polish.test.mjs`): **cause found, a timing assumption in the test, not an application defect. A correction is proposed, not authorized.**
   - **The failure:** PR #59's CI run `44643826518`, attempt 2, Windows: `its animation started once`, `0 !== 1`.
   - **The cause** (from that run's trace):

@@ -169,14 +169,18 @@ test('SO-3 concurrent refusals share one renewal, and each request is sent once 
   await signIn(page, env.url, 'player');
   await inGame(page);
   const before = renewals(backend);
-  backend.staleTokens = 3;
+  // The token expires by identity, and the three refusals are answered together: a count of "the
+  // next 3 calls" could refuse a renewed resend instead of a first call (docs/backlog.md, F-1 proof 4).
+  backend.expireIssuedTokens({ together: 3 });
   const out = await page.evaluate(async () => {
     const { api } = await import(new URL('js/net.js', location.href));
     const all = await Promise.allSettled([api('state'), api('state'), api('state')]);
     return all.map((r) => r.status);
   });
   assert.deepEqual(out, ['fulfilled', 'fulfilled', 'fulfilled']);
+  assert.equal(backend.together.timedOut, false, 'the three first calls were refused together');
   assert.equal(renewals(backend) - before, 1, 'one renewal for the three refusals');
+  assert.deepEqual(backend.tokenLog, ['expired', 'expired', 'expired', 'renewed', 'renewed', 'renewed'], 'each sent once more, with the renewed token');
   await done(ctx);
 });
 
@@ -532,11 +536,26 @@ test('F-1 proof 4: refusals in two tabs at once share one renewal across the bro
   await b.goto(`${env.url}/`);
   await inGame(b);
   const r0 = renewals(backend);
-  backend.staleTokens = 2;
+  // Both tabs hold the same token. It expires by identity, and both first calls are refused together,
+  // so "two refusals at once" is certain. A count of "the next 2 calls" refused a renewed resend and
+  // accepted an expired first call when the order changed (docs/backlog.md, F-1 proof 4).
+  backend.expireIssuedTokens({ together: 2 });
   const go = (p) => p.evaluate(async () => { const { api } = await import(new URL('js/net.js', location.href)); return api('state').then(() => 'ok', (e) => `error ${e.status}`); });
   assert.deepEqual(await Promise.all([go(a), go(b)]), ['ok', 'ok']);
+  assert.equal(backend.together.timedOut, false, 'both first calls were refused together');
   assert.equal(renewals(backend) - r0, 1, 'one renewal request for both tabs');
+  assert.deepEqual(backend.tokenLog, ['expired', 'expired', 'renewed', 'renewed'], 'each sent once more, with the renewed token');
   await done(ctx, { pages: [a, b] });
+});
+
+// The fixture's tokens (docs/backlog.md, F-1 proof 4): every access token issued is distinct, even two
+// of one session in the same second, as a renewal and the token it replaces can be.
+test('F-1 fixture: every fake access token is distinct, even two of one session in the same second', () => {
+  const exp = (s) => JSON.parse(Buffer.from(s.access_token.split('.')[1], 'base64url')).exp;
+  let one;
+  let two;
+  do { one = savedSession(ACCOUNTS.player, 3600, 7); two = savedSession(ACCOUNTS.player, 3600, 7); } while (exp(one) !== exp(two)); // the same session, the same second
+  assert.notEqual(one.access_token, two.access_token, 'a renewal never repeats the token it replaces');
 });
 
 // ---------------------------------------------------------------- F-3 and F-4: a late result of session S1 has no authority over S2
