@@ -479,7 +479,7 @@ The first paint is **33,960 of 34,000 bytes.** The callers pass `err.session`.
 - **The quick check after it:** the endpoint answered `OPTIONS` with 200, and a call with no sign-in got 401.
 - **Not touched:** no other function, migration or auth setting.
 
-**Resolved:** the owner confirmed the lockout defect resolved at the review of 2026-11-20. In their words: "The original P1 defect — signing out on one device causing another browser to become locked behind an unusable authentication screen — has been fixed."
+**Resolved:** at the review of 2026-11-20, the owner confirmed that the underlying authentication problem is corrected. They asked for the original lockout fix to be marked resolved, as the player-facing defect that started the investigation. (This is a paraphrase of the owner's confirmation, not a quotation.)
 
 **Not recorded:** the results of a separate two-device check (sign in on two devices, sign out on one, the other returns to the form). The owner deferred that check on 2026-11-19 ("defer the end to end test"), and its results are not recorded here. The resolution rests on the owner's confirmation above, not on a recorded checklist.
 
