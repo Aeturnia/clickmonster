@@ -1,6 +1,11 @@
 # Windows browser CI: `ERR_NO_BUFFER_SPACE`, investigation plan
 
-**Status: a plan only (2026-11-19).** Authorized by the owner as "a separate, documentation-first investigation plan covering connection counts, socket lifecycle, HTTP keep-alive, browser-context cleanup and resource pressure". **No infrastructure, harness or workflow change is authorized.** Each measurement below that needs one is marked, and needs the owner's go-ahead.
+**Status: a plan (2026-11-19), with M0's results (section 7) and M1 and M3's counters in place (2026-11-20).** Authorized by the owner as "a separate, documentation-first investigation plan covering connection counts, socket lifecycle, HTTP keep-alive, browser-context cleanup and resource pressure". **What the owner has authorized** (2026-11-20):
+- **M0:** reading the CI history and its artifacts. The results are in section 7.
+- **M1 and M3:** observation-only counters in the test harness (`tests/ui/diagnostics.mjs`), in their own reviewed PR.
+- **M4:** passive correlation, once the counters have data.
+
+**Not authorized:** M2 (a workflow change), M5, and any change to connection behaviour, keep-alive settings, concurrency, timeouts or retries.
 
 ## 1. The problem
 
@@ -97,3 +102,96 @@ None is proposed for implementation yet. Each depends on what M1 to M4 show:
 - **A change made** for it is reviewed like any other.
 - **After that change,** a fixed number of consecutive full CI runs show no `ERR_NO_BUFFER_SPACE`. The owner sets the number, for example 10.
 - **Today's rate isn't measured:** there have been seven occurrences since 2026-11-18. M0 would count the browser runs in the Actions history to give it.
+
+## 7. M0 results (2026-11-20, authorized by the owner)
+
+**What was read** (read-only):
+- **The runs:** every run of the CI workflow in the Actions history, 105 runs from 2026-11-14 to 2026-11-20, and each attempt's `browser` job: 131 executions, 128 completed.
+- **For each failed execution:**
+  - the job log;
+  - the runner label;
+  - the run's failure artifact (`browser-output`): each failed test's `diag.json`, with its failed requests, page errors, and CPU and memory at the failure.
+- **For each completed execution:** its metrics artifact (`browser-metrics-attempt-<n>`), with the runner image and version, and per-test duration, CPU, memory and contexts.
+
+**Left out:** the `claude/ci-a` branch, where the job itself was being built (it ran first on Ubuntu, then on Windows while the job's setup changed). None of its failures was this fault.
+
+**Kept as data:** the scripts and their output were kept in the session's scratch space, not in the repository. Every artifact was still within its 7-day retention, so none was missing.
+
+### 7.1 The fault is more frequent than section 1 records
+
+Section 1 lists seven occurrences, gathered from the PRs. **From the artifacts, the fault hit 12 executions (13 failed tests), not 7.** Only 3 of the 12 show the error in the job's log: a request that fails inside the page reaches the log only as a later timeout or assertion. So the log alone undercounts it.
+
+| Run | Date (UTC) | Branch | Test (position) | Failed request |
+| --- | --- | --- | --- | --- |
+| `44182526925` | 11-17 21:42 | password-recovery scope | D-1 larger text and zoom (78); LAC-15 / LAC-21 news failing (162) | `/`; `/js/data/masteries.js` |
+| `44230917149` | 11-18 03:30 | Monstra Regna scope | PR-4a after the password is saved (178) | `/js/entry.js` |
+| `44238281270` | 11-18 04:34 | Monstra Regna scope | responsive: no horizontal overflow (138) | `/js/data/masteries.js` |
+| `44331958873` | 11-18 15:07 | `main` | PR-4a with storage refusing the marker (180) | `/js/data/variants.js` |
+| `44332218391` | 11-18 15:08 | MR-B1 record | D2-03 a confirmation… (62) | `/js/data/variants.js` |
+| `44410857655` | 11-18 22:21 | GP-1 | R1-02 an expired link… (217) | `/js/data/items.js` |
+| `44432245764` | 11-19 00:50 | `main` | GP-B4 (154) | `/` |
+| `44538744904` | 11-19 13:58 | sign-out | P4-04 (28) | `/js/data/stats.js` |
+| `44546513378` | 11-19 14:41 | sign-out | realtime: focus survives… (144) | `/js/data/variants.js` |
+| `44643826518`, attempt 1 | 11-20 00:11 | SO-9 | LAC-5b a malformed saved session (95) | `/` |
+| `44657719343` | 11-20 02:00 | `main` | R1-02 after an invalid link… (250) | `/js/data/stats.js` |
+| `44668968108` | 11-20 03:37 | `netlify.toml` cleanup | AC-3 phone landscape (261) | `/js/entry.js` |
+
+**New since section 1:** `44182526925`, `44230917149`, `44331958873`, `44332218391` and `44657719343`. The last is the `push` run on `main` after PR #59's merge; its failure wasn't looked at at the time.
+
+**Corrections to earlier records:**
+- **Two PR-4a failures were this fault, not PR-4a's setup race.** These are `44230917149` ("after the password is saved") and `44331958873` ("with storage refusing the marker"). Both are PR-4a tests, but different from the second-tab test whose race PR #58 fixed.
+- **`44332218391` had both:** this fault in D2-03, and the PR-4a second-tab race.
+- **Section 1's #3 and #5** were missing their requests: `/` and `/js/data/variants.js`.
+
+### 7.2 How often
+
+| Executions (completed, outside `claude/ci-a`) | With the fault | Other failures | Passed |
+| --- | --- | --- | --- |
+| All, 2026-11-15 to 11-20: 93 | **12 (12.9%)** | 9 | 72 |
+| Since the first occurrence, 2026-11-17: 82 | **12 (14.6%)** | 8 | 62 |
+
+**By day** (executions, with the fault):
+- 11-15: 3, 0
+- 11-16: 8, 0
+- 11-17: 3, 1
+- 11-18: 35, 5
+- 11-19: 27, 3
+- 11-20 (so far): 17, 3
+
+**About one browser execution in seven** has hit it since 2026-11-17.
+
+**The other failures since 2026-11-17:**
+- **Test or fixture races, since corrected:** PR-4a's second tab (3 executions), SO-9, B2-6 and GP-B7.
+- **GP-1's own development runs:** AC-1 and GP-A1.
+
+### 7.3 What it correlates with, and doesn't
+
+- **The failed requests:** all 13 were to the harness's own server on 127.0.0.1:
+  - the page `/` (3);
+  - `/js/entry.js` (2);
+  - modules in `/js/data/` (8): `variants.js` 3, `masteries.js` 2, `stats.js` 2, `items.js` 1.
+
+  None was to the fake Supabase host, which is answered by Playwright's routing. Each was a page or module load.
+- **Test files:** 9 different ones (entrance, desktop, news-public, password-recovery ×4, game ×2, desktop-chat, gameplay-polish, admin-console, responsive). So the fault doesn't belong to one file.
+- **Position in the run:** tests 28 to 261, spread across the run. It isn't confined to late in the run, nor to the start of a file.
+- **CPU:** the machine's CPU at the failure ranged from 5.9% to 86% (7, 6.4, 77.9, 8.5, 12.6, 80.1, 5.9, 9.2, 10.1, 15.1, 37.2, 86, 76.2). **No correlation with CPU load.**
+- **Memory:** free memory was 5,252 to 5,758 MB of 8,187 every time. **No memory pressure seen.**
+- **Runner image:**
+  - **`win25-vs2026 20261103.298.1`:** the fault in 11 of 82 executions;
+  - **`win25-vs2026 20261116.315.1`:** in 1 of 11, used from 2026-11-18 alongside the older one.
+
+  The fault occurs on both, so H5 (the image) is weakened, though not ruled out: the newer image has few executions.
+- **Contexts per test:** 1.33 to 1.50 across runs, measured since CI-A-02. That's steady, so no change in the suite's pattern explains when it began. The first occurrence (2026-11-17) is also when the number of runs per day rose (from 3 to 8 a day to 27 to 35). Whether the fault was absent before or just unseen in few runs can't be told.
+
+### 7.4 Evidence not available
+
+- **Connection counts:** M1 and M3 now collect them, per test and per file. There are none for past runs.
+- **The runner's TCP table (M2):** not collected, and deferred by the owner.
+- **Diagnostics coverage:** every failed execution outside `claude/ci-a` had a failure artifact with `diag.json`, so every one could be classified.
+- **The cancelled attempt** of `44410857655`: no result.
+
+### 7.5 What this changes in the plan
+
+- **The rate is measured:** about 1 in 7 executions since 2026-11-17. With the fault this frequent, the next occurrence with M1 and M3's counters should come within a handful of runs (M4).
+- **H4 (CPU or memory pressure) is weakened:** most failures came at low CPU, with ample free memory. Kernel buffer pressure isn't measured by these figures, though.
+- **Still open:** H1 (ports in `TIME_WAIT`), H2 and H3 (sockets held by keep-alive), which M1 and M3 will show. The first local measurements already show sockets staying open for a few seconds after a test's context closes. In `entrance.test`, 168 connections were opened for 37 contexts, with 4 still open when the tests ended and none at exit.
