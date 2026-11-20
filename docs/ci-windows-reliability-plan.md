@@ -4,23 +4,29 @@
 
 ## 1. The problem
 
-The CI `browser` job (`npm run test:ui`, Chromium, `windows-latest`, two cores) sometimes fails one test because Chromium's request to the test harness's own local server fails with `net::ERR_NO_BUFFER_SPACE`. That is Windows' socket error `WSAENOBUFS` (10055): the TCP stack couldn't allocate buffer space or a port for a socket. A re-run has passed each time. The test, and the code under test, are not involved.
+The CI `browser` job (`npm run test:ui`, Chromium, `windows-latest`, two cores) sometimes fails one test because Chromium's request to the test harness's own local server fails with `net::ERR_NO_BUFFER_SPACE`. That is Windows' socket error `WSAENOBUFS` (10055): the TCP stack couldn't allocate buffer space or a port for a socket.
+
+**What is and isn't implicated:**
+- **The features under test aren't shown to be defective:** each failing test fails because a page or module never loaded.
+- **The test harness is not cleared.** How it manages connections is a candidate cause (sections 2 and 3): the one local HTTP server per file, a new browser context per test, and keep-alive.
 
 **The seven known occurrences** (`docs/backlog.md`, and the PR comments):
 
-| # | Run | Where | Failed request | The test (position in the run, where known) |
-| --- | --- | --- | --- | --- |
-| 1 | `44238281270` | PR #47, docs-only | `/js/data/masteries.js` | not recorded here |
-| 2 | `44410857655` | PR #51 | `/js/data/items.js` | `R1-02 an expired link…`, past test 200 |
-| 3 | `44432245764` | `main` after GP-1 | not recorded | `GP-B4` |
-| 4 | `44538744904` | PR #55 | `/js/data/stats.js` | `P4-04` (admin console) |
-| 5 | `44546513378` | PR #55 | not recorded here | (recorded on PR #55 only) |
-| 6 | `44643826518`, attempt 1 | PR #59 | `page.goto` of `/` | `LAC-5b`, test 95 |
-| 7 | `44668968108` | PR #61 | `/js/entry.js` | `AC-3 phone landscape`, test 261 |
+| # | Run | Where | Failed request | The test (position in the run, where known) | Re-run |
+| --- | --- | --- | --- | --- | --- |
+| 1 | `44238281270` | PR #47, docs-only | `/js/data/masteries.js` | not recorded here | attempt 2 passed |
+| 2 | `44410857655` | PR #51 | `/js/data/items.js` | `R1-02 an expired link…`, past test 200 | attempt 2 cancelled (superseded by a push): no result |
+| 3 | `44432245764` | `main` after GP-1 | not recorded | `GP-B4` | attempt 2 passed, 248/248 |
+| 4 | `44538744904` | PR #55 | `/js/data/stats.js` | `P4-04` (admin console) | attempt 2 passed, 288/288 |
+| 5 | `44546513378` | PR #55 | not recorded here | (recorded on PR #55 only) | attempt 2 passed |
+| 6 | `44643826518`, attempt 1 | PR #59 | `page.goto` of `/` | `LAC-5b`, test 95 | attempt 2 **failed, on another test** (GP-B7, a test timing assumption, not this fault) |
+| 7 | `44668968108` | PR #61 | `/js/entry.js` | `AC-3 phone landscape`, test 261 | attempt 2 passed, 312/312 |
 
-**What they have in common:**
-- **The host:** every failed request was to the harness's own HTTP server on `127.0.0.1`, never to the fake Supabase host. Those requests are answered by Playwright's routing, not by a socket.
-- **The kind of request:** each was a page or module load (HTML, or an ES module).
+**The re-runs, counted:** of the seven, five completed and passed (#1, #3, #4, #5, #7). One was cancelled with no result (#2). One completed and failed on an unrelated test (#6). No re-run failed with this fault again.
+
+**What they have in common** (only where the evidence exists):
+- **The host:** every failed request whose address is recorded (#1, #2, #4, #6, #7) was to the harness's own HTTP server on `127.0.0.1`, never to the fake Supabase host. Those requests are answered by Playwright's routing, not by a socket. For #3 and #5 the failed request isn't recorded here; M0 would recover it from those runs' logs or artifacts where they still exist.
+- **The kind of request:** each recorded one was a page or module load (HTML, or an ES module).
 - **The runner's state:** where diagnostics exist (#2, #6, #7), there were no page errors and CPU and memory were low. In #7 the machine CPU was 7%, with 5.6 GB free.
 - **The test:** never the same one twice.
 - **The position:** from test 95 to past test 260. So it isn't only late in the run.
