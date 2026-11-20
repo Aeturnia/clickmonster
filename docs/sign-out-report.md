@@ -1,6 +1,14 @@
 # Sign-out and session recovery: report
 
-**Status: implemented, with the corrections for F-1 (section 18), F-3 and F-4 (section 20), and F-5 (section 21); at the independent implementation review gate (2026-11-19).** Nothing is deployed or merged.
+**Status: delivered and resolved.** The P1 lockout (signing out on one device left another behind an unusable sign-in screen) is fixed (section 22):
+- **Merged** as PR #55 (`e1ffa43`, 2026-11-19, 15:52 UTC).
+- **The `game` function** was redeployed from that commit as **version 14** (15:53 UTC).
+- **The site** was published by Netlify on the merge.
+- **Confirmed resolved by the owner** at the review of 2026-11-20.
+
+The later CI work (section 22) was on tests, the fake backend and the CI runner, not on this fix.
+
+*Before delivery, as recorded at the time:* implemented, with the corrections for F-1 (section 18), F-3 and F-4 (section 20), and F-5 (section 21); at the independent implementation review gate (2026-11-19). At that point nothing was deployed or merged.
 - **The review gates on the way** (sections 4 to 8):
   - **First:** SO-1b showed that an ended session isn't an `AuthApiError`. The review of `4ac3740` approved the amended classification (section 5).
   - **Second:** an expired token is answered exactly as a malformed one. The review of `4853b02` approved one renewal before ending a session, with safeguards (section 9).
@@ -461,3 +469,34 @@ The first paint is **33,960 of 34,000 bytes.** The callers pass `err.session`.
   - **Attempt 2,** the one re-run of the failed job the owner authorized for that finding, with no code changed: **passed in full:** browser 288 of 288, and engine and database again (65 of 65; 42 of 42 pgTAP, and 17 of 17 plus 1 opt-in, skipped). The run's conclusion is success. It supports the infrastructure diagnosis; it doesn't show the runner fault is gone. Attempt 1's failure stands on record.
   - **Kept separate:** the infrastructure investigation stays apart from the sign-out correction, whose F-5 evidence is reviewed on its own.
 
+
+## 22. Delivery and resolution
+
+**Merged:** PR #55, after the final implementation review, by merge commit `e1ffa43` (2026-11-19, 15:52 UTC). Netlify published the site (`net.js`, `entry.js`, `main.js` and `admin.js`) on the merge.
+
+**Deployed:** only the `game` function, with the owner's authorization (`npm run deploy:functions -- game`), from the clean merged `main` at `e1ffa43`.
+- **The new version:** it went from version 13 to **version 14**: `ACTIVE`, updated `2026-11-19T15:53:01Z`, `verify_jwt: false` as before.
+- **The quick check after it:** the endpoint answered `OPTIONS` with 200, and a call with no sign-in got 401.
+- **Not touched:** no other function, migration or auth setting.
+
+**Resolved:** at the review of 2026-11-20, the owner confirmed that the underlying authentication problem is corrected. They asked for the original lockout fix to be marked resolved, as the player-facing defect that started the investigation. (This is a paraphrase of the owner's confirmation, not a quotation.)
+
+**Not recorded:** the results of a separate two-device check (sign in on two devices, sign out on one, the other returns to the form). The owner deferred that check on 2026-11-19 ("defer the end to end test"), and its results are not recorded here. The resolution rests on the owner's confirmation above, not on a recorded checklist.
+
+**What came after, and what it was not.** After the merge, these addressed the tests, the fake backend and the CI runner, not the fix:
+
+| Area | PRs |
+| --- | --- |
+| Test races | PR #58 (PR-4a), #59 (SO-9), #62 (B2-6), #63 (SO-2 and SO-3) |
+| The fake backend's simulation of renewal | PR #65 (F-1 proof 4 and SO-3 concurrent: unique fake tokens, refusal by token identity) |
+| The Windows runner's network fault | the plan in PR #64 |
+
+None found a defect in the sign-out or renewal code. PR #65's negative controls show that the corrected tests still fail when the client's renewal coordination is broken.
+
+**Known limitations, unchanged and in the backlog:**
+- the library's own background renewal still discards a session on a 500 or 429 (section 18);
+- a tab's stuck sign-in lock (F-2);
+- the `admin` function's 401 classification;
+- the brief sign-in form before the sign-out reload (a UX question).
+
+**One more runner fault** came after section 21's: run `44546513378` on PR #55 hit `ERR_NO_BUFFER_SPACE` too. Its one authorized re-run passed, as recorded on PR #55.
