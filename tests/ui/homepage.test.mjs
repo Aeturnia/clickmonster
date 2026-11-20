@@ -205,16 +205,31 @@ test('B2-5 /guide, /leaderboard and /contact answer 200 directly; their slash fo
 
 // ---------------------------------------------------------------- B2-6: the performance contract's hard checks
 
-test('B2-6 at most 3 requests before the sign-in form shows (besides the icon and manifest); no game code, style.css or supabase-js for a visitor', async () => {
+// The browser publishes the first-contentful-paint entry asynchronously: the form can be visible
+// before it is there (CI run 44650435250, PR #61: "Cannot read properties of undefined (reading
+// 'startTime')"). So B2-6 waits for the entry itself, then counts against its own timestamp.
+const untilPaintEntry = (page) => page.waitForFunction(() => performance.getEntriesByType('paint').some((p) => p.name === 'first-contentful-paint'), null, { timeout: 15000 });
+// Hides the paint entries from getEntriesByType for the page's first `ms`, as a late publication
+// would; the entries themselves, and their timestamps, are the browser's.
+const latePaintEntry = (page, ms) => page.addInitScript((ms) => {
+  const get = Performance.prototype.getEntriesByType;
+  Performance.prototype.getEntriesByType = function (type) { return type === 'paint' && performance.now() < ms ? [] : get.call(this, type); };
+}, ms);
+
+// The second case is the late entry made certain: the form shows first, with no paint entry yet.
+for (const late of [0, 1500]) test(`B2-6 at most 3 requests before the sign-in form shows (besides the icon and manifest); no game code, style.css or supabase-js for a visitor${late ? ', with the paint entry published late' : ''}`, async () => {
   const ctx = await open();
   const { page } = ctx;
+  if (late) await latePaintEntry(page, late);
   const seen = [];
   page.on('request', (r) => { const u = new URL(r.url()); seen.push(u.host === new URL(env.url).host ? u.pathname : u.host + u.pathname); });
   await page.goto(`${env.url}/`);
   await page.waitForSelector('#authform', { state: 'visible' });
+  if (late) assert.equal(await page.evaluate(() => performance.getEntriesByType('paint').length), 0, 'the form shows before the paint entry');
   // The form is in the HTML, so it shows at the first contentful paint: count, from the browser's own
   // timing, the document and what it started before then. (The news starts after the paint, on
   // purpose; counting up to Playwright noticing the form would race with it.)
+  await untilPaintEntry(page);
   const beforePaint = await page.evaluate(() => {
     const fcp = performance.getEntriesByType('paint').find((p) => p.name === 'first-contentful-paint').startTime;
     return ['/', ...performance.getEntriesByType('resource').filter((r) => r.startTime <= fcp).map((r) => new URL(r.name).pathname)];
