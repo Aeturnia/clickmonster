@@ -197,6 +197,17 @@ A separate staging Supabase project is dropped. The live sign-in session above c
 
     The passing re-runs support the diagnosis but don't fix the fault.
 
+- **B2-6 read the first-paint entry before the browser published it** (`tests/ui/homepage.test.mjs`): **cause found, a race in the test; corrected on `claude/b2-6-fcp`, pending review.**
+  - **The failure:** CI run `44650435250` on PR #61 (`c521979`), Windows, 2026-11-19: `page.evaluate: TypeError: Cannot read properties of undefined (reading 'startTime')`. It was not re-run.
+  - **The cause:** B2-6 read `performance.getEntriesByType('paint')`'s `first-contentful-paint` entry as soon as `#authform` was visible. The browser publishes that entry asynchronously, so the form can be visible first.
+  - **The correction (test only):**
+    - **The wait:** B2-6 waits, by condition, for the entry, then counts against its own timestamp, as before.
+    - **Unchanged:** the limit (3), the exclusions (the icon and manifest), and the checks that a visitor loads no game code, `style.css` or supabase-js.
+    - **A second case** hides the paint entries for the page's first 1.5 s, as a late publication would, and checks that the form shows first.
+  - **The proof:**
+    - **The late entry:** with the old code, the second case failed 3 of 3 times with CI's error. With the correction it passed 3 of 3.
+    - **The limit still holds:** with a fourth request before the paint (an extra stylesheet in a copy of `public/`), both cases fail with "requests before the form: /, /css/entry.css, /css/news.css, /js/entry.js".
+
 - **Pagination of `/news`** (from the L-4 review). The public list (`netlify/edge-functions/news.js`, `LIST_LIMIT = 100`) shows the 100 newest published articles. Older ones stay reachable by their address but drop off the list. Add pages (for example `/news?page=2`, or a link to older articles) before there are 100.
 
 - **Audit entries are best effort** (from the L-3 review).
