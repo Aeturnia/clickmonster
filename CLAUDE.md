@@ -248,7 +248,7 @@ Read these first:
 
 ```
 npm test                 # engine, entrance file checks, the first-paint tripwire, the public pages, news rules, the news page handler, the town rule, the log rules and the session rule (71)
-npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (312)
+npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (313)
 npm run test:db          # database (pgTAP, 42) and API/function/recovery/session tests (17, plus 1 opt-in) on the LOCAL Supabase stack, with Mailpit
 npx playwright install chromium   # once
 ```
@@ -288,7 +288,7 @@ npx playwright install chromium   # once
 **`tests/ui/harness.mjs`** serves `public/` as Netlify does, as far as the tests need: a file first; then a directory's address without its slash redirected (301) to the slash form; then an address with a slash, where `x.html` exists, redirected (301) to `/x`; then `netlify.toml`'s 200 rewrites; then `x.html` for `/x`. It is a limited model: the live check is the authority for Netlify's routing. It answers every Supabase request with a fake backend built on the real engine. Any other host fails the test. supabase-js comes from `public/vendor/`; the CDN module is allowed only when `UI_PUBLIC_DIR` points at another checkout, which may be older code, and is cached in `tests/ui/.cache`. It provides:
 - **`FakeBackend({ hero, players, chat, events, zones, quests, reports, worldEvents, activeHunts })`**. Its admin actions write the audit log and refuse repeats the way `supabase/functions/admin/index.ts` does, so a duplicate request shows up as a duplicate audit entry (`backend.adminData().log`). Keep it in step when server behaviour changes. It also provides `failNext(action, status, msg)`, `hold(action)` (returns a release function) and `broadcast()` for Realtime. Recorded `calls` and `unexpected` requests are available for assertions.
 - **Test accounts:** `ACCOUNTS.player`, `admin`, `mod` (a moderator) and `fresh`.
-- **Auth:** `savedSession(acct, expiresIn)` builds a stored session to seed `localStorage` (a negative `expiresIn` gives an expired one). Refresh tokens are `refresh-<id>`; add one to `backend.revoked` to make the server refuse it. `backend.authCalls` lists the grant types requested, and `/auth/v1/signup` answers as with email confirmation on.
+- **Auth:** `savedSession(acct, expiresIn)` builds a stored session to seed `localStorage` (a negative `expiresIn` gives an expired one). Every access token is distinct (a `jti` counter). Refresh tokens are `refresh-<id>`; add one to `backend.revoked` to make the server refuse it. `backend.staleTokens = n` refuses the next n game calls, for one request at a time. For concurrent refusals, use `backend.expireIssuedTokens({ together: n })`: it refuses by token, answers the first n refusals together, and records `backend.tokenLog`. `backend.authCalls` lists the grant types requested, and `/auth/v1/signup` answers as with email confirmation on.
 - **Fixtures:** `makeHero()`, `bigZone(n)`, `townLairZone()` (a lair on the town tile), `fixedQuest()`, `ADMIN_CHAT`/`ADMIN_REPORTS`. `makeHero()` stands in Bramblebrook's village (5, 5), where no roaming monsters can be fought (F2): tests that fight use `makeHero({ y: 4 })` or step north first, and choose with `#mon-select`.
 - **Keyboard:** `fakeKeyboard()` / `setKeyboard(px, pan)` simulate an iOS-style overlay keyboard.
 - **Navigation and pages:** `adminTab()` opens admin sections on phones. `page.nativeDialogs` records any native dialog.

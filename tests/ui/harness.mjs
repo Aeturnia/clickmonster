@@ -116,10 +116,14 @@ export function makeHero({ name = 'Bartholomew Thorne', race = 'halfling', level
 // while one started after it keeps working, and a renewed session can be told from a new sign-in.
 let SESSION = 0;
 let ROTATION = 0;
+// Every access token issued carries the next ISSUED number (jti), so no two are ever the same, even
+// two of one session in the same second, as a renewal and the token it replaces can be (docs/backlog.md,
+// F-1 proof 4). FakeBackend.expireIssuedTokens() refuses tokens by this number.
+let ISSUED = 0;
 function fakeJwt(sub, email, expiresIn = 3600, sessionId = ++SESSION) {
   const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
   const exp = Math.floor(Date.now() / 1000) + expiresIn;
-  return `${b64({ alg: 'HS256', typ: 'JWT' })}.${b64({ sub, email, role: 'authenticated', aud: 'authenticated', exp, session_id: sessionId })}.signature`;
+  return `${b64({ alg: 'HS256', typ: 'JWT' })}.${b64({ sub, email, role: 'authenticated', aud: 'authenticated', exp, session_id: sessionId, jti: ++ISSUED })}.signature`;
 }
 // The account and session a refresh token belongs to (null if it isn't one of ours).
 const refreshOf = (t) => { const m = /^refresh-([^~]+)(?:~(\d+))?/.exec(String(t)); return m && { acct: Object.values(ACCOUNTS).find((x) => x.id === m[1]), session: Number(m[2]) || null }; };
@@ -188,6 +192,11 @@ export class FakeBackend {
     this.endedBefore = {}; // account id -> its sessions up to this session_id have ended on the server (endSessions())
     this.refreshFail = null; // the next renewal fails: a status, { status, code, retryAfter }, or 'drop'
     this.staleTokens = 0; // the next n game calls answer 401, as for an expired access token that still renews
+    // Expired access tokens by identity (expireIssuedTokens()): for concurrent refusals, where a count
+    // of "the next n calls" could refuse a renewed resend and accept an expired first call.
+    this.expiredUpTo = 0; // game calls with a token issued up to this number (jti) answer 401
+    this.together = null; // { n, arrived, timedOut }: the first n refusals are answered together
+    this.tokenLog = []; // game calls while tokens are expired: 'expired' (refused) or 'renewed' (accepted)
     this.logoutFail = null; // the next sign-out (local or global): a status, 'drop' or 'hang'
     this.authHold = null; // a promise the token endpoint waits for (a slow renewal)
     this.stepHolds = {}; // 'password' or 'user' -> a promise that step waits for (holdStep())
@@ -215,6 +224,17 @@ export class FakeBackend {
   endSessions(acct) { this.endedBefore[acct.id] = SESSION; }
   ended(token) { const c = claims(token); return !!c && (c.session_id || 0) <= (this.endedBefore[c.sub] ?? -1); }
   endedRefresh(t) { const r = refreshOf(t); return !!r?.acct && (r.session || 0) <= (this.endedBefore[r.acct.id] ?? -1); }
+  // Every access token issued so far expires: the game function refuses it (401) as the server
+  // refuses an expired token, whichever request carries it, and accepts one issued later (a renewal).
+  // together: n holds the first n refusals until all n have arrived, then answers them at once, so
+  // "n refusals at once" is certain, not assumed. After 5 s it answers anyway (together.timedOut),
+  // so a client that sends fewer fails an assertion instead of hanging.
+  expireIssuedTokens({ together = 0 } = {}) {
+    this.expiredUpTo = ISSUED;
+    this.tokenLog = [];
+    this.together = together > 1 ? { n: together, arrived: 0, timedOut: false, release: null, done: null } : null;
+    if (this.together) this.together.done = new Promise((r) => { this.together.release = r; });
+  }
   // Hold the token endpoint (sign-in and renewal) until the returned function is called.
   holdAuth() { let release; this.authHold = new Promise((r) => { release = r; }); return () => { this.authHold = null; release(); }; }
   // Hold only sign-ins (password grants), or only the token check (GET /auth/v1/user, which
@@ -741,6 +761,18 @@ export async function attach(context, backend, baseUrl) {
           return json(route, f.status, { error: f.message });
         }
         if (fnName === 'game' && backend.staleTokens > 0) { backend.staleTokens--; return json(route, 401, { error: 'Please sign in again.' }); }
+        if (fnName === 'game' && backend.expiredUpTo) {
+          const expired = (claims(token)?.jti ?? 0) <= backend.expiredUpTo;
+          backend.tokenLog.push(expired ? 'expired' : 'renewed');
+          if (expired) {
+            const t = backend.together;
+            if (t && t.arrived < t.n) {
+              if (++t.arrived === t.n) t.release();
+              else if (await Promise.race([t.done.then(() => 'all in'), new Promise((r) => setTimeout(r, 5000, 'time'))]) === 'time') t.timedOut = true;
+            }
+            return json(route, 401, { error: 'Please sign in again.' });
+          }
+        }
         if (!user) return json(route, 401, { error: 'Please sign in again.' });
         try {
           const out = fnName === 'admin' ? backend.admin(user, body.action, body.args || {}) : backend.game(user, body.action, body.args || {});
