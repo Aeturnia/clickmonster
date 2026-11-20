@@ -141,7 +141,7 @@ function testDelta() {
     contextsCreated: now.contexts.created - was.contexts.created, contextsOpenAtEnd: now.contexts.open,
   };
 }
-const summary = (at) => ({ summary: true, at, ...counts() });
+const summary = (at) => ({ summary: true, at, endedAt: new Date().toISOString(), ...counts() });
 
 let current = []; // the contexts opened by the test now running (tests in a file run one at a time)
 
@@ -242,7 +242,8 @@ if (DIAGNOSTICS) {
     try { measured = testStart ? measure(testStart) : null; } catch { /* never let measuring fail a test */ }
     let delta = null;
     try { delta = testDelta(); } catch { /* never let counting fail a test */ }
-    writeMetrics({ test: t.name, passed: t.passed, contexts: mine.length, ...(measured || {}), ...(delta || {}) });
+    // endedAt (UTC) lines each test up with the runner's TCP samples (M2, tools/ci-tcp-sampler.ps1).
+    writeMetrics({ test: t.name, passed: t.passed, endedAt: new Date().toISOString(), contexts: mine.length, ...(measured || {}), ...(delta || {}) });
     if (t.passed) return;
     const open = mine.filter((c) => !c.page.isClosed());
     if (!open.length) { console.log(`[diagnostics] ${t.name}: failed with no open page to capture`); return; }
