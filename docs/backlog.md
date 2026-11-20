@@ -145,7 +145,7 @@ A separate staging Supabase project is dropped. The live sign-in session above c
   - **Keep the tests:** the thresholds and assertions stay as they are. Any fix is to the layout, not the tests, and only once scoped.
   - **This is not authorized:** neither a CSS change nor the investigation as a milestone.
 
-- **An intermittent timeout in `PR-4a a second tab with the saved session also shows the form`** (`tests/ui/password-recovery.test.mjs`): **cause found, a race in the test's setup; corrected on `claude/pr-4a-race`, pending review.**
+- **An intermittent timeout in `PR-4a a second tab with the saved session also shows the form`** (`tests/ui/password-recovery.test.mjs`): **cause found, a race in the test's setup; corrected in PR #58 (`0029aea`, merged 2026-11-19).**
   - **The failure:** the second tab's `untilHeading(…, 'Choose a new password')` times out after 15 s.
   - **Where it happened:**
     - CI run `44368408591` on PR #50's docs-only commit `2cef100`, Windows (passed on its one re-run);
@@ -160,6 +160,24 @@ A separate staging Supabase project is dropped. The live sign-in session above c
     - **The wait:** the test now waits, by condition, until the first tab has saved both the session and the marker for this account, then opens the second tab. Its assertions are unchanged.
     - **The proof:** a second test holds back the first tab's `/auth/v1/user` answer by 2.5 s and checks that nothing is saved when the heading shows. With the old setup it failed 3 of 3 times, with CI's error at the same line. With the correction it passed 3 of 3 times.
   - **Eight passes in a row locally** (before the cause was known) did not show the test was sound: it depended on the machine's timing.
+- **SO-9 measured the page before the sign-out reload** (`tests/ui/sign-out.test.mjs`): **cause found, a race in the test; corrected on `claude/so9-race`, pending review.**
+  - **The failure:** CI run `44634288178` on `main` at `577a253`, Windows, 2026-11-19. `SO-9 at 390x844…` failed: `page.evaluate: Execution context was destroyed, most likely because of a navigation`. The other two sizes passed. The run was not re-run.
+  - **The cause** (from that run's trace and diagnostics):
+    - **The reload is by design.** An ended session's `state` call got 401, the renewal 400 and the library's `/logout` 403 (`session_not_found`). The library then keeps the session, so `leave()` removes it and reloads (`net.js`).
+    - **The form shows before the reload.** `entry.js` leaves the resuming state before calling `endSession()`, so the sign-in form is visible while `/logout` is answered.
+    - **The test resolved on that early form.** `theForm()` returned at it, the test's `evaluate` started 10 ms later, and the reload destroyed it. The diagnostics show the page after the reload (124 ms old, navigation type `reload`), with no page errors or failed requests. The machine's CPU was at about 90%.
+  - **The correction (test only):**
+    - **The wait:** SO-9 now waits, by condition, for the page after the reload: navigation type `reload`, the document complete, the notice "Your session has ended. Please sign in again." and the form visible. Then it checks the notice and measures. Its viewport, keyboard and axe assertions are unchanged.
+    - **A fourth case:** it holds back `/logout` by 1.5 s, checks that the early form shows before the reload, then runs the same checks.
+  - **The proof, under the same delay:**
+    - **The old wait, with the new checks:** failed 3 of 3 times at "measured after the reload".
+    - **The literal old test:** passed 3 of 3 times, but falsely. It finished measuring the page before the reload arrived. So it can't be made to fail deterministically as written. On CI the reload landed mid-measurement.
+    - **The correction:** passed 3 of 3 times.
+  - **The same pattern elsewhere, not changed:** SO-2, SO-3, SO-4 and F-1 proof 2 also read the notice right after `theForm()`, after the same reload. Correcting them needs its own authorization.
+- **UX: a sign-in form that can be used just before the sign-out reload** (found with the SO-9 race, 2026-11-19; not authorized).
+  - **What happens:** when the server has ended a session, the entrance shows the sign-in form while the library's `/logout` is answered, then `leave()`'s fallback reloads the page. On a slow answer the form is usable for up to 5 s (`SIGN_OUT_MS`). Anything typed in it is lost in the reload.
+  - **Acceptance criterion:** credentials entered during this transition cannot be silently lost.
+  - **Constraint:** any change keeps the hard constraint that signing out never depends on the server (`CLAUDE.md`).
 - **`net::ERR_NO_BUFFER_SPACE` on the Windows browser runner** (CI run `44410857655`, 2026-11-18, PR #51 at `b60c6ae`).
   - **What happened:** `R1-02 an expired link (error_code only)…` failed when Chromium's request for `/js/data/items.js` from the harness's local server failed with a Windows socket-buffer error. The entrance showed "The game could not be loaded", as it should for a module that fails.
   - **The diagnostics:** `diag.json` showed no page errors, no bad responses, and low CPU and memory.

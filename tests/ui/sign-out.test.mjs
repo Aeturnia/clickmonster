@@ -274,15 +274,39 @@ for (const refused of [false, true]) {
 
 // ---------------------------------------------------------------- R7: never trapped
 
-for (const [w, h] of [[390, 844], [844, 390], [1440, 900]]) {
-  test(`SO-9 at ${w}x${h}, after an ended session the form is on screen, reachable by keyboard, with no axe violations`, async () => {
+// The page an ended session finishes on: the one leave()'s fallback reloaded (net.js), showing the
+// notice, with the form visible. The form also shows for a moment before that reload, while the
+// library's sign-out is answered; measuring then crossed the reload (CI run 44634288178).
+const ENDED_NOTICE = 'Your session has ended. Please sign in again.';
+const afterReload = (page) => page.evaluate(() => performance.getEntriesByType('navigation')[0]?.type === 'reload');
+async function endedForm(page) {
+  await page.waitForFunction((notice) => performance.getEntriesByType('navigation')[0]?.type === 'reload'
+    && document.readyState === 'complete' && document.getElementById('auth-msg')?.textContent.includes(notice), ENDED_NOTICE, { timeout: 15000 });
+  await theForm(page);
+}
+// Holds back this page's /auth/v1/logout answer by `ms`: the moment before the reload, made long.
+async function slowLogout(page, ms) {
+  await page.route('**/auth/v1/logout*', async (route) => { await new Promise((r) => setTimeout(r, ms)); await route.fallback(); });
+}
+
+// The last case is the race made certain: the early form is checked to show before the reload, then
+// the test measures only the page after it.
+for (const [w, h, slow] of [[390, 844], [844, 390], [1440, 900], [390, 844, 1500]]) {
+  test(`SO-9 at ${w}x${h}${slow ? ', with a slow sign-out answer' : ''}, after an ended session the form is on screen, reachable by keyboard, with no axe violations`, async () => {
     const backend = new FakeBackend();
     const saved = savedSession(ACCOUNTS.player);
     backend.endSessions(ACCOUNTS.player); // after it was issued: this session has ended
     const ctx = await open({ backend, saved, viewport: { width: w, height: h } });
     const { page } = ctx;
+    if (slow) await slowLogout(page, slow);
     await page.goto(`${env.url}/`);
-    await theForm(page);
+    if (slow) {
+      await theForm(page);
+      assert.equal(await afterReload(page), false, 'the form shows before the reload');
+    }
+    await endedForm(page);
+    assert.equal(await afterReload(page), true, 'measured after the reload');
+    assert.match(await message(page), /Your session has ended\. Please sign in again\./, 'the session-ended notice');
     const r = await page.evaluate(() => { const b = document.getElementById('email').getBoundingClientRect(); return { top: b.top, bottom: b.bottom, h: innerHeight }; });
     assert.ok(r.top >= 0 && r.bottom <= r.h, `the email field is on screen (${JSON.stringify(r)})`);
     await page.focus('#email');
