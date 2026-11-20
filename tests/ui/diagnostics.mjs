@@ -17,6 +17,8 @@
 //     Reading the event-loop figures: the histogram includes its own sampling interval, rounded up to
 //     the OS timer. On Windows (15.6 ms ticks) an idle process reads about 31 ms at a 20 ms resolution,
 //     so the delay is the reading minus about 31 ms; a 300 ms stall reads as a maximum of about 316.
+//   - Connection and context counters (docs/ci-windows-reliability-plan.md, M1 and M3), below:
+//     the harness server's TCP connections and the browser's contexts, per test and per file.
 //   - From the start, each page records console errors and warnings, page errors, failed requests,
 //     responses of 400 and over, and which requests are still in flight.
 //   - When a test fails (an afterEach hook sees `passed === false`), each of that test's contexts
@@ -34,7 +36,7 @@
 //     hang a run or change a test's result. The test's own failure is what fails the run.
 // Collection stays inside the test environment: the pages only ever talk to the local server and
 // the fake backend (attach() in harness.mjs blocks everything else).
-import { beforeEach, afterEach } from 'node:test';
+import { beforeEach, afterEach, after } from 'node:test';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -96,6 +98,50 @@ function writeMetrics(line) {
   }
 }
 let testStart = null;
+
+// ---------------------------------------------------------------- connection and context counters
+// (docs/ci-windows-reliability-plan.md, M1 and M3). Observation only: listeners that count, and a
+// counting wrapper around browser.newContext. They change no connection, setting or timing.
+//   - The harness's HTTP server (watchServer): TCP connections opened and closed, open now, and the
+//     most open at once.
+//   - Browser contexts (watchBrowser): created and closed.
+// Each test's metrics line gets the counts during the test and what is still open at its end. The
+// file gets two summary lines: when its last test ends (before its own teardown), and when its
+// process exits (after it).
+const sockets = { opened: 0, closed: 0, open: 0, peak: 0 };
+const contexts = { created: 0, closed: 0 };
+let testCounts = null;
+let testPeak = 0;
+export function watchServer(server) {
+  if (!DIAGNOSTICS) return;
+  server.on('connection', (socket) => {
+    sockets.opened++;
+    sockets.open++;
+    if (sockets.open > sockets.peak) sockets.peak = sockets.open;
+    if (sockets.open > testPeak) testPeak = sockets.open;
+    socket.once('close', () => { sockets.closed++; sockets.open--; });
+  });
+}
+export function watchBrowser(browser) {
+  if (!DIAGNOSTICS) return;
+  const newContext = browser.newContext.bind(browser);
+  browser.newContext = async (...args) => {
+    const context = await newContext(...args);
+    contexts.created++;
+    context.once('close', () => { contexts.closed++; });
+    return context;
+  };
+}
+const counts = () => ({ sockets: { ...sockets }, contexts: { ...contexts, open: contexts.created - contexts.closed } });
+function testDelta() {
+  const now = counts();
+  const was = testCounts || now;
+  return {
+    sockets: { opened: now.sockets.opened - was.sockets.opened, closed: now.sockets.closed - was.sockets.closed, openAtEnd: now.sockets.open, peakOpen: testPeak },
+    contextsCreated: now.contexts.created - was.contexts.created, contextsOpenAtEnd: now.contexts.open,
+  };
+}
+const summary = (at) => ({ summary: true, at, ...counts() });
 
 let current = []; // the contexts opened by the test now running (tests in a file run one at a time)
 
@@ -183,14 +229,20 @@ async function capture(testName, { context, page, backend }, index, measured) {
 }
 
 if (DIAGNOSTICS) {
-  beforeEach(() => { current = []; eld?.reset(); testStart = mark(); });
+  beforeEach(() => { current = []; eld?.reset(); testStart = mark(); testCounts = counts(); testPeak = sockets.open; });
+  // Registered before any test file's own after() (this module is imported first, by the harness),
+  // so it runs before the file's teardown closes the browser and server.
+  after(() => { writeMetrics(summary('tests done')); });
+  process.once('exit', () => { writeMetrics(summary('process exit')); });
   afterEach(async (t) => {
     const mine = current;
     current = [];
     // Measured before any capture, so the capture's own work isn't counted.
     let measured = null;
     try { measured = testStart ? measure(testStart) : null; } catch { /* never let measuring fail a test */ }
-    writeMetrics({ test: t.name, passed: t.passed, contexts: mine.length, ...(measured || {}) });
+    let delta = null;
+    try { delta = testDelta(); } catch { /* never let counting fail a test */ }
+    writeMetrics({ test: t.name, passed: t.passed, contexts: mine.length, ...(measured || {}), ...(delta || {}) });
     if (t.passed) return;
     const open = mine.filter((c) => !c.page.isClosed());
     if (!open.length) { console.log(`[diagnostics] ${t.name}: failed with no open page to capture`); return; }

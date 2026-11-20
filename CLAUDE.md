@@ -270,6 +270,11 @@ npx playwright install chromium   # once
 - **Cost:** GitHub Pro's $18 a month of shared compute, at $0.006 a minute per job, rounded up per job. Batch fixes into one push.
 - **Failure diagnostics** (`tests/ui/diagnostics.mjs`, CI-A-01) are on in the CI browser job (`UI_DIAGNOSTICS=1`). For each failed test they save a Playwright trace, a screenshot, the DOM and `diag.json` under `tests/ui/artifacts/failures/`, in the failure artifact. Locally, run `UI_DIAGNOSTICS=1 npm run test:ui` to get the same. They only record; they never change a result.
   - **Every test** also writes resource measurements (duration, Node event-loop delay and CPU, machine CPU, memory) to `tests/ui/artifacts/metrics/`. CI uploads them on every run as `browser-metrics-attempt-<n>`.
+  - **Connection and context counters** (`docs/ci-windows-reliability-plan.md`, M1 and M3) are in the same lines:
+    - **per test:** the harness server's TCP connections opened and closed, how many were open at the end, the most open at once, and contexts created and still open;
+    - **per file:** a summary line when its last test ends, and another at process exit.
+
+    They only count, and change no connection behaviour.
   - **The trace has no screenshots,** to reduce load on the two-core runner. `UI_TRACE_SCREENSHOTS=1` turns them back on, for comparison only.
   - **Reading the event-loop delay on Windows:** an idle process reads about 31 ms.
 - **The first paint** is a test (`tests/entrance-budget.test.mjs`): the document plus every stylesheet and script `index.html` loads, counted as LF. At most 48,000 bytes (MR-B2's tripwire); above 40,000 is reported.
