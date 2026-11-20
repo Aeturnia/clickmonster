@@ -56,7 +56,10 @@ Read these first:
   - **Step 3: the applicable checks passed** under the current production authentication configuration (owner-reported, 2026-11-18): session kept and the reset link worked end to end on `monstraregna.com`. **Sign-up confirmation was not performed:** email confirmation is off in production (since the first setup). It is deferred until email confirmation and delivery are separately authorized and configured; don't enable it as part of other work.
   - **Step 4 passed** (2026-11-18): titles, manifest, and news canonical and `og:url` on `monstraregna.com`, checked by the owner and independently by authorized read-only requests.
   - **Next gate: the announcement (QB-2)**, published by the owner before the redirect; then the redirect PR (step 5), which needs its own go-ahead. Don't open or merge the redirect (prepared on `claude/mr-b1-redirect`, `b00a5c7`), and don't touch the Supabase allow-list, without authorization.
-  - **MR-B2, the homepage and navigation,** was authorized on 2026-11-19 and is implemented on `claude/mr-b2`, at its review gate. See `docs/monstra-regna-b2-report.md`.
+  - **MR-B2, the homepage and navigation,** was authorized on 2026-11-19. See `docs/monstra-regna-b2-report.md`.
+    - **The milestone** merged as PR #56 (`1679855`).
+    - **Its routing correction** merged as PR #57 (`577a253`) and is live.
+    - **The closing record** (report section 7.5) is on `claude/mr-b2-close`, at its review gate.
     - **What it adds:** "Skip to sign in", the site menu (Home, Guide, Leaderboard, Contact), a footer on every public page, and the static pages `/guide`, `/leaderboard` and `/contact`.
     - **Not yet:** Discord waits for a permanent invite (D9); Privacy and Terms wait for the legal milestone (D7).
   - **MR-S1** needs its own authorization.
@@ -200,8 +203,13 @@ Read these first:
 - **The public pages' menu and footer** (MR-B2) are defined once, in `public/js/site.js` (`menuHtml()`, `footerHtml()`, `COPYRIGHT_HTML`).
   - **The news pages** draw them from there.
   - **`index.html` and the static pages** (`public/guide.html`, `leaderboard.html` and `contact.html`, plain HTML with no script) carry the same markup, and `tests/site-pages.test.mjs` checks they match.
-  - **Each static page is a single file with a 200 rewrite** in `netlify.toml`, for its address and its slash form. Never a directory with an `index.html`: Netlify redirects such a directory's address to its slash form before any rewrite. That happened after MR-B2's first deployment.
-  - **`tools/public-pages-check.mjs`** checks the live pages read-only, from their first responses.
+  - **Each static page is a single file** with a 200 rewrite in `netlify.toml`. Never a directory with an `index.html`: Netlify redirects such a directory's address to its slash form before any rewrite. That happened after MR-B2's first deployment.
+  - **The address contract** (owner, 2026-11-19; report section 7.5):
+    - the canonical, slashless address answers 200 directly;
+    - its slash form answers one 301 to it, from Netlify itself, before any rewrite.
+
+    No `force = true`, and no change to Pretty URLs.
+  - **`tools/public-pages-check.mjs`** checks the live pages read-only, from their first responses. Run it against a routing PR's deploy preview before review (`node tools/public-pages-check.mjs https://deploy-preview-<n>--clickmonsters.netlify.app`), and against the live site after the merge.
   - **To add a menu item** (Discord, once there is a permanent invite) or a footer link (Privacy and Terms, after the legal milestone): change `site.js`, then each HTML copy.
   - **Each January,** update the copyright year in `site.js` and its copies.
 - **Public news pages** are the Netlify Edge Function `netlify/edge-functions/news.js`, for `/news` and `/news/<slug>`.
@@ -276,7 +284,7 @@ npx playwright install chromium   # once
 - **Memory:** on the owner's laptop (about 8 GB for Docker), don't run the browser suite while the stack is running. In L-3, the two together starved the browsers and the run was stopped. Stop the stack (`npx supabase stop`) before `npm run test:ui`.
 - **The functions run too,** at `127.0.0.1:54321/functions/v1/<name>`. The CLI mounts each imported file when the stack starts, so after adding or moving a shared file, stop and start the stack.
 
-**`tests/ui/harness.mjs`** serves `public/` as Netlify does, as far as the tests need: a file first; then a directory's address without its slash redirected (301); then `netlify.toml`'s 200 rewrites; then `x.html` for `/x`. It answers every Supabase request with a fake backend built on the real engine. Any other host fails the test. supabase-js comes from `public/vendor/`; the CDN module is allowed only when `UI_PUBLIC_DIR` points at another checkout, which may be older code, and is cached in `tests/ui/.cache`. It provides:
+**`tests/ui/harness.mjs`** serves `public/` as Netlify does, as far as the tests need: a file first; then a directory's address without its slash redirected (301) to the slash form; then an address with a slash, where `x.html` exists, redirected (301) to `/x`; then `netlify.toml`'s 200 rewrites; then `x.html` for `/x`. It is a limited model: the live check is the authority for Netlify's routing. It answers every Supabase request with a fake backend built on the real engine. Any other host fails the test. supabase-js comes from `public/vendor/`; the CDN module is allowed only when `UI_PUBLIC_DIR` points at another checkout, which may be older code, and is cached in `tests/ui/.cache`. It provides:
 - **`FakeBackend({ hero, players, chat, events, zones, quests, reports, worldEvents, activeHunts })`**. Its admin actions write the audit log and refuse repeats the way `supabase/functions/admin/index.ts` does, so a duplicate request shows up as a duplicate audit entry (`backend.adminData().log`). Keep it in step when server behaviour changes. It also provides `failNext(action, status, msg)`, `hold(action)` (returns a release function) and `broadcast()` for Realtime. Recorded `calls` and `unexpected` requests are available for assertions.
 - **Test accounts:** `ACCOUNTS.player`, `admin`, `mod` (a moderator) and `fresh`.
 - **Auth:** `savedSession(acct, expiresIn)` builds a stored session to seed `localStorage` (a negative `expiresIn` gives an expired one). Refresh tokens are `refresh-<id>`; add one to `backend.revoked` to make the server refuse it. `backend.authCalls` lists the grant types requested, and `/auth/v1/signup` answers as with email confirmation on.
