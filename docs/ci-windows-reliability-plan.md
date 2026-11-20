@@ -116,7 +116,7 @@ None is proposed for implementation yet. Each depends on what M1 to M4 show:
 
 **Left out:** the `claude/ci-a` branch, where the job itself was being built (it ran first on Ubuntu, then on Windows while the job's setup changed). None of its failures was this fault.
 
-**Kept as data:** the scripts and their output were kept in the session's scratch space, not in the repository. Every artifact was still within its 7-day retention, so none was missing.
+**The record:** each execution's classification, with the totals and denominators, is kept in `docs/ui-audit/ci-m0/` (`executions.csv` and its README), so this section can be checked after the artifacts expire. Every artifact was still within its 7-day retention when read, so none was missing.
 
 ### 7.1 The fault is more frequent than section 1 records
 
