@@ -7,7 +7,7 @@
 //     older code that loads it from the CDN) is the pinned CDN module allowed, cached on disk
 //     after the first download so later runs are offline.
 import http from 'node:http';
-import { track } from './diagnostics.mjs';
+import { track, watchServer, watchBrowser } from './diagnostics.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -71,6 +71,7 @@ export function startServer() {
     res.writeHead(200, { 'Content-Type': TYPES[path.extname(file)] || 'application/octet-stream' });
     fs.createReadStream(file).pipe(res);
   });
+  watchServer(server); // counts connections when UI_DIAGNOSTICS=1 (M1); changes nothing
   return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve({ server, url: `http://127.0.0.1:${server.address().port}` })));
 }
 
@@ -845,6 +846,7 @@ export async function attach(context, backend, baseUrl) {
 export async function setup() {
   const { server, url } = await startServer();
   const browser = await chromium.launch();
+  watchBrowser(browser); // counts contexts when UI_DIAGNOSTICS=1 (M3); changes nothing
   return {
     url, browser,
     // bypassCSP: only so axe can be injected into the news pages, whose policy allows no script.

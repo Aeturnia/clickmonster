@@ -197,6 +197,9 @@ A separate staging Supabase project is dropped. The live sign-in session above c
   - **Acceptance criterion:** credentials entered during this transition cannot be silently lost.
   - **Constraint:** any change keeps the hard constraint that signing out never depends on the server (`CLAUDE.md`).
 - **`net::ERR_NO_BUFFER_SPACE` on the Windows browser runner** (CI run `44410857655`, 2026-11-18, PR #51 at `b60c6ae`).
+  - **Now planned and being measured:** `docs/ci-windows-reliability-plan.md`.
+  - **The real rate (M0, section 7 there):** 12 executions with the fault (13 tests) from 2026-11-17 to 2026-11-20, about 1 in 7 browser executions. That's more than the occurrences listed below, because most show only in the failure artifacts, not the log.
+  - **The counters:** M1 and M3 now count the harness server's connections and the browser's contexts in CI. The list below is as recorded at the time.
   - **What happened:** `R1-02 an expired link (error_code only)…` failed when Chromium's request for `/js/data/items.js` from the harness's local server failed with a Windows socket-buffer error. The entrance showed "The game could not be loaded", as it should for a module that fails.
   - **The diagnostics:** `diag.json` showed no page errors, no bad responses, and low CPU and memory.
   - **The likely cause** is the runner's network stack under the suite's many short connections, after more than 200 tests. It isn't established.
