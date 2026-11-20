@@ -1,6 +1,6 @@
 # MR-B2: homepage and navigation, report
 
-**Status: published; the closing record (section 7.5) is at its review gate (2026-11-19).** MR-B2 was merged as PR #56 (`1679855`, 2026-11-19) after its independent review approved `d6134ed`, and published by Netlify.
+**Status: accepted (2026-11-19) under its revised canonical-address contract (section 7.5).** The closing record was approved and merged as PR #60 (`9e788c3`). A configuration cleanup (section 7.6) is at its own review gate. MR-B2 was merged as PR #56 (`1679855`, 2026-11-19) after its independent review approved `d6134ed`, and published by Netlify.
 - **A routing problem found after deployment:** `/guide`, `/leaderboard` and `/contact` answered with a 301, not 200.
 - **Its correction (section 7)** was merged as PR #57 (`577a253`) and published.
 - **The live check after it (section 7.5):**
@@ -256,8 +256,30 @@ With it, the tests reproduce the production 301s on `1679855`.
 
 **CI:** recorded on the PR once its run completes.
 
+**The review:** PR #60 was approved and merged (`9e788c3`, 2026-11-19). MR-B2 is accepted under the revised contract.
+
 **The audit trail is kept:**
 - the first, failing check (`live-577a253-check.txt`);
 - the failure before the correction (`live-1679855-check.txt`);
 - the correction's own record (sections 7.1 to 7.4).
 
+
+### 7.6 Cleanup: the unreachable slash-form rules (authorized by the owner, 2026-11-19)
+
+**What was left behind:** section 7.5 left two inaccuracies in `netlify.toml`:
+- **three rewrites** (`/guide/`, `/leaderboard/` and `/contact/` to their files), which Netlify never reaches;
+- **a comment** saying the slash forms were served with no redirect.
+
+**The cleanup:**
+- **Removed:** the three rewrites.
+- **Corrected:** the comment, which now says Netlify answers the slash forms with one 301 to the slashless address.
+- **Kept:**
+  - the three canonical 200 rewrites;
+  - the `/guide*`, `/leaderboard*` and `/contact*` security headers;
+  - every address.
+
+  No other rule changed.
+
+**The file test** (`tests/site-pages.test.mjs`) now also checks that `netlify.toml` has no rule for a slash form.
+
+**Verified on the PR's Netlify deploy preview** with `tools/public-pages-check.mjs` (read-only). The results are recorded on the PR.

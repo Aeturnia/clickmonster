@@ -59,7 +59,8 @@ Read these first:
   - **MR-B2, the homepage and navigation,** was authorized on 2026-11-19. See `docs/monstra-regna-b2-report.md`.
     - **The milestone** merged as PR #56 (`1679855`).
     - **Its routing correction** merged as PR #57 (`577a253`) and is live.
-    - **The closing record** (report section 7.5) is on `claude/mr-b2-close`, at its review gate.
+    - **Accepted (2026-11-19)** under the revised canonical-address contract: the closing record merged as PR #60 (`9e788c3`), report section 7.5.
+    - **The `netlify.toml` cleanup** (section 7.6) is at its own review gate.
     - **What it adds:** "Skip to sign in", the site menu (Home, Guide, Leaderboard, Contact), a footer on every public page, and the static pages `/guide`, `/leaderboard` and `/contact`.
     - **Not yet:** Discord waits for a permanent invite (D9); Privacy and Terms wait for the legal milestone (D7).
   - **MR-S1** needs its own authorization.

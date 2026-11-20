@@ -38,15 +38,10 @@
 # another host, not framed. Each is a single file, not a directory with an index.html: Netlify
 # answers a directory's address without its trailing slash with a 301 to the slash form before any
 # rewrite applies, which the first version did (docs/monstra-regna-b2-report.md, section 7).
-# The slash forms (/guide/) are rewritten to the same file, so earlier links keep working with no
-# redirect.
+# The slash forms (/guide/) need no rule: Netlify itself answers them with a 301 to the slashless
+# address, before any rewrite, which then answers 200 (the address contract, report section 7.5).
 [[redirects]]
   from = "/guide"
-  to = "/guide.html"
-  status = 200
-
-[[redirects]]
-  from = "/guide/"
   to = "/guide.html"
   status = 200
 
@@ -56,17 +51,7 @@
   status = 200
 
 [[redirects]]
-  from = "/leaderboard/"
-  to = "/leaderboard.html"
-  status = 200
-
-[[redirects]]
   from = "/contact"
-  to = "/contact.html"
-  status = 200
-
-[[redirects]]
-  from = "/contact/"
   to = "/contact.html"
   status = 200
 
