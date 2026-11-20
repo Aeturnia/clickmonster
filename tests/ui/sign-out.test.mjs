@@ -34,6 +34,26 @@ const savedUser = (page) => page.evaluate((k) => { try { return JSON.parse(local
 const message = (page) => page.textContent('#auth-msg');
 const gameCalls = (backend, action) => backend.calls.filter((c) => c.fn === 'game' && c.action === action).length;
 const renewals = (backend) => backend.authCalls.filter((g) => g === 'refresh_token').length;
+// The page an ended session finishes on: the one leave()'s fallback reloaded (net.js), showing the
+// notice, with the form visible. The form also shows for a moment before that reload, while the
+// library's sign-out is answered; measuring then crossed the reload (CI run 44634288178). After the
+// reload, the form (plain HTML) can also show before entry.js has loaded and shown the notice.
+const ENDED_NOTICE = 'Your session has ended. Please sign in again.';
+const afterReload = (page) => page.evaluate(() => performance.getEntriesByType('navigation')[0]?.type === 'reload');
+async function endedForm(page) {
+  await page.waitForFunction((notice) => performance.getEntriesByType('navigation')[0]?.type === 'reload'
+    && document.readyState === 'complete' && document.getElementById('auth-msg')?.textContent.includes(notice), ENDED_NOTICE, { timeout: 15000 });
+  await theForm(page);
+}
+// Holds back this page's /auth/v1/logout answer by `ms`: the moment before the reload, made long.
+async function slowLogout(page, ms) {
+  await page.route('**/auth/v1/logout*', async (route) => { await new Promise((r) => setTimeout(r, ms)); await route.fallback(); });
+}
+// Holds back entry.js by `ms` from now on (so, on the reloaded page): the moment after the reload,
+// before the notice is shown, made long.
+async function slowEntry(page, ms) {
+  await page.route('**/js/entry.js', async (route) => { await new Promise((r) => setTimeout(r, ms)); await route.fallback(); });
+}
 async function signOutInGame(page) {
   await page.click('[data-a="tab"][data-v="hero"]');
   await page.click('#main [data-a="signout"]');
@@ -67,14 +87,23 @@ test('SO-1 signing out in the game and in the admin console ends this device\'s 
 
 // ---------------------------------------------------------------- R2: an ended session returns to the form
 
-test('SO-2 a saved session ended on the server: the form says so, the saved session is gone, and there is no Try again', async () => {
+// The second case holds back /logout, so the form shows (with no notice) before the reload; the test
+// checks that, then checks only the page after the reload.
+for (const slow of [0, 1500]) test(`SO-2 a saved session ended on the server${slow ? ', with a slow sign-out answer' : ''}: the form says so, the saved session is gone, and there is no Try again`, async () => {
   const backend = new FakeBackend();
   const saved = savedSession(ACCOUNTS.player);
   backend.endSessions(ACCOUNTS.player); // after it was issued: this session has ended
   const ctx = await open({ backend, saved });
   const { page } = ctx;
+  if (slow) await slowLogout(page, slow);
   await page.goto(`${env.url}/`);
-  await theForm(page);
+  if (slow) {
+    await theForm(page);
+    assert.equal(await afterReload(page), false, 'the form shows before the reload');
+    assert.equal(await message(page), '', 'with no notice yet');
+  }
+  await endedForm(page);
+  assert.equal(await afterReload(page), true, 'checked after the reload');
   assert.match(await message(page), /Your session has ended\. Please sign in again\./);
   assert.equal(await savedUser(page), null, 'the saved session is removed');
   assert.equal(await page.isVisible('#gate-retry'), false, 'no Try again for a session that cannot work');
@@ -95,14 +124,23 @@ test('SO-2 an expired access token whose session still renews: renewed once, the
   await done(ctx);
 });
 
-test('SO-3 the session ends on the server during play: an action returns to the form, the saved session is gone, nothing global sent', async () => {
+// During play the game stays on screen until the reload, so the form first shows after it; but there
+// it can show before entry.js has shown the notice. The second case holds entry.js back on the
+// reloaded page and checks that, then checks only the finished page.
+for (const slow of [0, 1500]) test(`SO-3 the session ends on the server during play${slow ? ', with entry.js slow after the reload' : ''}: an action returns to the form, the saved session is gone, nothing global sent`, async () => {
   const ctx = await open();
   const { page, backend } = ctx;
   await signIn(page, env.url, 'player');
   await inGame(page);
+  if (slow) await slowEntry(page, slow);
   backend.endSessions(ACCOUNTS.player);
   await page.click('[data-a="move"][data-v="n"]');
-  await theForm(page);
+  if (slow) {
+    await theForm(page);
+    assert.equal(await afterReload(page), true, 'the form shows only after the reload');
+    assert.equal(await message(page), '', 'but before the notice');
+  }
+  await endedForm(page);
   assert.match(await message(page), /Your session has ended/);
   assert.equal(await savedUser(page), null);
   assert.equal(backend.logouts.includes('global'), false, 'no sign-out of every device');
@@ -273,21 +311,6 @@ for (const refused of [false, true]) {
 }
 
 // ---------------------------------------------------------------- R7: never trapped
-
-// The page an ended session finishes on: the one leave()'s fallback reloaded (net.js), showing the
-// notice, with the form visible. The form also shows for a moment before that reload, while the
-// library's sign-out is answered; measuring then crossed the reload (CI run 44634288178).
-const ENDED_NOTICE = 'Your session has ended. Please sign in again.';
-const afterReload = (page) => page.evaluate(() => performance.getEntriesByType('navigation')[0]?.type === 'reload');
-async function endedForm(page) {
-  await page.waitForFunction((notice) => performance.getEntriesByType('navigation')[0]?.type === 'reload'
-    && document.readyState === 'complete' && document.getElementById('auth-msg')?.textContent.includes(notice), ENDED_NOTICE, { timeout: 15000 });
-  await theForm(page);
-}
-// Holds back this page's /auth/v1/logout answer by `ms`: the moment before the reload, made long.
-async function slowLogout(page, ms) {
-  await page.route('**/auth/v1/logout*', async (route) => { await new Promise((r) => setTimeout(r, ms)); await route.fallback(); });
-}
 
 // The last case is the race made certain: the early form is checked to show before the reload, then
 // the test measures only the page after it.

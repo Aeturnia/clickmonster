@@ -160,7 +160,7 @@ A separate staging Supabase project is dropped. The live sign-in session above c
     - **The wait:** the test now waits, by condition, until the first tab has saved both the session and the marker for this account, then opens the second tab. Its assertions are unchanged.
     - **The proof:** a second test holds back the first tab's `/auth/v1/user` answer by 2.5 s and checks that nothing is saved when the heading shows. With the old setup it failed 3 of 3 times, with CI's error at the same line. With the correction it passed 3 of 3 times.
   - **Eight passes in a row locally** (before the cause was known) did not show the test was sound: it depended on the machine's timing.
-- **SO-9 measured the page before the sign-out reload** (`tests/ui/sign-out.test.mjs`): **cause found, a race in the test; corrected on `claude/so9-race`, pending review.**
+- **SO-9 measured the page before the sign-out reload** (`tests/ui/sign-out.test.mjs`): **cause found, a race in the test; corrected in PR #59 (`b4d56ad`, merged 2026-11-19).**
   - **The failure:** CI run `44634288178` on `main` at `577a253`, Windows, 2026-11-19. `SO-9 at 390x844…` failed: `page.evaluate: Execution context was destroyed, most likely because of a navigation`. The other two sizes passed. The run was not re-run.
   - **The cause** (from that run's trace and diagnostics):
     - **The reload is by design.** An ended session's `state` call got 401, the renewal 400 and the library's `/logout` 403 (`session_not_found`). The library then keeps the session, so `leave()` removes it and reloads (`net.js`).
@@ -173,7 +173,19 @@ A separate staging Supabase project is dropped. The live sign-in session above c
     - **The old wait, with the new checks:** failed 3 of 3 times at "measured after the reload".
     - **The literal old test:** passed 3 of 3 times, but falsely. It finished measuring the page before the reload arrived. So it can't be made to fail deterministically as written. On CI the reload landed mid-measurement.
     - **The correction:** passed 3 of 3 times.
-  - **The same pattern elsewhere, not changed:** SO-2, SO-3, SO-4 and F-1 proof 2 also read the notice right after `theForm()`, after the same reload. Correcting them needs its own authorization.
+  - **The same pattern elsewhere** (authorized by the owner, corrected on `claude/so-reload-hardening`, pending review). Each of SO-2, SO-3, SO-4 and F-1 proof 2 read the notice right after `theForm()`. A probe checked each one's navigations with `/logout` held back 1 s:
+    - **SO-2** (a saved session ended on the server) **reloads, and the form shows before the reload with no notice:** the same race as SO-9.
+    - **SO-3** (ended during play) **reloads, but the game stays on screen until then.** On the reloaded page, though, the form (plain HTML) shows before `entry.js` has loaded and shown the notice. With `entry.js` held back on that page, the form showed with no notice in 2 of 2 probe runs.
+    - **SO-4** (an expired session whose renewal is refused) **doesn't reload:** the library signs out itself, with no `/logout` call. Unchanged.
+    - **F-1 proof 2** (`refresh_token_not_found` during play) **doesn't reload:** `/logout` answers 204 and the library clears the session. Unchanged.
+  - **The correction (test only):**
+    - **The wait:** SO-2 and SO-3 now wait, by condition, for the reloaded page with its notice (`endedForm()`, moved up with SO-9's other helpers). Their assertions are unchanged: the notice, the saved session removed, no Try again and one renewal (SO-2), no global sign-out (SO-3).
+    - **A slow case for each:**
+      - **SO-2:** `/logout` held back by 1.5 s. It checks that the form shows before the reload, with no notice.
+      - **SO-3:** `entry.js` held back by 1.5 s on the reloaded page (`slowEntry()`). It checks that the form shows after the reload, before the notice.
+  - **The proof:**
+    - **The literal old SO-2 and SO-3** (from `main`), with only those delays added, **failed 3 of 3 times** each, at their own notice check, with an empty notice.
+    - **The corrections passed 3 of 3 times.**
 - **UX: a sign-in form that can be used just before the sign-out reload** (found with the SO-9 race, 2026-11-19; not authorized).
   - **What happens:** when the server has ended a session, the entrance shows the sign-in form while the library's `/logout` is answered, then `leave()`'s fallback reloads the page. On a slow answer the form is usable for up to 5 s (`SIGN_OUT_MS`). Anything typed in it is lost in the reload.
   - **Acceptance criterion:** credentials entered during this transition cannot be silently lost.
