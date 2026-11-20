@@ -81,8 +81,12 @@ Read these first:
   - **Follow-ups:** the phone-landscape tabs below the screen's edge, and the Windows runner's `ERR_NO_BUFFER_SPACE` (`docs/backlog.md`).
 - **P1: sign-out on one device locks another out** (found 2026-11-19, live).
   - **Scope:** `docs/sign-out-scope.md`, PR #53 (`bfad9b3`), with two amendments decided at review gates.
-  - **The fix is implemented on `claude/sign-out` (PR #55), at the implementation review gate.** See `docs/sign-out-report.md`.
-  - **Not merged or deployed:** merging, and the `game` function redeploy, each need the owner's authorization.
+  - **Delivered and resolved.** See `docs/sign-out-report.md`, section 22.
+    - **Merged** as PR #55 (`e1ffa43`, 2026-11-19).
+    - **The `game` function** was redeployed as version 14.
+    - **The owner confirmed** the lockout resolved on 2026-11-20.
+  - **A separate two-device check's results** are not recorded.
+  - **The CI work after it** was on tests, the fake backend and the runner (PRs #58, #59, #62, #63, #65; the plan in #64), not on this fix.
 - **Development moved to the owner's Windows laptop.** `npm run deploy:functions` now runs from any shell (PR #15) and needs `SUPABASE_ACCESS_TOKEN` set in the environment.
 - **Don't start another milestone, or make gameplay or server changes,** until the owner approves it.
 - **Release verification** is in `docs/backlog.md`. The owner split it on 2026-11-14, because there aren't the resources to test every device before release.

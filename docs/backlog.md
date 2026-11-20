@@ -112,7 +112,13 @@ A separate staging Supabase project is dropped. The live sign-in session above c
   - **The fix:** the same classification as the `game` function's, once that exists (`docs/sign-out-scope.md`, 5.2): 401 only for a definitive refusal, 503 otherwise, from the shared `sessionFailure()` rule.
   - **Not authorized;** it needs an `admin` redeploy.
 
-- **Sign-out on one device locks another out (P1, a user-facing sign-in recovery defect;** found by the owner on the live site, 2026-11-19).
+- **Sign-out on one device locks another out (P1, a user-facing sign-in recovery defect;** found by the owner on the live site, 2026-11-19). **Resolved:**
+  - **Delivered:** merged as PR #55 (`e1ffa43`), with the `game` function redeployed as version 14.
+  - **Confirmed:** the owner confirmed the defect resolved on 2026-11-20 (`docs/sign-out-report.md`, section 22).
+  - **Not recorded:** a separate two-device check's results.
+  - **Not part of this fix:** the test, fixture and CI items after it.
+
+  The entry is kept as found:
   - **What happened:** signed in as the same account on a phone and a desktop, the owner signed out on the phone. The desktop then showed "Please sign in again". After a refresh, the entrance showed it again with Try again and Sign out. Try again failed the same way, Sign out did nothing visible, and the sign-in form stayed hidden, so no account could sign in on that browser. The phone kept working.
   - **Not GP-1's:** it is in the entrance and `net.js`, and existed before GP-1.
   - **Its own scope,** for independent review before any implementation: `docs/sign-out-scope.md`, PR #53.
