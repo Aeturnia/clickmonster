@@ -1,0 +1,93 @@
+{
+  "test": "the entrance has no axe violations at phone, landscape, tablet and desktop sizes, signing in and resuming",
+  "file": "entrance.test",
+  "capturedAt": "2026-11-21T17:27:36.823Z",
+  "msSinceContextStart": 73,
+  "url": "about:blank",
+  "evaluate": 2,
+  "probe": {
+    "readyState": "complete",
+    "visibilityState": "visible",
+    "url": "chrome-error://chromewebdata/",
+    "title": "",
+    "sincePageStartMs": 71,
+    "animationFrameMs": 9,
+    "elements": {
+      "#login": "absent",
+      "#authform": "absent",
+      "#email": "absent",
+      "#app": "absent",
+      "#top": "absent",
+      "#top .hud-row": "absent",
+      ".a-nav": "absent",
+      "#entry": "absent",
+      "[aria-busy=\"true\"]": "absent",
+      ".pending": "absent"
+    },
+    "appDataset": {},
+    "bodyClass": "",
+    "bodyText": "",
+    "resources": [],
+    "navigation": [
+      {
+        "type": "navigate",
+        "domContentLoadedMs": 52,
+        "loadMs": 52
+      }
+    ]
+  },
+  "pageErrors": [],
+  "console": [],
+  "requestFailed": [
+    {
+      "at": 28,
+      "method": "GET",
+      "url": "http://127.0.0.1:49493/",
+      "failure": "net::ERR_NO_BUFFER_SPACE"
+    }
+  ],
+  "badResponses": [],
+  "inFlight": [],
+  "backend": {
+    "unexpected": [],
+    "authCalls": [],
+    "recentCalls": []
+  },
+  "steps": {
+    "evaluate": {
+      "ok": true,
+      "ms": 8
+    },
+    "probe": {
+      "ok": true,
+      "ms": 15
+    },
+    "screenshot": {
+      "ok": true,
+      "ms": 21
+    },
+    "dom": {
+      "ok": true,
+      "ms": 4
+    },
+    "trace": {
+      "ok": true,
+      "ms": 16
+    }
+  },
+  "traceError": null,
+  "traceScreenshots": false,
+  "measuredToFailure": {
+    "durationMs": 126,
+    "nodeCpuPct": 50,
+    "machineCpuPct": 65.9,
+    "eventLoopDelayMs": {
+      "mean": 21.6,
+      "p99": 26.4,
+      "max": 26.4
+    },
+    "rssMB": 150,
+    "heapUsedMB": 58,
+    "freeMemMB": 13351
+  }
+}
