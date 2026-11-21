@@ -10,6 +10,8 @@
 //   - Supabase down, slow (4 s), refusing or answering nonsense: a 503 page.
 // Everything from the database is escaped, in the body and in every attribute. The canonical
 // address comes from SITE_ORIGIN, never from the request.
+//   - Requests that reach this function through the old Netlify address (LEGACY_HOST) get a 301 to
+//     the same path and query on SITE_ORIGIN, before any query (MR-B1 step 5; below).
 import { SUPABASE_URL, SUPABASE_KEY } from '../../public/js/config.js';
 import { SLUG_RE, NEWS_KIND_LABEL, newsBodyHtml } from '../../public/js/data/news.js';
 import { SITE_NAME, SITE_ORIGIN, menuHtml, footerHtml } from '../../public/js/site.js';
@@ -18,6 +20,19 @@ const COLS = 'slug,kind,title,summary,body,published_at,revised_at,maintenance_s
 const LIST_COLS = 'slug,kind,title,summary,published_at,revised_at';
 export const TIMEOUT_MS = 4000;
 const LIST_LIMIT = 100;
+
+// MR-B1, cutover step 5 (docs/monstra-regna-b1-report.md): netlify.toml's host rule sends every
+// request for the old Netlify address to the canonical domain. It doesn't reach /news and /news/*:
+// on that host Netlify runs this edge function before the redirect rules (B1-4b, 2026-11-21). So the
+// function redirects those requests itself, with the same 301.
+//   - The host tested is the request URL's own, the one Netlify routed. No Host, Forwarded or
+//     X-Forwarded-Host header is read, so none can trigger the redirect or change where it goes.
+//   - The destination is SITE_ORIGIN plus the request's path and query, never anything from the
+//     request's host, so it can't be turned into an open redirect.
+//   - Deploy previews (deploy-preview-<n>--…) and the canonical domain are other hosts: unchanged.
+// The old host name is a technical routing identifier, not branding: tests/identity.test.mjs allows
+// it in this file only.
+export const LEGACY_HOST = 'clickmonsters.netlify.app';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const day = (t) => new Date(t).toLocaleDateString('en-GB', { timeZone: 'UTC', day: 'numeric', month: 'long', year: 'numeric' });
@@ -173,7 +188,11 @@ export async function newsResponse(request, { fetchImpl = fetch, timeoutMs = TIM
 </section>`,
     }), { status: 405, headers: { ...HEADERS, allow: 'GET, HEAD' } });
   }
-  const path = new URL(request.url).pathname.replace(/\/+$/, '');
+  const url = new URL(request.url);
+  if (url.hostname === LEGACY_HOST) {
+    return new Response(null, { status: 301, headers: { location: `${SITE_ORIGIN}${url.pathname}${url.search}`, 'cache-control': 'no-store' } });
+  }
+  const path = url.pathname.replace(/\/+$/, '');
   try {
     if (path === '/news') return list(await read(`select=${LIST_COLS}&order=published_at.desc&limit=${LIST_LIMIT}`, fetchImpl, timeoutMs), method);
     const m = path.match(/^\/news\/([^/]+)$/);

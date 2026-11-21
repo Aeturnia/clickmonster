@@ -36,20 +36,37 @@ const ALLOWED = [
   /clickmonster\.(auth|prefs|recovery|seenAnnouncement|note|renew)\b/g, // browser storage keys, and the renewal lock (note and renew: the sign-out fix, docs/sign-out-report.md)
   /window\.clickmonster\b/g, // the read-only hook the browser tests use
 ];
+// Allowed in one file only. The old Netlify host name is a routing identifier, never shown to
+// players: the news edge function redirects requests that arrive on that host to the canonical
+// domain (MR-B1 step 5, B1-4b; docs/monstra-regna-b1-report.md). Anywhere else, and any other
+// spelling, still fails.
+const ALLOWED_IN = {
+  [path.join('netlify', 'edge-functions', 'news.js')]: [/(?<![\w.-])clickmonsters\.netlify\.app(?![\w.-])/g],
+};
 
 test('B1-1 no old name in anything players see; only the listed technical identifiers remain', () => {
   const found = [];
   const technical = new Set();
   for (const f of SHIPPED.flatMap(files)) {
     let s = text(f);
-    for (const re of ALLOWED) s = s.replace(re, (m) => { technical.add(m); return ''; });
+    for (const re of [...ALLOWED, ...(ALLOWED_IN[f] || [])]) s = s.replace(re, (m) => { technical.add(m); return ''; });
     for (const m of s.matchAll(/click[\s_-]*monsters?/gi)) found.push(`${f}: ${m[0]}`);
   }
   assert.deepEqual(found, [], 'old name outside the technical identifiers');
   // The list in the MR-B1 report; a new technical use has to be added here deliberately.
   assert.deepEqual([...technical].sort(), [
-    'clickmonster.auth', 'clickmonster.note', 'clickmonster.prefs', 'clickmonster.recovery', 'clickmonster.renew', 'clickmonster.seenAnnouncement', 'window.clickmonster',
+    'clickmonster.auth', 'clickmonster.note', 'clickmonster.prefs', 'clickmonster.recovery', 'clickmonster.renew', 'clickmonster.seenAnnouncement', 'clickmonsters.netlify.app', 'window.clickmonster',
   ]);
+});
+
+test('B1-1 the old Netlify host appears once, as the news function\'s redirect constant, and in nothing players see', () => {
+  const news = text('netlify/edge-functions/news.js');
+  assert.equal(news.match(/clickmonsters\.netlify\.app/g)?.length, 1, 'once only');
+  assert.match(news, /^export const LEGACY_HOST = 'clickmonsters\.netlify\.app';$/m);
+  // Not in any page or template a player reads.
+  for (const f of SHIPPED.flatMap(files).filter((f) => f !== path.join('netlify', 'edge-functions', 'news.js'))) {
+    assert.doesNotMatch(text(f), /clickmonsters\.netlify\.app/i, f);
+  }
 });
 
 test('B1-1 the new name is where players see a name', () => {

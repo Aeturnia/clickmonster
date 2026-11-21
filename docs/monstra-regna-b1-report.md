@@ -56,8 +56,8 @@
 | 3. On the new domain: sign-up confirmation lands on `monstraregna.com`; sign-in and session restore; a reset email from the dashboard opens "Choose a new password", not the game, with "Forgot your password?" still off | Owner | **The applicable checks passed under the current production authentication configuration, 2026-11-18, as reported by the owner** (not independently inspected):<br>- **Session:** sign-in on `monstraregna.com` stayed signed in.<br>- **Reset link:** a dashboard reset email to the owner's own account worked end to end on `monstraregna.com`, with "Forgot your password?" still off.<br>**Not performed: the sign-up confirmation check.** A new account on `monstraregna.com` went straight to character creation and into the game, with no confirmation email, because "Confirm email" was switched off in the dashboard at the project's first setup (there was no email provider then). The check is **deferred** until email confirmation and delivery are separately authorized and configured; Supabase's built-in sender only reaches organization members, so real players couldn't confirm. Email confirmation was **not** enabled as part of this record. The current setting was not read by Claude. |
 | 4. Public pages on the new domain: `/news` and `/news/<slug>` with canonical and `og:url` on `monstraregna.com`; the manifest and titles | Owner, or read-only requests by Claude if authorized | **Passed, 2026-11-18.** Checked by the owner in a browser, then by Claude with read-only GET requests (authorized; no credentials, nothing sent):<br>- `https://monstraregna.com/`: 200, `<title>Monstra Regna</title>`, heading "Monstra Regna"; byte-identical to `main`'s `public/index.html`.<br>- `/news`: 200, title "News · Monstra Regna", canonical and `og:url` `https://monstraregna.com/news`, `og:site_name` "Monstra Regna".<br>- `/news/under-construction`: 200, `no-store`, title "Under Construction · Monstra Regna", canonical and `og:url` `https://monstraregna.com/news/under-construction`.<br>- `/manifest.webmanifest`: 200, `name` and `short_name` "Monstra Regna".<br>- `/admin.html`: 200, title "Monstra Regna Admin".<br>- **The old host, before the redirect:** `https://clickmonsters.netlify.app/` serves the same `index.html` (200), and its `/news/under-construction` also gives `https://monstraregna.com/...` as canonical and `og:url` (B1-2, live). |
 | QB-2. Publish the announcement article (the move, the new address, the possible one-time sign-in) | Owner, in the admin console | **Waived** by the owner, 2026-11-21: no players yet |
-| 5. Turn on the redirect | Owner merges the redirect PR | PR opened 2026-11-21 (rule `b00a5c7`), at its review gate |
-| 6. Verify the redirect (B1-4b, B1-4c) | Read-only requests, if authorized; the owner's own old email if one exists | After step 5 |
+| 5. Turn on the redirect | Owner merges the redirect PR | **Done, 2026-11-21:** PR #70 merged as `a468ee0`; live within about 20 s |
+| 6. Verify the redirect (B1-4b, B1-4c) | Read-only requests, if authorized; the owner's own old email if one exists | **B1-4b: one deviation,** `/news` not redirected (section 6); fallback in its own PR (section 7). **B1-4c: not performed** |
 | 7. Remove the Netlify origin from the Supabase allow-list | Owner | After step 6 |
 
 **What players notice after this PR merges:** the name, on both addresses. Nobody is signed out: the storage keys are unchanged, and each address keeps its own saved session. A player moves address only when the redirect turns on (step 5), and then signs in once on `monstraregna.com`, as the announcement will say.
@@ -78,3 +78,51 @@
 - **The production Supabase Auth settings** (step 2): reported by the owner, not read.
 - **How "Monstra Regna" displays** as an installed app's name on real home screens (QB-1).
 - **Everything in steps 3–7,** which happens after the merge.
+
+## 6. After the redirect went live: B1-4b and B1-4c (2026-11-21)
+
+**PR #70 merged** as `a468ee0` at 18:08 UTC. The old host's `/` answered 200 at 18:08:31 and **301** at 18:08:46.
+
+**B1-4b** (read-only requests to `https://clickmonsters.netlify.app`, each first response, then the chain followed):
+
+| Address on the old host | First response | Chain |
+| --- | --- | --- |
+| `/`, `/?x=1&y=two` | **301** to `https://monstraregna.com/…`, path and query kept | 301 > 200 |
+| `/guide`, `/guide?ref=a%20b`, `/leaderboard`, `/contact` | **301**, path and query kept | 301 > 200 |
+| `/js/site.js`, `/manifest.webmanifest`, `/admin.html` | **301** | 301 > 200 |
+| `/does-not-exist?q=1` | **301**, path and query kept | 301 > 404 (missing on the new domain too) |
+| **`/news`, `/news?page=2`, `/news/<slug>`, `/news/<slug>?x=1`** | **200, not redirected** | 200 |
+
+- **No loops:** every chain ends within two responses.
+- **Unaffected:** the deploy preview isn't redirected, and `https://monstraregna.com/` answers 200.
+
+**The deviation:** section 4's open risk happened. On the old host, Netlify runs the news edge function for `/news` and `/news/*` before the redirect rules, so those addresses are served there. What those pages carry:
+- the canonical address and `og:url` on `monstraregna.com` (B1-2);
+- the no-script policy and `no-store`.
+
+So search engines and link previews already point at the new domain. A visitor following an old news link stays on the old host for that page; the menu's links from there redirect. The owner chose to correct it rather than accept it (section 7).
+
+**B1-4c: not performed.** No sign-in link issued before the move was available, and none was made up for this check.
+
+**Step 7** (removing the old origin from the Supabase Auth allow-list) is untouched, and separately gated.
+
+## 7. The news fallback (authorized by the owner, 2026-11-21; its own PR)
+
+**In `netlify/edge-functions/news.js`:**
+- **The constant:** `LEGACY_HOST = 'clickmonsters.netlify.app'`.
+- **The check:** after the existing method check (other methods still get 405), a request whose URL host is exactly `LEGACY_HOST` gets a **301** to `SITE_ORIGIN` plus its path and query. That happens before any Supabase request, with `cache-control: no-store` and no body.
+- **Nothing from headers:** no `Host`, `Forwarded` or `X-Forwarded-Host` header is read, so none can trigger the redirect or change its destination. The destination is built only from `SITE_ORIGIN`.
+- **Unchanged hosts:** the canonical domain and deploy previews (other hosts) are served as before. An unknown article on the old host is redirected, and the canonical domain answers its 404.
+
+**Identity check:** `tests/identity.test.mjs` allows the exact host name as a technical routing identifier, in `news.js` only. It's listed with the other technical identifiers, and a new test requires it to appear once, as that constant, and in no other shipped file. The old name stays forbidden everywhere else, in any spelling.
+
+**Tests** (`tests/news-pages.test.mjs`, five new; `tests/identity.test.mjs`, one new):
+- **The old host:** `/news`, `/news/`, a query, an article, its slash form, an article with a query and an unknown article each get a 301 to the same path on `SITE_ORIGIN`, for GET and HEAD, with no Supabase request and no body.
+- **Other methods** on the old host still get 405.
+- **Unchanged elsewhere:** the canonical domain, `deploy-preview-70--…` and `main--…` each serve the pages, with one read.
+- **Forged headers** naming the old host don't redirect a canonical request. Headers naming another host don't move the old host's destination.
+- **Exact matching:** look-alike hosts aren't redirected; the old host in capitals is.
+
+**What the tests caught:** against the old function, with only the constant added, the redirect tests fail (three of the five; the other two guard unchanged behaviour). The old identity test rejects the new constant. The host name added to any other shipped file fails both identity tests.
+
+**After an authorized merge (B1-4b again):** read-only requests to the old host's `/news`, `/news/<slug>` and their query forms should answer 301 to `monstraregna.com`, and the canonical pages 200, with no loop. If the function still answers there, the evidence is recorded and work stops.
