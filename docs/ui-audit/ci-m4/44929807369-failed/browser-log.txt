@@ -1,0 +1,1903 @@
+
+> test:ui
+> node --test --test-concurrency=1 tests/ui/*.test.mjs
+
+TAP version 13
+# Subtest: navigation: four labelled groups, every section listed, current one marked (desktop)
+ok 1 - navigation: four labelled groups, every section listed, current one marked (desktop)
+  ---
+  duration_ms: 4138.786
+  type: 'test'
+  ...
+# Subtest: navigation on a phone: group switcher, current group visible, keyboard only
+ok 2 - navigation on a phone: group switcher, current group visible, keyboard only
+  ---
+  duration_ms: 1078.7838
+  type: 'test'
+  ...
+# Subtest: navigation: a moderator sees no Staff group
+ok 3 - navigation: a moderator sees no Staff group
+  ---
+  duration_ms: 696.5595
+  type: 'test'
+  ...
+# Subtest: deep links: sections, a player record and a zone have addresses; Back works
+ok 4 - deep links: sections, a player record and a zone have addresses; Back works
+  ---
+  duration_ms: 1912.8899
+  type: 'test'
+  ...
+# Subtest: tables: headers, labelled cells, no squeezed words or sideways scrolling, at every width
+ok 5 - tables: headers, labelled cells, no squeezed words or sideways scrolling, at every width
+  ---
+  duration_ms: 16709.0984
+  type: 'test'
+  ...
+# Subtest: tables on a phone: each row is a card showing every column with its name
+ok 6 - tables on a phone: each row is a card showing every column with its name
+  ---
+  duration_ms: 1197.1766
+  type: 'test'
+  ...
+# Subtest: forms: inline validation with the message tied to the field; no request until valid
+ok 7 - forms: inline validation with the message tied to the field; no request until valid
+  ---
+  duration_ms: 2485.3448
+  type: 'test'
+  ...
+# Subtest: forms: pending while sending, one request at a time, server errors stay in the form with values kept
+ok 8 - forms: pending while sending, one request at a time, server errors stay in the form with values kept
+  ---
+  duration_ms: 1231.0844
+  type: 'test'
+  ...
+# Subtest: forms: typed values and focus survive data arriving and re-rendering the screen
+ok 9 - forms: typed values and focus survive data arriving and re-rendering the screen
+  ---
+  duration_ms: 745.106
+  type: 'test'
+  ...
+# Subtest: moderation: from a report to a sanction without leaving the report; explicit steps
+ok 10 - moderation: from a report to a sanction without leaving the report; explicit steps
+  ---
+  duration_ms: 1587.953
+  type: 'test'
+  ...
+# Subtest: moderation: removing a reported message asks first and sends nothing when cancelled
+ok 11 - moderation: removing a reported message asks first and sends nothing when cancelled
+  ---
+  duration_ms: 1406.9708
+  type: 'test'
+  ...
+# Subtest: zone editor: section index, live problem summary, save points at the problems
+ok 12 - zone editor: section index, live problem summary, save points at the problems
+  ---
+  duration_ms: 1260.0426
+  type: 'test'
+  ...
+# Subtest: zone editor: preview is sticky beside the form on wide screens, not on phones; overworld squares are big enough
+ok 13 - zone editor: preview is sticky beside the form on wide screens, not on phones; overworld squares are big enough
+  ---
+  duration_ms: 1668.3399
+  type: 'test'
+  ...
+# Subtest: P4-01 two forms sending at once: each keeps its own pending state; a second press sends nothing
+ok 14 - P4-01 two forms sending at once: each keeps its own pending state; a second press sends nothing
+  ---
+  duration_ms: 1528.5848
+  type: 'test'
+  ...
+# Subtest: P4-01 a press while a confirmed form is sending opens no second confirmation
+ok 15 - P4-01 a press while a confirmed form is sending opens no second confirmation
+  ---
+  duration_ms: 1722.2455
+  type: 'test'
+  ...
+# Subtest: P4-01 zone save: pending survives re-renders and repeated presses send one request
+ok 16 - P4-01 zone save: pending survives re-renders and repeated presses send one request
+  ---
+  duration_ms: 1180.5974
+  type: 'test'
+  ...
+# Subtest: P4-01 zone save failure: pending clears, the problem shows, focus and the draft stay
+ok 17 - P4-01 zone save failure: pending clears, the problem shows, focus and the draft stay
+  ---
+  duration_ms: 857.2166
+  type: 'test'
+  ...
+# Subtest: P4-02 granting admin: the email must be typed; Cancel sends nothing; confirming sends one request
+ok 18 - P4-02 granting admin: the email must be typed; Cancel sends nothing; confirming sends one request
+  ---
+  duration_ms: 1459.1493
+  type: 'test'
+  ...
+# Subtest: P4-02 granting moderator: a normal confirmation stating the permissions; one request
+ok 19 - P4-02 granting moderator: a normal confirmation stating the permissions; one request
+  ---
+  duration_ms: 1408.0972
+  type: 'test'
+  ...
+# Subtest: P4-02 changing the role of existing staff says which way it changes
+ok 20 - P4-02 changing the role of existing staff says which way it changes
+  ---
+  duration_ms: 1305.3374
+  type: 'test'
+  ...
+# Subtest: P4-03 Dismiss report pressed repeatedly while delayed: one request, one resolution
+ok 21 - P4-03 Dismiss report pressed repeatedly while delayed: one request, one resolution
+  ---
+  duration_ms: 1476.0409
+  type: 'test'
+  ...
+# Subtest: P4-03 a quick player action pressed repeatedly: one character update
+ok 22 - P4-03 a quick player action pressed repeatedly: one character update
+  ---
+  duration_ms: 1704.6058
+  type: 'test'
+  ...
+# Subtest: P4-03 a confirmed action pressed again while pending: no second dialog, no second request
+ok 23 - P4-03 a confirmed action pressed again while pending: no second dialog, no second request
+  ---
+  duration_ms: 1559.1648
+  type: 'test'
+  ...
+# Subtest: P4-03 zone Save, Delete and Restore on one zone: never two at once
+ok 24 - P4-03 zone Save, Delete and Restore on one zone: never two at once
+  ---
+  duration_ms: 2840.7132
+  type: 'test'
+  ...
+# Subtest: P4-03 a failed action clears its pending state, keeps the error and focus, and can be retried
+ok 25 - P4-03 a failed action clears its pending state, keeps the error and focus, and can be retried
+  ---
+  duration_ms: 4489.7742
+  type: 'test'
+  ...
+# Subtest: P4-03 independent actions keep their own pending state; one finishing clears only its own
+ok 26 - P4-03 independent actions keep their own pending state; one finishing clears only its own
+  ---
+  duration_ms: 1641.6888
+  type: 'test'
+  ...
+# Subtest: P4-04 editing is locked while Save is sending; the saved zone is exactly what was submitted
+ok 27 - P4-04 editing is locked while Save is sending; the saved zone is exactly what was submitted
+  ---
+  duration_ms: 2011.8451
+  type: 'test'
+  ...
+# Subtest: P4-04 a failed save unlocks the draft with every edit kept; the next save includes later edits
+ok 28 - P4-04 a failed save unlocks the draft with every edit kept; the next save includes later edits
+  ---
+  duration_ms: 949.9658
+  type: 'test'
+  ...
+# Subtest: P4-04 Restore and Delete also lock the draft while sending
+ok 29 - P4-04 Restore and Delete also lock the draft while sending
+  ---
+  duration_ms: 1771.0836
+  type: 'test'
+  ...
+# Subtest: P4-04 another zone opened while a save is sending keeps its edits when the save finishes
+ok 30 - P4-04 another zone opened while a save is sending keeps its edits when the save finishes
+  ---
+  duration_ms: 1139.8757
+  type: 'test'
+  ...
+# Subtest: only admins see Public news; a moderator is sent to the overview
+ok 31 - only admins see Public news; a moderator is sent to the overview
+  ---
+  duration_ms: 796.7038
+  type: 'test'
+  ...
+# Subtest: a new article: inline validation, a derived address, saved as a draft and logged
+ok 32 - a new article: inline validation, a derived address, saved as a draft and logged
+  ---
+  duration_ms: 1272.1036
+  type: 'test'
+  ...
+# Subtest: the preview shows paragraphs and bullet points, and escapes everything
+ok 33 - the preview shows paragraphs and bullet points, and escapes everything
+  ---
+  duration_ms: 862.4312
+  type: 'test'
+  ...
+# Subtest: publish, correct, unpublish and delete: confirmations, rules and the audit log
+ok 34 - publish, correct, unpublish and delete: confirmations, rules and the audit log
+  ---
+  duration_ms: 2131.8033
+  type: 'test'
+  ...
+# Subtest: a draft is deleted with a simpler confirmation; maintenance has a checked window
+ok 35 - a draft is deleted with a simpler confirmation; maintenance has a checked window
+  ---
+  duration_ms: 1143.5587
+  type: 'test'
+  ...
+# Subtest: one request at a time: a second press while publishing sends and asks nothing
+ok 36 - one request at a time: a second press while publishing sends and asks nothing
+  ---
+  duration_ms: 1061.0172
+  type: 'test'
+  ...
+# Subtest: a server refusal stays in the form and keeps the draft
+ok 37 - a server refusal stays in the form and keeps the draft
+  ---
+  duration_ms: 817.6736
+  type: 'test'
+  ...
+# Subtest: an article opens from its address, and the list works on a phone
+ok 38 - an article opens from its address, and the list works on a phone
+  ---
+  duration_ms: 1601.555
+  type: 'test'
+  ...
+# Subtest: the audit log shows news changes readably
+ok 39 - the audit log shows news changes readably
+  ---
+  duration_ms: 1067.2265
+  type: 'test'
+  ...
+# Subtest: the fake public read answers like the real API
+ok 40 - the fake public read answers like the real API
+  ---
+  duration_ms: 2.4986
+  type: 'test'
+  ...
+# Subtest: admin axe: no serious or critical violations
+ok 41 - admin axe: no serious or critical violations
+  ---
+  duration_ms: 3055.6049
+  type: 'test'
+  ...
+# Subtest: admin: player rows can be opened with the keyboard
+ok 42 - admin: player rows can be opened with the keyboard
+  ---
+  duration_ms: 825.4984
+  type: 'test'
+  ...
+# Subtest: admin: section tabs are all visible on a phone and mark the current one
+ok 43 - admin: section tabs are all visible on a phone and mark the current one
+  ---
+  duration_ms: 352.2188
+  type: 'test'
+  ...
+# Subtest: admin: errors stay until dismissed
+ok 44 - admin: errors stay until dismissed
+  ---
+  duration_ms: 3952.5761
+  type: 'test'
+  ...
+# Subtest: admin keyboard: switching sections keeps focus on the section tab through async loading
+ok 45 - admin keyboard: switching sections keeps focus on the section tab through async loading
+  ---
+  duration_ms: 459.3798
+  type: 'test'
+  ...
+# Subtest: admin keyboard: opening a player moves focus to the record, Back returns to the row
+ok 46 - admin keyboard: opening a player moves focus to the record, Back returns to the row
+  ---
+  duration_ms: 662.8945
+  type: 'test'
+  ...
+# Subtest: admin keyboard: searching keeps focus and caret in the search box
+ok 47 - admin keyboard: searching keeps focus and caret in the search box
+  ---
+  duration_ms: 821.1322
+  type: 'test'
+  ...
+# Subtest: D-2 panel from 1280px: chat beside the game, no chat line and no drawer; the side column is used
+ok 48 - D-2 panel from 1280px: chat beside the game, no chat line and no drawer; the side column is used
+  ---
+  duration_ms: 1766.2595
+  type: 'test'
+  ...
+# Subtest: D-2 the game stays usable while chatting, and live messages never move focus or the caret
+ok 49 - D-2 the game stays usable while chatting, and live messages never move focus or the caret
+  ---
+  duration_ms: 2402.4857
+  type: 'test'
+  ...
+# Subtest: D-2 sending and message menus work in the panel; Escape closes a menu
+ok 50 - D-2 sending and message menus work in the panel; Escape closes a menu
+  ---
+  duration_ms: 944.0818
+  type: 'test'
+  ...
+# Subtest: D-2 from 1200 to 1279px: the desktop layout with the chat line and drawer
+ok 51 - D-2 from 1200 to 1279px: the desktop layout with the chat line and drawer
+  ---
+  duration_ms: 858.4051
+  type: 'test'
+  ...
+# Subtest: D-2 moving between panel and drawer keeps the draft, channel, unread counts, focus and caret
+ok 52 - D-2 moving between panel and drawer keeps the draft, channel, unread counts, focus and caret
+  ---
+  duration_ms: 920.14
+  type: 'test'
+  ...
+# Subtest: D-2 short laptops: the message box is on screen with room for 6 lines; the minimap gives way
+ok 53 - D-2 short laptops: the message box is on screen with room for 6 lines; the minimap gives way
+  ---
+  duration_ms: 2396.904
+  type: 'test'
+  ...
+# Subtest: D-2 the side summary shows world events and world-boss hunts, and Explore does not repeat them
+ok 54 - D-2 the side summary shows world events and world-boss hunts, and Explore does not repeat them
+  ---
+  duration_ms: 1455.6458
+  type: 'test'
+  ...
+# Subtest: D-2 moderators remove messages from the panel, with the same confirmation
+ok 55 - D-2 moderators remove messages from the panel, with the same confirmation
+  ---
+  duration_ms: 1306.4975
+  type: 'test'
+  ...
+# Subtest: D2-01 signing out and in as another account in the same page keeps nothing from the first
+ok 56 - D2-01 signing out and in as another account in the same page keeps nothing from the first
+  ---
+  duration_ms: 1749.7429
+  type: 'test'
+  ...
+# Subtest: D2-01 a send still pending at sign-out cannot touch the next account
+ok 57 - D2-01 a send still pending at sign-out cannot touch the next account
+  ---
+  duration_ms: 2061.7303
+  type: 'test'
+  ...
+# Subtest: D2-02 a failed send is restored in the drawer after the panel gave way to it
+ok 58 - D2-02 a failed send is restored in the drawer after the panel gave way to it
+  ---
+  duration_ms: 923.0934
+  type: 'test'
+  ...
+# Subtest: D2-02 a failed send is restored in the panel after the drawer gave way to it
+ok 59 - D2-02 a failed send is restored in the panel after the drawer gave way to it
+  ---
+  duration_ms: 934.6668
+  type: 'test'
+  ...
+# Subtest: D2-02 a failed send comes back without taking focus from the game
+ok 60 - D2-02 a failed send comes back without taking focus from the game
+  ---
+  duration_ms: 796.6051
+  type: 'test'
+  ...
+# Subtest: D2-03 a late Realtime event for the previous account never reaches the next one
+ok 61 - D2-03 a late Realtime event for the previous account never reaches the next one
+  ---
+  duration_ms: 2083.442
+  type: 'test'
+  ...
+# Subtest: D2-03 a confirmation opened by one account sends nothing after another signs in
+ok 62 - D2-03 a confirmation opened by one account sends nothing after another signs in
+  ---
+  duration_ms: 4549.5626
+  type: 'test'
+  ...
+# Subtest: D-3 number keys switch screens, and the tabs announce their keys
+ok 63 - D-3 number keys switch screens, and the tabs announce their keys
+  ---
+  duration_ms: 2917.3008
+  type: 'test'
+  ...
+# Subtest: D-3 battle keys: M, C and F press Melee, Cast and Flee
+ok 64 - D-3 battle keys: M, C and F press Melee, Cast and Flee
+  ---
+  duration_ms: 2636.2062
+  type: 'test'
+  ...
+# Subtest: D-3 Enter fights again, but a focused button keeps its own Enter
+ok 65 - D-3 Enter fights again, but a focused button keeps its own Enter
+  ---
+  duration_ms: 4000.425
+  type: 'test'
+  ...
+# Subtest: D-3 "/" goes to the chat box and Escape comes back, in the panel and in the drawer
+ok 66 - D-3 "/" goes to the chat box and Escape comes back, in the panel and in the drawer
+  ---
+  duration_ms: 1423.3488
+  type: 'test'
+  ...
+# Subtest: D-3 "?" lists every shortcut; Settings has the switch and the list too
+ok 67 - D-3 "?" lists every shortcut; Settings has the switch and the list too
+  ---
+  duration_ms: 1501.8191
+  type: 'test'
+  ...
+# Subtest: D-3 shortcuts never fire while typing, composing, with Ctrl, Alt or Meta, or with a dialog open
+ok 68 - D-3 shortcuts never fire while typing, composing, with Ctrl, Alt or Meta, or with a dialog open
+  ---
+  duration_ms: 4937.0467
+  type: 'test'
+  ...
+# Subtest: D-3 the off setting turns the shortcuts off, and is remembered; old saved settings keep them on
+ok 69 - D-3 the off setting turns the shortcuts off, and is remembered; old saved settings keep them on
+  ---
+  duration_ms: 5498.5199
+  type: 'test'
+  ...
+# Subtest: D-3 phones, tablets and narrow windows: no shortcuts, no setting, no announced keys
+ok 70 - D-3 phones, tablets and narrow windows: no shortcuts, no setting, no announced keys
+  ---
+  duration_ms: 3736.8204
+  type: 'test'
+  ...
+# Subtest: D-3 arrow keys in the chat panel move between messages, not the hero
+ok 71 - D-3 arrow keys in the chat panel move between messages, not the hero
+  ---
+  duration_ms: 1073.0391
+  type: 'test'
+  ...
+# Subtest: D-1 frame: hero bar, navigation, screen with its actions, then the side column (1440×900)
+ok 72 - D-1 frame: hero bar, navigation, screen with its actions, then the side column (1440×900)
+  ---
+  duration_ms: 1021.8385
+  type: 'test'
+  ...
+# Subtest: D-1 reading and tab order matches the visual order
+ok 73 - D-1 reading and tab order matches the visual order
+  ---
+  duration_ms: 836.9669
+  type: 'test'
+  ...
+# Subtest: D-1 battle: the actions sit directly under the fight, at the start and once the log has filled
+ok 74 - D-1 battle: the actions sit directly under the fight, at the start and once the log has filled
+  ---
+  duration_ms: 13556.7571
+  type: 'test'
+  ...
+# Subtest: D-1 width and type: at most about 1600px, centred; text steps up on large displays
+ok 75 - D-1 width and type: at most about 1600px, centred; text steps up on large displays
+  ---
+  duration_ms: 2073.9357
+  type: 'test'
+  ...
+# Subtest: D-1 summary: only what the hero bar does not show; one line when there is nothing
+ok 76 - D-1 summary: only what the hero bar does not show; one line when there is nothing
+  ---
+  duration_ms: 2113.4489
+  type: 'test'
+  ...
+# Subtest: D-1 minimap: a picture with a text version; text only on short screens; opens the map
+ok 77 - D-1 minimap: a picture with a text version; text only on short screens; opens the map
+  ---
+  duration_ms: 1762.2807
+  type: 'test'
+  ...
+# Subtest: D-1 larger text and zoom: the layout falls back when there is no room for it
+ok 78 - D-1 larger text and zoom: the layout falls back when there is no room for it
+  ---
+  duration_ms: 2641.6781
+  type: 'test'
+  ...
+# Subtest: D-1 phones, tablets and narrow windows keep their layouts
+ok 79 - D-1 phones, tablets and narrow windows keep their layouts
+  ---
+  duration_ms: 2632.3028
+  type: 'test'
+  ...
+# Subtest: D-1 resizing across 1200px keeps focus where it was
+ok 80 - D-1 resizing across 1200px keeps focus where it was
+  ---
+  duration_ms: 767.8408
+  type: 'test'
+  ...
+# Subtest: D-1 screens without a game use the full width
+ok 81 - D-1 screens without a game use the full width
+  ---
+  duration_ms: 620.7046
+  type: 'test'
+  ...
+# Subtest: LAC-1 the entrance is in the HTML: name and form visible with scripts off, with a note
+ok 82 - LAC-1 the entrance is in the HTML: name and form visible with scripts off, with a note
+  ---
+  duration_ms: 241.1197
+  type: 'test'
+  ...
+# Subtest: LAC-2 / LAC-5a an anonymous visitor downloads no game code; the form starts the library; sign-in starts the game
+ok 83 - LAC-2 / LAC-5a an anonymous visitor downloads no game code; the form starts the library; sign-in starts the game
+  ---
+  duration_ms: 10530.572
+  type: 'test'
+  ...
+# Subtest: LAC-7 sign-in first: "Skip to sign in" is the first stop and leads to the email field, and the form is on screen
+ok 84 - LAC-7 sign-in first: "Skip to sign in" is the first stop and leads to the email field, and the form is on screen
+  ---
+  duration_ms: 597.7593
+  type: 'test'
+  ...
+# Subtest: LAC-6 sign-in turns into the game in place: a status, no loading screen, focus on the screen heading
+ok 85 - LAC-6 sign-in turns into the game in place: a status, no loading screen, focus on the screen heading
+  ---
+  duration_ms: 808.1454
+  type: 'test'
+  ...
+# Subtest: LAC-6 with reduced motion the game appears without movement
+ok 86 - LAC-6 with reduced motion the game appears without movement
+  ---
+  duration_ms: 433.0537
+  type: 'test'
+  ...
+# Subtest: LAC-10a hero creation keeps its mechanics in the entrance style
+ok 87 - LAC-10a hero creation keeps its mechanics in the entrance style
+  ---
+  duration_ms: 805.8853
+  type: 'test'
+  ...
+# Subtest: LAC-8 signing out returns to the entrance without a reload, focused and with a message
+ok 88 - LAC-8 signing out returns to the entrance without a reload, focused and with a message
+  ---
+  duration_ms: 925.2735
+  type: 'test'
+  ...
+# Subtest: LAC-8 a session that ends during play returns to the entrance and says so
+ok 89 - LAC-8 a session that ends during play returns to the entrance and says so
+  ---
+  duration_ms: 481.5866
+  type: 'test'
+  ...
+# Subtest: LAC-5b an account change while the game is starting leaves nothing of the first start behind
+ok 90 - LAC-5b an account change while the game is starting leaves nothing of the first start behind
+  ---
+  duration_ms: 1556.7776
+  type: 'test'
+  ...
+# Subtest: LAC-5b signing out after the hero loads but before chat has started leaves no error behind
+ok 91 - LAC-5b signing out after the hero loads but before chat has started leaves no error behind
+  ---
+  duration_ms: 1280.3117
+  type: 'test'
+  ...
+# Subtest: LAC-5 / LAC-5b a saved session goes straight in: no form at any frame, one client, one listener
+ok 92 - LAC-5 / LAC-5b a saved session goes straight in: no form at any frame, one client, one listener
+  ---
+  duration_ms: 1167.5105
+  type: 'test'
+  ...
+# Subtest: LAC-5b an expired session with a working refresh token is refreshed, then the game starts
+ok 93 - LAC-5b an expired session with a working refresh token is refreshed, then the game starts
+  ---
+  duration_ms: 354.9593
+  type: 'test'
+  ...
+# Subtest: LAC-5b an expired session the server refuses: the form, a message, and no game start
+ok 94 - LAC-5b an expired session the server refuses: the form, a message, and no game start
+  ---
+  duration_ms: 242.5496
+  type: 'test'
+  ...
+# Subtest: LAC-5b a malformed saved session counts as none: the entrance works and sign-in succeeds
+ok 95 - LAC-5b a malformed saved session counts as none: the entrance works and sign-in succeeds
+  ---
+  duration_ms: 1534.0353
+  type: 'test'
+  ...
+# Subtest: LAC-5b a library that fails once and is retried still gives one client
+ok 96 - LAC-5b a library that fails once and is retried still gives one client
+  ---
+  duration_ms: 484.111
+  type: 'test'
+  ...
+# Subtest: LAC-21 the library unavailable: the entrance stays usable and sign-in says so
+ok 97 - LAC-21 the library unavailable: the entrance stays usable and sign-in says so
+  ---
+  duration_ms: 381.6321
+  type: 'test'
+  ...
+# Subtest: LAC-21 Supabase unreachable: sign-in says so, and a saved session gets Try again and Sign out
+ok 98 - LAC-21 Supabase unreachable: sign-in says so, and a saved session gets Try again and Sign out
+  ---
+  duration_ms: 825.9451
+  type: 'test'
+  ...
+# Subtest: LAC-21 the first state call fails: Try again starts the game; Sign out returns to the form
+ok 99 - LAC-21 the first state call fails: Try again starts the game; Sign out returns to the form
+  ---
+  duration_ms: 1160.2949
+  type: 'test'
+  ...
+# Subtest: LAC-21 the game code fails to load: the entrance stays, and Try again recovers
+ok 100 - LAC-21 the game code fails to load: the entrance stays, and Try again recovers
+  ---
+  duration_ms: 564.8924
+  type: 'test'
+  ...
+# Subtest: the entrance: create-account mode and its confirmation message, without leaving the page
+ok 101 - the entrance: create-account mode and its confirmation message, without leaving the page
+  ---
+  duration_ms: 519.812
+  type: 'test'
+  ...
+# [diagnostics] the entrance has no axe violations at phone, landscape, tablet and desktop sizes, signing in and resuming: saved to D:\\a\\clickmonster\\clickmonster\\tests\\ui\\artifacts\\failures\\entrance.test\\the-entrance-has-no-axe-violations-at-phone-landscape-tablet-and-desktop-sizes-s\\
+# Subtest: the entrance has no axe violations at phone, landscape, tablet and desktop sizes, signing in and resuming
+not ok 102 - the entrance has no axe violations at phone, landscape, tablet and desktop sizes, signing in and resuming
+  ---
+  duration_ms: 194.8834
+  type: 'test'
+  location: 'D:\\a\\clickmonster\\clickmonster\\tests\\ui\\entrance.test.mjs:527:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    page.goto: net::ERR_NO_BUFFER_SPACE at http://127.0.0.1:49493/
+    Call log:
+    [2m  - navigating to "http://127.0.0.1:49493/", waiting until "load"[22m
+    
+  code: 'ERR_TEST_FAILURE'
+  stack: |-
+    TestContext.<anonymous> (D:\a\clickmonster\clickmonster\tests\ui\entrance.test.mjs:531:16)
+  ...
+# Subtest: L1-01 a late action answer for the previous account never reaches the next, and does not block it
+ok 103 - L1-01 a late action answer for the previous account never reaches the next, and does not block it
+  ---
+  duration_ms: 2542.1225
+  type: 'test'
+  ...
+# Subtest: L1-02 a delayed quest board for the previous account never fills the next account's board
+ok 104 - L1-02 a delayed quest board for the previous account never fills the next account's board
+  ---
+  duration_ms: 1776.7394
+  type: 'test'
+  ...
+# Subtest: L1-02 a delayed player list for the previous account never appears for the next
+ok 105 - L1-02 a delayed player list for the previous account never appears for the next
+  ---
+  duration_ms: 1980.2223
+  type: 'test'
+  ...
+# Subtest: L1-01 the late answer would have replaced the next account's hero: it is dropped
+ok 106 - L1-01 the late answer would have replaced the next account's hero: it is dropped
+  ---
+  duration_ms: 1588.4594
+  type: 'test'
+  ...
+# Subtest: L1-02 an older operation never clears the next account's pending indicator
+ok 107 - L1-02 an older operation never clears the next account's pending indicator
+  ---
+  duration_ms: 1987.0716
+  type: 'test'
+  ...
+# Subtest: L1-02 a confirmation open when the session ends is closed, and confirms nothing
+ok 108 - L1-02 a confirmation open when the session ends is closed, and confirms nothing
+  ---
+  duration_ms: 906.3217
+  type: 'test'
+  ...
+# Subtest: delete hero: styled confirmation, type the name, Escape cancels and restores focus
+ok 109 - delete hero: styled confirmation, type the name, Escape cancels and restores focus
+  ---
+  duration_ms: 1922.8105
+  type: 'test'
+  ...
+# Subtest: attack: the confirmation states the real stakes and defaults to the safe choice
+ok 110 - attack: the confirmation states the real stakes and defaults to the safe choice
+  ---
+  duration_ms: 2117.3897
+  type: 'test'
+  ...
+# Subtest: abandon quest: names the quest and the reward given up; Keep quest keeps it
+ok 111 - abandon quest: names the quest and the reward given up; Keep quest keeps it
+  ---
+  duration_ms: 2529.5675
+  type: 'test'
+  ...
+# Subtest: selling: only asks when it would destroy socketed gems; Escape closes just the question
+ok 112 - selling: only asks when it would destroy socketed gems; Escape closes just the question
+  ---
+  duration_ms: 2911.7124
+  type: 'test'
+  ...
+# Subtest: chat report: a dialog with an optional reason replaces prompt(); the reason is sent
+ok 113 - chat report: a dialog with an optional reason replaces prompt(); the reason is sent
+  ---
+  duration_ms: 1267.2944
+  type: 'test'
+  ...
+# Subtest: admin: a permanent ban needs the name typed, a timed mute does not; cancelling sends nothing
+ok 114 - admin: a permanent ban needs the name typed, a timed mute does not; cancelling sends nothing
+  ---
+  duration_ms: 2252.9182
+  type: 'test'
+  ...
+# Subtest: admin zones: a delete the server would refuse is explained, not asked; restore asks
+ok 115 - admin zones: a delete the server would refuse is explained, not asked; restore asks
+  ---
+  duration_ms: 1836.4249
+  type: 'test'
+  ...
+# Subtest: pending: the pressed action is busy (and stays so across re-renders); other taps are refused out loud
+ok 116 - pending: the pressed action is busy (and stays so across re-renders); other taps are refused out loud
+  ---
+  duration_ms: 4326.109
+  type: 'test'
+  ...
+# Subtest: double tap: the second tap is refused with a message, and only one action is sent
+ok 117 - double tap: the second tap is refused with a message, and only one action is sent
+  ---
+  duration_ms: 1834.5661
+  type: 'test'
+  ...
+# Subtest: battle log: turns are grouped, the current turn stands out, the outcome lists rewards
+ok 118 - battle log: turns are grouped, the current turn stands out, the outcome lists rewards
+  ---
+  duration_ms: 5756.1414
+  type: 'test'
+  ...
+# Subtest: defeat: the outcome lists what was lost, formatted
+ok 119 - defeat: the outcome lists what was lost, formatted
+  ---
+  duration_ms: 5515.832
+  type: 'test'
+  ...
+# Subtest: reduced motion: cues and pending bars hold still, refusals use an outline instead of a shake
+ok 120 - reduced motion: cues and pending bars hold still, refusals use an outline instead of a shake
+  ---
+  duration_ms: 635.0008
+  type: 'test'
+  ...
+# Subtest: empty and loading states follow one pattern: statement, then what to do
+ok 121 - empty and loading states follow one pattern: statement, then what to do
+  ---
+  duration_ms: 1287.4619
+  type: 'test'
+  ...
+# Subtest: P3-01 focus returns to the replacement of a re-rendered trigger, or to a sensible fallback
+ok 122 - P3-01 focus returns to the replacement of a re-rendered trigger, or to a sensible fallback
+  ---
+  duration_ms: 1038.1397
+  type: 'test'
+  ...
+# Subtest: P3-02 an error that arrives while a confirmation is open survives its closing
+ok 123 - P3-02 an error that arrives while a confirmation is open survives its closing
+  ---
+  duration_ms: 2752.0308
+  type: 'test'
+  ...
+# Subtest: P3-03 a lost duel shows the gold and the experience actually lost
+ok 124 - P3-03 a lost duel shows the gold and the experience actually lost
+  ---
+  duration_ms: 1887.072
+  type: 'test'
+  ...
+# Subtest: axe: no serious or critical violations on the main screens
+ok 125 - axe: no serious or critical violations on the main screens
+  ---
+  duration_ms: 5178.0232
+  type: 'test'
+  ...
+# Subtest: focus is always visible: a 2px solid ring on keyboard focus
+ok 126 - focus is always visible: a 2px solid ring on keyboard focus
+  ---
+  duration_ms: 662.8391
+  type: 'test'
+  ...
+# Subtest: sheet dialog: initial focus, containment, Escape, restoration
+ok 127 - sheet dialog: initial focus, containment, Escape, restoration
+  ---
+  duration_ms: 1404.2698
+  type: 'test'
+  ...
+# Subtest: sheet dialog: backdrop tap closes and restores focus
+ok 128 - sheet dialog: backdrop tap closes and restores focus
+  ---
+  duration_ms: 1117.7427
+  type: 'test'
+  ...
+# Subtest: sheet dialog: when the trigger no longer exists, focus lands somewhere sensible
+ok 129 - sheet dialog: when the trigger no longer exists, focus lands somewhere sensible
+  ---
+  duration_ms: 1418.7575
+  type: 'test'
+  ...
+# Subtest: battle: focus survives re-renders and the log is reachable and announced
+ok 130 - battle: focus survives re-renders and the log is reachable and announced
+  ---
+  duration_ms: 2204.3358
+  type: 'test'
+  ...
+# Subtest: battle log keeps recent and older lines distinct without failing contrast
+ok 131 - battle log keeps recent and older lines distinct without failing contrast
+  ---
+  duration_ms: 2936.2349
+  type: 'test'
+  ...
+# Subtest: chat dialog: keyboard opening, message menu, Escape order, restoration
+ok 132 - chat dialog: keyboard opening, message menu, Escape order, restoration
+  ---
+  duration_ms: 982.4758
+  type: 'test'
+  ...
+# Subtest: chat: send errors stay visible inline until a message goes through
+ok 133 - chat: send errors stay visible inline until a message goes through
+  ---
+  duration_ms: 4017.1113
+  type: 'test'
+  ...
+# Subtest: keyboard movement: arrows move the hero, but not while typing
+ok 134 - keyboard movement: arrows move the hero, but not while typing
+  ---
+  duration_ms: 1584.9712
+  type: 'test'
+  ...
+# Subtest: errors persist until dismissed, and connection errors clear when it recovers
+ok 135 - errors persist until dismissed, and connection errors clear when it recovers
+  ---
+  duration_ms: 5203.4692
+  type: 'test'
+  ...
+# Subtest: inline validation: hero name problems show next to the field
+ok 136 - inline validation: hero name problems show next to the field
+  ---
+  duration_ms: 776.2322
+  type: 'test'
+  ...
+# Subtest: enlarged text: sizes scale and controls do not overlap
+ok 137 - enlarged text: sizes scale and controls do not overlap
+  ---
+  duration_ms: 633.3072
+  type: 'test'
+  ...
+# Subtest: responsive: no horizontal overflow from 320px to 1440px
+ok 138 - responsive: no horizontal overflow from 320px to 1440px
+  ---
+  duration_ms: 4525.0305
+  type: 'test'
+  ...
+# Subtest: map squares describe what is there and can be used to walk
+ok 139 - map squares describe what is there and can be used to walk
+  ---
+  duration_ms: 1143.9212
+  type: 'test'
+  ...
+# Subtest: reduced motion is respected
+ok 140 - reduced motion is respected
+  ---
+  duration_ms: 683.8962
+  type: 'test'
+  ...
+# Subtest: success message stays visible when the action closes its sheet
+ok 141 - success message stays visible when the action closes its sheet
+  ---
+  duration_ms: 1235.7802
+  type: 'test'
+  ...
+# Subtest: success message shown in chat stays visible after chat closes
+ok 142 - success message shown in chat stays visible after chat closes
+  ---
+  duration_ms: 1713.3864
+  type: 'test'
+  ...
+# Subtest: realtime: a new message keeps focus on the chat bar
+ok 143 - realtime: a new message keeps focus on the chat bar
+  ---
+  duration_ms: 645.4562
+  type: 'test'
+  ...
+# Subtest: realtime: focus survives on a channel tab, a message and a menu action
+ok 144 - realtime: focus survives on a channel tab, a message and a menu action
+  ---
+  duration_ms: 810.0666
+  type: 'test'
+  ...
+# Subtest: GP-A1 after an XP gain, regeneration ticks leave the XP meter in place, and its cue starts once
+ok 145 - GP-A1 after an XP gain, regeneration ticks leave the XP meter in place, and its cue starts once
+  ---
+  duration_ms: 6810.7871
+  type: 'test'
+  ...
+# Subtest: GP-A2 a regeneration tick updates the hero bar HP and the Heal price together; at full HP Heal is off
+ok 146 - GP-A2 a regeneration tick updates the hero bar HP and the Heal price together; at full HP Heal is off
+  ---
+  duration_ms: 6555.2028
+  type: 'test'
+  ...
+# Subtest: GP-B1 at 320px, seven-digit HP and XP fit on the bars, in the hero bar and on a world boss's bar
+ok 147 - GP-B1 at 320px, seven-digit HP and XP fit on the bars, in the hero bar and on a world boss's bar
+  ---
+  duration_ms: 1178.8027
+  type: 'test'
+  ...
+# Subtest: GP-B1 at 390px, seven-digit HP and XP fit on the bars, in the hero bar and on a world boss's bar
+ok 148 - GP-B1 at 390px, seven-digit HP and XP fit on the bars, in the hero bar and on a world boss's bar
+  ---
+  duration_ms: 1213.5751
+  type: 'test'
+  ...
+# Subtest: GP-B1 at 1024px, seven-digit HP and XP fit on the bars, in the hero bar and on a world boss's bar
+ok 149 - GP-B1 at 1024px, seven-digit HP and XP fit on the bars, in the hero bar and on a world boss's bar
+  ---
+  duration_ms: 1197.5343
+  type: 'test'
+  ...
+# Subtest: GP-B1 at 1440px, seven-digit HP and XP fit on the bars, in the hero bar and on a world boss's bar
+ok 150 - GP-B1 at 1440px, seven-digit HP and XP fit on the bars, in the hero bar and on a world boss's bar
+  ---
+  duration_ms: 1184.6697
+  type: 'test'
+  ...
+# Subtest: GP-B2 at 320px with 200% text, the bars still fit
+ok 151 - GP-B2 at 320px with 200% text, the bars still fit
+  ---
+  duration_ms: 1225.2384
+  type: 'test'
+  ...
+# Subtest: GP-B2 at 390px with 200% text, the bars still fit
+ok 152 - GP-B2 at 390px with 200% text, the bars still fit
+  ---
+  duration_ms: 1204.352
+  type: 'test'
+  ...
+# Subtest: GP-B3 the numbers are at least 4.5:1 against the fill and against the empty track, for HP, XP and the foe
+ok 153 - GP-B3 the numbers are at least 4.5:1 against the fill and against the empty track, for HP, XP and the foe
+  ---
+  duration_ms: 1194.4439
+  type: 'test'
+  ...
+# Subtest: GP-B4 when a bar shows the short numbers, screen readers still get the full ones
+ok 154 - GP-B4 when a bar shows the short numbers, screen readers still get the full ones
+  ---
+  duration_ms: 658.4154
+  type: 'test'
+  ...
+# Subtest: GP-B5 reduced motion: no animation on the XP bar or the gain cues; the cues stay still for the same time
+ok 155 - GP-B5 reduced motion: no animation on the XP bar or the gain cues; the cues stay still for the same time
+  ---
+  duration_ms: 4194.6811
+  type: 'test'
+  ...
+# Subtest: GP-B6 the XP cue takes no space in the bar: the label stays "Lv N" and the fit is the same as without it
+ok 156 - GP-B6 the XP cue takes no space in the bar: the label stays "Lv N" and the fit is the same as without it
+  ---
+  duration_ms: 6495.4324
+  type: 'test'
+  ...
+# Subtest: GP-B7 the XP cue starts once, holds through a regeneration tick without restarting, is removed at 1.6 s, and is not recreated
+ok 157 - GP-B7 the XP cue starts once, holds through a regeneration tick without restarting, is removed at 1.6 s, and is not recreated
+  ---
+  duration_ms: 6441.4503
+  type: 'test'
+  ...
+# Subtest: GP-B8 a gold gain floats over the gold, told apart by colour, at least 4.5:1, and the gold line keeps its width
+ok 158 - GP-B8 a gold gain floats over the gold, told apart by colour, at least 4.5:1, and the gold line keeps its width
+  ---
+  duration_ms: 5188.3363
+  type: 'test'
+  ...
+# Subtest: GP-B8 a gold spend floats over the gold, told apart by colour, at least 4.5:1, and the gold line keeps its width
+ok 159 - GP-B8 a gold spend floats over the gold, told apart by colour, at least 4.5:1, and the gold line keeps its width
+  ---
+  duration_ms: 4091.1493
+  type: 'test'
+  ...
+# Subtest: GP-B9 on two lines, the label and the numbers each span the bar (fix A)
+ok 160 - GP-B9 on two lines, the label and the numbers each span the bar (fix A)
+  ---
+  duration_ms: 753.7152
+  type: 'test'
+  ...
+# Subtest: GP-C1 during a fight only the current round shows; earlier rounds are collapsed and counted
+ok 161 - GP-C1 during a fight only the current round shows; earlier rounds are collapsed and counted
+  ---
+  duration_ms: 2980.9325
+  type: 'test'
+  ...
+# Subtest: GP-C2 opening Earlier rounds survives redraws and the next action; a new fight starts it closed
+ok 162 - GP-C2 opening Earlier rounds survives redraws and the next action; a new fight starts it closed
+  ---
+  duration_ms: 6571.5493
+  type: 'test'
+  ...
+# Subtest: GP-C3 the stored log is unchanged: every line is still there after the fight
+ok 163 - GP-C3 the stored log is unchanged: every line is still there after the fight
+  ---
+  duration_ms: 2274.4395
+  type: 'test'
+  ...
+# Subtest: GP-C4 after a reload mid-fight: the lines already there are ungrouped, counted as lines, and new rounds follow
+ok 164 - GP-C4 after a reload mid-fight: the lines already there are ungrouped, counted as lines, and new rounds follow
+  ---
+  duration_ms: 3229.5533
+  type: 'test'
+  ...
+# Subtest: GP-D1 after a victory the rewards are only in the card; the narrative line stays in the round
+ok 165 - GP-D1 after a victory the rewards are only in the card; the narrative line stays in the round
+  ---
+  duration_ms: 2255.9203
+  type: 'test'
+  ...
+# Subtest: GP-D2 after a defeat the losses are only in the card; "You have been defeated by" stays
+ok 166 - GP-D2 after a defeat the losses are only in the card; "You have been defeated by" stays
+  ---
+  duration_ms: 1719.3383
+  type: 'test'
+  ...
+# Subtest: GP-D2 a duel won: the gold line is only in the card; the narrative line stays
+ok 167 - GP-D2 a duel won: the gold line is only in the card; the narrative line stays
+  ---
+  duration_ms: 1665.415
+  type: 'test'
+  ...
+# Subtest: GP-D2 a duel lost: the gold line is only in the card; the narrative line stays
+ok 168 - GP-D2 a duel lost: the gold line is only in the card; the narrative line stays
+  ---
+  duration_ms: 1664.9599
+  type: 'test'
+  ...
+# Subtest: GP-D3 each reward and loss is announced exactly once
+ok 169 - GP-D3 each reward and loss is announced exactly once
+  ---
+  duration_ms: 4179.5039
+  type: 'test'
+  ...
+# Subtest: GP-D5 a finished fight restored after a reload: every stored line, unfiltered, with the card
+ok 170 - GP-D5 a finished fight restored after a reload: every stored line, unfiltered, with the card
+  ---
+  duration_ms: 2651.614
+  type: 'test'
+  ...
+# Subtest: GP-E1 a mastery gain shows under its own round only, however fast the next action comes
+ok 171 - GP-E1 a mastery gain shows under its own round only, however fast the next action comes
+  ---
+  duration_ms: 2246.4142
+  type: 'test'
+  ...
+# Subtest: GP-F1 keyboard: choosing a monster starts nothing; Tab to Fight and Enter starts the chosen one
+ok 172 - GP-F1 keyboard: choosing a monster starts nothing; Tab to Fight and Enter starts the chosen one
+  ---
+  duration_ms: 1216.1183
+  type: 'test'
+  ...
+# Subtest: GP-F2 the choice survives unrelated redraws, and the drop-down returns to the monster last fought
+ok 173 - GP-F2 the choice survives unrelated redraws, and the drop-down returns to the monster last fought
+  ---
+  duration_ms: 6034.5261
+  type: 'test'
+  ...
+# Subtest: GP-F2b unrelated updates leave the focused drop-down element in place (off town)
+ok 174 - GP-F2b unrelated updates leave the focused drop-down element in place (off town)
+  ---
+  duration_ms: 765.815
+  type: 'test'
+  ...
+# Subtest: GP-F2b unrelated updates leave the focused drop-down element in place (a town tile that is also a lair)
+ok 175 - GP-F2b unrelated updates leave the focused drop-down element in place (a town tile that is also a lair)
+  ---
+  duration_ms: 883.1288
+  type: 'test'
+  ...
+# Subtest: GP-F3 world-boss hunts stay rows above the drop-down, and still start a hunt
+ok 176 - GP-F3 world-boss hunts stay rows above the drop-down, and still start a hunt
+  ---
+  duration_ms: 1186.9543
+  type: 'test'
+  ...
+# Subtest: GP-F5 on a town tile: the town message, and no monster drop-down or Fight control
+ok 177 - GP-F5 on a town tile: the town message, and no monster drop-down or Fight control
+  ---
+  duration_ms: 758.4684
+  type: 'test'
+  ...
+# Subtest: GP-F5b on a tile that is both town and lair: the town message, the lair boss alone, and Fight starts it
+ok 178 - GP-F5b on a tile that is both town and lair: the town message, the lair boss alone, and Fight starts it
+  ---
+  duration_ms: 1204.7052
+  type: 'test'
+  ...
+# Subtest: GP-X1 axe: no violations of any impact on the explore picker, a fight with history, and a victory
+ok 179 - GP-X1 axe: no violations of any impact on the explore picker, a fight with history, and a victory
+  ---
+  duration_ms: 5015.2244
+  type: 'test'
+  ...
+# Subtest: GP-H1 an ordinary fight shows no HP bar on either side; the damage numbers still float over both sides
+ok 180 - GP-H1 an ordinary fight shows no HP bar on either side; the damage numbers still float over both sides
+  ---
+  duration_ms: 2723.6189
+  type: 'test'
+  ...
+# Subtest: GP-H2 a world-boss hunt shows the Shared HP bar and no bar for you
+ok 181 - GP-H2 a world-boss hunt shows the Shared HP bar and no bar for you
+  ---
+  duration_ms: 1137.1142
+  type: 'test'
+  ...
+# Subtest: GP-H3 a duel shows no bars
+ok 182 - GP-H3 a duel shows no bars
+  ---
+  duration_ms: 1691.6476
+  type: 'test'
+  ...
+# Subtest: GP-H4 at 390px, critical hits, misses and damage stay in their strip, clear of the names and sub-lines
+ok 183 - GP-H4 at 390px, critical hits, misses and damage stay in their strip, clear of the names and sub-lines
+  ---
+  duration_ms: 1171.1697
+  type: 'test'
+  ...
+# Subtest: GP-H4 at 320px with 200% text, critical hits, misses and damage stay in their strip, clear of the names and sub-lines
+ok 184 - GP-H4 at 320px with 200% text, critical hits, misses and damage stay in their strip, clear of the names and sub-lines
+  ---
+  duration_ms: 1163.3475
+  type: 'test'
+  ...
+# Subtest: B2-1 at 320x640: the title, the menu, the sign-in panel, the news and the footer, in that order; nothing removed comes back
+ok 185 - B2-1 at 320x640: the title, the menu, the sign-in panel, the news and the footer, in that order; nothing removed comes back
+  ---
+  duration_ms: 348.3888
+  type: 'test'
+  ...
+# Subtest: B2-1 at 390x844: the title, the menu, the sign-in panel, the news and the footer, in that order; nothing removed comes back
+ok 186 - B2-1 at 390x844: the title, the menu, the sign-in panel, the news and the footer, in that order; nothing removed comes back
+  ---
+  duration_ms: 188.2244
+  type: 'test'
+  ...
+# Subtest: B2-1 at 768x1024: the title, the menu, the sign-in panel, the news and the footer, in that order; nothing removed comes back
+ok 187 - B2-1 at 768x1024: the title, the menu, the sign-in panel, the news and the footer, in that order; nothing removed comes back
+  ---
+  duration_ms: 182.912
+  type: 'test'
+  ...
+# Subtest: B2-1 at 1024x768: the title, the menu, the sign-in panel, the news and the footer, in that order; nothing removed comes back
+ok 188 - B2-1 at 1024x768: the title, the menu, the sign-in panel, the news and the footer, in that order; nothing removed comes back
+  ---
+  duration_ms: 185.5389
+  type: 'test'
+  ...
+# Subtest: B2-1 at 1440x900: the title, the menu, the sign-in panel, the news and the footer, in that order; nothing removed comes back
+ok 189 - B2-1 at 1440x900: the title, the menu, the sign-in panel, the news and the footer, in that order; nothing removed comes back
+  ---
+  duration_ms: 216.4271
+  type: 'test'
+  ...
+# Subtest: B2-1 at 320x640 the sign-in panel is above the fold: the email field and Sign in on screen; the menu is one line
+ok 190 - B2-1 at 320x640 the sign-in panel is above the fold: the email field and Sign in on screen; the menu is one line
+  ---
+  duration_ms: 137.3383
+  type: 'test'
+  ...
+# Subtest: B2-2 "Skip to sign in" is the first Tab stop, is shown when focused, and leads to the email field
+ok 191 - B2-2 "Skip to sign in" is the first Tab stop, is shown when focused, and leads to the email field
+  ---
+  duration_ms: 174.7593
+  type: 'test'
+  ...
+# Subtest: B2-2 while a saved session is restored, "Skip to sign in" leads to the panel's heading
+ok 192 - B2-2 while a saved session is restored, "Skip to sign in" leads to the panel's heading
+  ---
+  duration_ms: 298.5687
+  type: 'test'
+  ...
+# Subtest: B2-2 during a password reset, "Skip to sign in" leads to the reset panel's first control
+ok 193 - B2-2 during a password reset, "Skip to sign in" leads to the reset panel's first control
+  ---
+  duration_ms: 171.7724
+  type: 'test'
+  ...
+# Subtest: B2-3 the menu: Home, Guide, Leaderboard and Contact, real links, Home current; each answers 200
+ok 194 - B2-3 the menu: Home, Guide, Leaderboard and Contact, real links, Home current; each answers 200
+  ---
+  duration_ms: 132.918
+  type: 'test'
+  ...
+# Subtest: B2-4 / B2-5 /guide: the menu (this page current) and footer, no script, axe clean at 320, 390 and 1440
+ok 195 - B2-4 / B2-5 /guide: the menu (this page current) and footer, no script, axe clean at 320, 390 and 1440
+  ---
+  duration_ms: 628.9045
+  type: 'test'
+  ...
+# Subtest: B2-4 / B2-5 /leaderboard: the menu (this page current) and footer, no script, axe clean at 320, 390 and 1440
+ok 196 - B2-4 / B2-5 /leaderboard: the menu (this page current) and footer, no script, axe clean at 320, 390 and 1440
+  ---
+  duration_ms: 623.2108
+  type: 'test'
+  ...
+# Subtest: B2-4 / B2-5 /contact: the menu (this page current) and footer, no script, axe clean at 320, 390 and 1440
+ok 197 - B2-4 / B2-5 /contact: the menu (this page current) and footer, no script, axe clean at 320, 390 and 1440
+  ---
+  duration_ms: 716.3068
+  type: 'test'
+  ...
+# Subtest: B2-4 the footer on the entrance and on the news pages; the same copyright in the game's Settings
+ok 198 - B2-4 the footer on the entrance and on the news pages; the same copyright in the game's Settings
+  ---
+  duration_ms: 1158.9705
+  type: 'test'
+  ...
+# Subtest: B2-5 /guide, /leaderboard and /contact answer 200 directly; their slash forms one 301 to them
+ok 199 - B2-5 /guide, /leaderboard and /contact answer 200 directly; their slash forms one 301 to them
+  ---
+  duration_ms: 95.7656
+  type: 'test'
+  ...
+# Subtest: B2-6 at most 3 requests before the sign-in form shows (besides the icon and manifest); no game code, style.css or supabase-js for a visitor
+ok 200 - B2-6 at most 3 requests before the sign-in form shows (besides the icon and manifest); no game code, style.css or supabase-js for a visitor
+  ---
+  duration_ms: 1665.7937
+  type: 'test'
+  ...
+# Subtest: B2-6 at most 3 requests before the sign-in form shows (besides the icon and manifest); no game code, style.css or supabase-js for a visitor, with the paint entry published late
+ok 201 - B2-6 at most 3 requests before the sign-in form shows (besides the icon and manifest); no game code, style.css or supabase-js for a visitor, with the paint entry published late
+  ---
+  duration_ms: 3074.0946
+  type: 'test'
+  ...
+# Subtest: B2-7 at 320x640: axe clean on the entrance with news, with "Skip to sign in" focused, restoring a session, and during a reset
+ok 202 - B2-7 at 320x640: axe clean on the entrance with news, with "Skip to sign in" focused, restoring a session, and during a reset
+  ---
+  duration_ms: 994.2201
+  type: 'test'
+  ...
+# Subtest: B2-7 at 390x844: axe clean on the entrance with news, with "Skip to sign in" focused, restoring a session, and during a reset
+ok 203 - B2-7 at 390x844: axe clean on the entrance with news, with "Skip to sign in" focused, restoring a session, and during a reset
+  ---
+  duration_ms: 1024.4679
+  type: 'test'
+  ...
+# Subtest: B2-7 at 1440x900: axe clean on the entrance with news, with "Skip to sign in" focused, restoring a session, and during a reset
+ok 204 - B2-7 at 1440x900: axe clean on the entrance with news, with "Skip to sign in" focused, restoring a session, and during a reset
+  ---
+  duration_ms: 982.7019
+  type: 'test'
+  ...
+# Subtest: LAC-11 the entrance offers the choice: a labelled group of radio buttons, saved on the device
+ok 205 - LAC-11 the entrance offers the choice: a labelled group of radio buttons, saved on the device
+  ---
+  duration_ms: 461.7952
+  type: 'test'
+  ...
+# Subtest: LAC-11 Hero, Settings offers the same choice; it applies at once, keeps focus and says what is in use
+ok 206 - LAC-11 Hero, Settings offers the same choice; it applies at once, keeps focus and says what is in use
+  ---
+  duration_ms: 1056.1071
+  type: 'test'
+  ...
+# Subtest: LAC-12 Desktop where it fits, with a touch screen too; falls back otherwise and keeps the choice
+ok 207 - LAC-12 Desktop where it fits, with a touch screen too; falls back otherwise and keeps the choice
+  ---
+  duration_ms: 1499.2966
+  type: 'test'
+  ...
+# Subtest: LAC-12 on a touch tablet only the Desktop choice gives desktop: narrowing falls back, widening restores it
+ok 208 - LAC-12 on a touch tablet only the Desktop choice gives desktop: narrowing falls back, widening restores it
+  ---
+  duration_ms: 657.6733
+  type: 'test'
+  ...
+# Subtest: LAC-12 Desktop falls back under 200% text, browser text size or page text size, and keeps the choice
+ok 209 - LAC-12 Desktop falls back under 200% text, browser text size or page text size, and keeps the choice
+  ---
+  duration_ms: 1417.5617
+  type: 'test'
+  ...
+# Subtest: LAC-12 Desktop on a phone falls back to the phone layout
+ok 210 - LAC-12 Desktop on a phone falls back to the phone layout
+  ---
+  duration_ms: 615.0196
+  type: 'test'
+  ...
+# Subtest: LAC-12 Mobile gives the phone column at tablet and desktop sizes
+ok 211 - LAC-12 Mobile gives the phone column at tablet and desktop sizes
+  ---
+  duration_ms: 2267.6834
+  type: 'test'
+  ...
+# Subtest: LAC-12 Automatic, chosen or unset or unreadable, gives the same layouts as before
+ok 212 - LAC-12 Automatic, chosen or unset or unreadable, gives the same layouts as before
+  ---
+  duration_ms: 10860.4142
+  type: 'test'
+  ...
+# Subtest: a choice made on the entrance applies on sign-in; one made in the game shows on the entrance after signing out
+ok 213 - a choice made on the entrance applies on sign-in; one made in the game shows on the entrance after signing out
+  ---
+  duration_ms: 968.5873
+  type: 'test'
+  ...
+# Subtest: LAC-9 the entrance looks the same under every choice and every game layout
+ok 214 - LAC-9 the entrance looks the same under every choice and every game layout
+  ---
+  duration_ms: 4574.5356
+  type: 'test'
+  ...
+# Subtest: LAC-15 the entrance shows the latest three published articles after the form, and All news
+ok 215 - LAC-15 the entrance shows the latest three published articles after the form, and All news
+  ---
+  duration_ms: 766.8003
+  type: 'test'
+  ...
+# Subtest: LAC-15 news loads after the entrance has rendered, from its own module, without game code
+ok 216 - LAC-15 news loads after the entrance has rendered, from its own module, without game code
+  ---
+  duration_ms: 173.2504
+  type: 'test'
+  ...
+# Subtest: Q5 maintenance: one line near the form while upcoming or under way; gone once it has ended
+ok 217 - Q5 maintenance: one line near the form while upcoming or under way; gone once it has ended
+  ---
+  duration_ms: 1289.6916
+  type: 'test'
+  ...
+# Subtest: L4-01 a notice under way disappears when it ends, without a reload or another request
+ok 218 - L4-01 a notice under way disappears when it ends, without a reload or another request
+  ---
+  duration_ms: 185.404
+  type: 'test'
+  ...
+# Subtest: L4-01 an upcoming notice turns into "under way" at its start, then disappears at its end
+ok 219 - L4-01 an upcoming notice turns into "under way" at its start, then disappears at its end
+  ---
+  duration_ms: 180.4001
+  type: 'test'
+  ...
+# Subtest: L4-01 newer, already-ended notices never crowd out one that is still to come
+ok 220 - L4-01 newer, already-ended notices never crowd out one that is still to come
+  ---
+  duration_ms: 203.7385
+  type: 'test'
+  ...
+# Subtest: L4-03 a notice under way with no end time comes before an upcoming one
+ok 221 - L4-03 a notice under way with no end time comes before an upcoming one
+  ---
+  duration_ms: 158.1134
+  type: 'test'
+  ...
+# Subtest: LAC-15 / LAC-21 news failing or never answering: nothing shows, sign-in and the game go ahead
+ok 222 - LAC-15 / LAC-21 news failing or never answering: nothing shows, sign-in and the game go ahead
+  ---
+  duration_ms: 1084.7334
+  type: 'test'
+  ...
+# Subtest: an error answer from the news API shows nothing broken on the entrance
+ok 223 - an error answer from the news API shows nothing broken on the entrance
+  ---
+  duration_ms: 944.8248
+  type: 'test'
+  ...
+# Subtest: LAC-16 / LAC-17 an article page: readable, in the entrance design, with no script or game code
+ok 224 - LAC-16 / LAC-17 an article page: readable, in the entrance design, with no script or game code
+  ---
+  duration_ms: 501.276
+  type: 'test'
+  ...
+# Subtest: LAC-16 the list, the 404 page, and unpublishing taking effect on the next request
+ok 225 - LAC-16 the list, the 404 page, and unpublishing taking effect on the next request
+  ---
+  duration_ms: 474.0698
+  type: 'test'
+  ...
+# Subtest: LAC-16 Supabase down: the 503 page, in the same design
+ok 226 - LAC-16 Supabase down: the 503 page, in the same design
+  ---
+  duration_ms: 209.9611
+  type: 'test'
+  ...
+# Subtest: PR-1 off by default: no "Forgot your password?", and no recovery code on a plain visit
+ok 227 - PR-1 off by default: no "Forgot your password?", and no recovery code on a plain visit
+  ---
+  duration_ms: 1886.6774
+  type: 'test'
+  ...
+# Subtest: PR-1 released: the link in sign-in mode only, after the password field, and no module until it is chosen
+ok 228 - PR-1 released: the link in sign-in mode only, after the password field, and no module until it is chosen
+  ---
+  duration_ms: 302.1561
+  type: 'test'
+  ...
+# Subtest: PR-2 asking for a reset: one request back to this page, the same answer for any address
+ok 229 - PR-2 asking for a reset: one request back to this page, the same answer for any address
+  ---
+  duration_ms: 422.4658
+  type: 'test'
+  ...
+# Subtest: PR-2 a double press sends one request; a rate limit and no connection say so
+ok 230 - PR-2 a double press sends one request; a rate limit and no connection say so
+  ---
+  duration_ms: 496.6874
+  type: 'test'
+  ...
+# Subtest: PR-3 a reset link opens "Choose a new password", never the game, and leaves the address clean
+ok 231 - PR-3 a reset link opens "Choose a new password", never the game, and leaves the address clean
+  ---
+  duration_ms: 1671.5527
+  type: 'test'
+  ...
+# Subtest: PR-4 checks first, then saves, signs out the other devices and enters the realm
+ok 232 - PR-4 checks first, then saves, signs out the other devices and enters the realm
+  ---
+  duration_ms: 542.3494
+  type: 'test'
+  ...
+# Subtest: PR-4 the new password signs in and the old one does not
+ok 233 - PR-4 the new password signs in and the old one does not
+  ---
+  duration_ms: 665.4701
+  type: 'test'
+  ...
+# Subtest: PR-4 a refused update keeps the form and the guard; the password is unchanged
+ok 234 - PR-4 a refused update keeps the form and the guard; the password is unchanged
+  ---
+  duration_ms: 244.7064
+  type: 'test'
+  ...
+# Subtest: PR-4a a reload during an unfinished reset shows the form again, with no game start or preload
+ok 235 - PR-4a a reload during an unfinished reset shows the form again, with no game start or preload
+  ---
+  duration_ms: 1012.2797
+  type: 'test'
+  ...
+# Subtest: PR-4a a second tab with the saved session also shows the form
+ok 236 - PR-4a a second tab with the saved session also shows the form
+  ---
+  duration_ms: 1133.0186
+  type: 'test'
+  ...
+# Subtest: PR-4a a second tab opened after a late save also shows the form
+ok 237 - PR-4a a second tab opened after a late save also shows the form
+  ---
+  duration_ms: 3584.2238
+  type: 'test'
+  ...
+# Subtest: PR-4a Cancel signs out this session only, clears the guard and shows the sign-in form
+ok 238 - PR-4a Cancel signs out this session only, clears the guard and shows the sign-in form
+  ---
+  duration_ms: 901.9965
+  type: 'test'
+  ...
+# Subtest: PR-4a after the password is saved, a reload enters the game normally
+ok 239 - PR-4a after the password is saved, a reload enters the game normally
+  ---
+  duration_ms: 618.7122
+  type: 'test'
+  ...
+# Subtest: PR-4a a stale marker is ignored and cleared: a normal saved session still goes straight in
+ok 240 - PR-4a a stale marker is ignored and cleared: a normal saved session still goes straight in
+  ---
+  duration_ms: 1743.3336
+  type: 'test'
+  ...
+# Subtest: PR-4a with storage refusing the marker, the guard holds for the page only (documented limit)
+ok 241 - PR-4a with storage refusing the marker, the guard holds for the page only (documented limit)
+  ---
+  duration_ms: 962.3504
+  type: 'test'
+  ...
+# Subtest: PR-4b if signing out the other devices fails, the page says so; Try again repeats only that
+ok 242 - PR-4b if signing out the other devices fails, the page says so; Try again repeats only that
+  ---
+  duration_ms: 461.7305
+  type: 'test'
+  ...
+# Subtest: PR-4b after a failed sign-out, Continue to the realm enters without claiming success
+ok 243 - PR-4b after a failed sign-out, Continue to the realm enters without claiming success
+  ---
+  duration_ms: 808.6984
+  type: 'test'
+  ...
+# Subtest: PR-5 an expired or used link: a clear message, the address cleaned, nothing started
+ok 244 - PR-5 an expired or used link: a clear message, the address cleaned, nothing started
+  ---
+  duration_ms: 812.5993
+  type: 'test'
+  ...
+# Subtest: PR-5 once asking is released, an expired link offers a new one
+ok 245 - PR-5 once asking is released, an expired link offers a new one
+  ---
+  duration_ms: 268.8867
+  type: 'test'
+  ...
+# Subtest: PR-5 a link whose session the server refuses is reported as not valid
+ok 246 - PR-5 a link whose session the server refuses is reported as not valid
+  ---
+  duration_ms: 1707.8741
+  type: 'test'
+  ...
+# Subtest: R1-01 a link error given only as error_code: the invalid-link panel, the address cleaned, no game
+ok 247 - R1-01 a link error given only as error_code: the invalid-link panel, the address cleaned, no game
+  ---
+  duration_ms: 1398.6035
+  type: 'test'
+  ...
+# Subtest: R1-02 an expired link (error_code only) with another valid session saved: no form; Continue enters as that session
+ok 248 - R1-02 an expired link (error_code only) with another valid session saved: no form; Continue enters as that session
+  ---
+  duration_ms: 1622.0901
+  type: 'test'
+  ...
+# Subtest: R1-02 an expired link (error and description) with another valid session saved: no form, no game
+ok 249 - R1-02 an expired link (error and description) with another valid session saved: no form, no game
+  ---
+  duration_ms: 1720.9413
+  type: 'test'
+  ...
+# Subtest: R1-02 a recovery token the server refuses, with another valid session saved: no form, no game
+ok 250 - R1-02 a recovery token the server refuses, with another valid session saved: no form, no game
+  ---
+  duration_ms: 2048.4736
+  type: 'test'
+  ...
+# Subtest: R1-02 after an invalid link, Back to sign in and an ordinary sign-in go straight into the game
+ok 251 - R1-02 after an invalid link, Back to sign in and an ordinary sign-in go straight into the game
+  ---
+  duration_ms: 486.9521
+  type: 'test'
+  ...
+# Subtest: the release switch also guards the handler: a click on the hidden link does nothing
+ok 252 - the release switch also guards the handler: a click on the hidden link does nothing
+  ---
+  duration_ms: 779.0451
+  type: 'test'
+  ...
+# Subtest: PR-6 a reset link opened over a running game for another account replaces it cleanly
+ok 253 - PR-6 a reset link opened over a running game for another account replaces it cleanly
+  ---
+  duration_ms: 1103.7182
+  type: 'test'
+  ...
+# Subtest: PR-7 the library failing on arrival: the panel says so, and the game stays held
+ok 254 - PR-7 the library failing on arrival: the panel says so, and the game stays held
+  ---
+  duration_ms: 172.741
+  type: 'test'
+  ...
+# Subtest: PR-7 a normal sign-in is unchanged by any of this
+ok 255 - PR-7 a normal sign-in is unchanged by any of this
+  ---
+  duration_ms: 419.4443
+  type: 'test'
+  ...
+# Subtest: PR-8 every recovery state: focus on the heading, and no axe violations of any impact
+ok 256 - PR-8 every recovery state: focus on the heading, and no axe violations of any impact
+  ---
+  duration_ms: 3625.139
+  type: 'test'
+  ...
+# Subtest: one client and one auth listener through a whole reset
+ok 257 - one client and one auth listener through a whole reset
+  ---
+  duration_ms: 428.6324
+  type: 'test'
+  ...
+# Subtest: AC-1 320x640: compact HUD and dock leave room for the monster list
+ok 258 - AC-1 320x640: compact HUD and dock leave room for the monster list
+  ---
+  duration_ms: 3416.2942
+  type: 'test'
+  ...
+# Subtest: AC-1: shortened amounts still read out in full
+ok 259 - AC-1: shortened amounts still read out in full
+  ---
+  duration_ms: 654.763
+  type: 'test'
+  ...
+# Subtest: AC-2 375 to 430 wide: more content height than before, no fewer rows
+ok 260 - AC-2 375 to 430 wide: more content height than before, no fewer rows
+  ---
+  duration_ms: 3677.9014
+  type: 'test'
+  ...
+# Subtest: AC-3 phone landscape 844x390: exploring and fighting fit
+ok 261 - AC-3 phone landscape 844x390: exploring and fighting fit
+  ---
+  duration_ms: 2260.9315
+  type: 'test'
+  ...
+# Subtest: AC-4 chat: the message box stays above an overlay keyboard
+ok 262 - AC-4 chat: the message box stays above an overlay keyboard
+  ---
+  duration_ms: 4494.4606
+  type: 'test'
+  ...
+# Subtest: AC-5 map 40x40: comfortable squares, centred on the hero, one tab stop
+ok 263 - AC-5 map 40x40: comfortable squares, centred on the hero, one tab stop
+  ---
+  duration_ms: 4674.047
+  type: 'test'
+  ...
+# Subtest: AC-5 map keyboard: arrows move between squares, Enter walks, Center on me returns
+ok 264 - AC-5 map keyboard: arrows move between squares, Enter walks, Center on me returns
+  ---
+  duration_ms: 2954.3455
+  type: 'test'
+  ...
+# Subtest: AC-6 tablet and desktop: two columns, long lists and a tall battle log
+ok 265 - AC-6 tablet and desktop: two columns, long lists and a tall battle log
+  ---
+  duration_ms: 6435.6591
+  type: 'test'
+  ...
+# Subtest: AC-7 200% text at 390px: nothing overlaps or scrolls sideways, and the list is reachable
+ok 266 - AC-7 200% text at 390px: nothing overlaps or scrolls sideways, and the list is reachable
+  ---
+  duration_ms: 1137.0181
+  type: 'test'
+  ...
+# Subtest: AC-8 axe: new layouts have no serious or critical violations
+ok 267 - AC-8 axe: new layouts have no serious or critical violations
+  ---
+  duration_ms: 6714.3865
+  type: 'test'
+  ...
+# Subtest: P2-01 maps of every size scroll inside their own frame at 320px, never the screen
+ok 268 - P2-01 maps of every size scroll inside their own frame at 320px, never the screen
+  ---
+  duration_ms: 11309.5947
+  type: 'test'
+  ...
+# Subtest: P2-02 bank sheet: amount, actions and Close stay usable above an overlay keyboard
+ok 269 - P2-02 bank sheet: amount, actions and Close stay usable above an overlay keyboard
+  ---
+  duration_ms: 7999.6557
+  type: 'test'
+  ...
+# Subtest: SO-1 signing out in the game and in the admin console ends this device's session only (scope=local)
+ok 270 - SO-1 signing out in the game and in the admin console ends this device's session only (scope=local)
+  ---
+  duration_ms: 1138.4642
+  type: 'test'
+  ...
+# Subtest: SO-2 a saved session ended on the server: the form says so, the saved session is gone, and there is no Try again
+ok 271 - SO-2 a saved session ended on the server: the form says so, the saved session is gone, and there is no Try again
+  ---
+  duration_ms: 398.0142
+  type: 'test'
+  ...
+# Subtest: SO-2 a saved session ended on the server, with a slow sign-out answer: the form says so, the saved session is gone, and there is no Try again
+ok 272 - SO-2 a saved session ended on the server, with a slow sign-out answer: the form says so, the saved session is gone, and there is no Try again
+  ---
+  duration_ms: 1900.4119
+  type: 'test'
+  ...
+# Subtest: SO-2 an expired access token whose session still renews: renewed once, the request sent again, and the game starts
+ok 273 - SO-2 an expired access token whose session still renews: renewed once, the request sent again, and the game starts
+  ---
+  duration_ms: 261.6737
+  type: 'test'
+  ...
+# Subtest: SO-3 the session ends on the server during play: an action returns to the form, the saved session is gone, nothing global sent
+ok 274 - SO-3 the session ends on the server during play: an action returns to the form, the saved session is gone, nothing global sent
+  ---
+  duration_ms: 813.9781
+  type: 'test'
+  ...
+# Subtest: SO-3 the session ends on the server during play, with entry.js slow after the reload: an action returns to the form, the saved session is gone, nothing global sent
+ok 275 - SO-3 the session ends on the server during play, with entry.js slow after the reload: an action returns to the form, the saved session is gone, nothing global sent
+  ---
+  duration_ms: 2207.0579
+  type: 'test'
+  ...
+# Subtest: SO-3 an expired but renewable token during play: renewed once, sent once more, and the move happens exactly once
+ok 276 - SO-3 an expired but renewable token during play: renewed once, sent once more, and the move happens exactly once
+  ---
+  duration_ms: 864.359
+  type: 'test'
+  ...
+# Subtest: SO-3 concurrent refusals share one renewal, and each request is sent once more
+ok 277 - SO-3 concurrent refusals share one renewal, and each request is sent once more
+  ---
+  duration_ms: 413.425
+  type: 'test'
+  ...
+# Subtest: SO-3 the sign-in changes while a renewal is on its way: nothing is sent again
+ok 278 - SO-3 the sign-in changes while a renewal is on its way: nothing is sent again
+  ---
+  duration_ms: 726.54
+  type: 'test'
+  ...
+# Subtest: SO-4 an expired session whose renewal is refused: the form, and signing in again works without clearing anything
+ok 279 - SO-4 an expired session whose renewal is refused: the form, and signing in again works without clearing anything
+  ---
+  duration_ms: 519.3609
+  type: 'test'
+  ...
+# Subtest: SO-5 Sign out in the game when the server's sign-out fails with 500: signed out on this device anyway
+ok 280 - SO-5 Sign out in the game when the server's sign-out fails with 500: signed out on this device anyway
+  ---
+  duration_ms: 1072.6041
+  type: 'test'
+  ...
+# Subtest: SO-5 Sign out in the game when the server's sign-out drops the connection: signed out on this device anyway
+ok 281 - SO-5 Sign out in the game when the server's sign-out drops the connection: signed out on this device anyway
+  ---
+  duration_ms: 1134.9132
+  type: 'test'
+  ...
+# Subtest: SO-5 Sign out in the game when the server's sign-out never answers: signed out on this device anyway
+ok 282 - SO-5 Sign out in the game when the server's sign-out never answers: signed out on this device anyway
+  ---
+  duration_ms: 6468.5991
+  type: 'test'
+  ...
+# Subtest: SO-5 the gate's Sign out when the server refuses it: the form
+ok 283 - SO-5 the gate's Sign out when the server refuses it: the form
+  ---
+  duration_ms: 439.8369
+  type: 'test'
+  ...
+# Subtest: SO-6 a 503 at start-up: the gate with Try again, the session kept, and Try again starts the game
+ok 284 - SO-6 a 503 at start-up: the gate with Try again, the session kept, and Try again starts the game
+  ---
+  duration_ms: 318.4692
+  type: 'test'
+  ...
+# Subtest: SO-6 a dropped connection at start-up: the gate with Try again, the session kept, and Try again starts the game
+ok 285 - SO-6 a dropped connection at start-up: the gate with Try again, the session kept, and Try again starts the game
+  ---
+  duration_ms: 335.5771
+  type: 'test'
+  ...
+# Subtest: SO-7 after recovering from an ended session, another account signs in and sees nothing of the first
+ok 286 - SO-7 after recovering from an ended session, another account signs in and sees nothing of the first
+  ---
+  duration_ms: 616.9541
+  type: 'test'
+  ...
+# Subtest: SO-8 two tabs: signing out in one returns the other to the entrance
+ok 287 - SO-8 two tabs: signing out in one returns the other to the entrance
+  ---
+  duration_ms: 792.6314
+  type: 'test'
+  ...
+# Subtest: SO-8 two tabs: signing out in one returns the other to the entrance, when the server refused the sign-out
+ok 288 - SO-8 two tabs: signing out in one returns the other to the entrance, when the server refused the sign-out
+  ---
+  duration_ms: 827.4943
+  type: 'test'
+  ...
+# Subtest: SO-9 at 390x844, after an ended session the form is on screen, reachable by keyboard, with no axe violations
+ok 289 - SO-9 at 390x844, after an ended session the form is on screen, reachable by keyboard, with no axe violations
+  ---
+  duration_ms: 508.2452
+  type: 'test'
+  ...
+# Subtest: SO-9 at 844x390, after an ended session the form is on screen, reachable by keyboard, with no axe violations
+ok 290 - SO-9 at 844x390, after an ended session the form is on screen, reachable by keyboard, with no axe violations
+  ---
+  duration_ms: 476.4334
+  type: 'test'
+  ...
+# Subtest: SO-9 at 1440x900, after an ended session the form is on screen, reachable by keyboard, with no axe violations
+ok 291 - SO-9 at 1440x900, after an ended session the form is on screen, reachable by keyboard, with no axe violations
+  ---
+  duration_ms: 511.1079
+  type: 'test'
+  ...
+# Subtest: SO-9 at 390x844, with a slow sign-out answer, after an ended session the form is on screen, reachable by keyboard, with no axe violations
+ok 292 - SO-9 at 390x844, with a slow sign-out answer, after an ended session the form is on screen, reachable by keyboard, with no axe violations
+  ---
+  duration_ms: 2027.3051
+  type: 'test'
+  ...
+# Subtest: SO-13 this tab: a hung sign-out falls back, the player signs in again, and the late answer clears nothing
+ok 293 - SO-13 this tab: a hung sign-out falls back, the player signs in again, and the late answer clears nothing
+  ---
+  duration_ms: 7189.6992
+  type: 'test'
+  ...
+# Subtest: SO-13 compare before removing: a session saved by another tab while this one's sign-out hangs is left alone
+ok 294 - SO-13 compare before removing: a session saved by another tab while this one's sign-out hangs is left alone
+  ---
+  duration_ms: 7259.0911
+  type: 'test'
+  ...
+# Subtest: SO-13 two tabs: tab A's sign-out hangs while tab B signs in as another account; B's session survives A's late answer
+ok 295 - SO-13 two tabs: tab A's sign-out hangs while tab B signs in as another account; B's session survives A's late answer
+  ---
+  duration_ms: 6402.0349
+  type: 'test'
+  ...
+# Subtest: F-1 proof 1: a renewal is installed with setSession(), with no second renewal, and the new session works
+ok 296 - F-1 proof 1: a renewal is installed with setSession(), with no second renewal, and the new session works
+  ---
+  duration_ms: 2617.2143
+  type: 'test'
+  ...
+# Subtest: F-1 proof 2: a renewal answered with 500 keeps the saved session, and the player can try again
+ok 297 - F-1 proof 2: a renewal answered with 500 keeps the saved session, and the player can try again
+  ---
+  duration_ms: 1132.3594
+  type: 'test'
+  ...
+# Subtest: F-1 proof 2: a renewal answered with 429 keeps the saved session, and the player can try again
+ok 298 - F-1 proof 2: a renewal answered with 429 keeps the saved session, and the player can try again
+  ---
+  duration_ms: 1160.1937
+  type: 'test'
+  ...
+# Subtest: F-1 proof 2: a renewal answered with an unknown 400 code keeps the saved session, and the player can try again
+ok 299 - F-1 proof 2: a renewal answered with an unknown 400 code keeps the saved session, and the player can try again
+  ---
+  duration_ms: 1138.8855
+  type: 'test'
+  ...
+# Subtest: F-1 proof 2: a renewal answered with a dropped connection keeps the saved session, and the player can try again
+ok 300 - F-1 proof 2: a renewal answered with a dropped connection keeps the saved session, and the player can try again
+  ---
+  duration_ms: 1167.7394
+  type: 'test'
+  ...
+# Subtest: F-1 proof 2: only refresh_token_not_found ends the session
+ok 301 - F-1 proof 2: only refresh_token_not_found ends the session
+  ---
+  duration_ms: 713.74
+  type: 'test'
+  ...
+# Subtest: F-1 proof 5: a late renewal after a new session of the same account installs nothing and sends nothing again
+ok 302 - F-1 proof 5: a late renewal after a new session of the same account installs nothing and sends nothing again
+  ---
+  duration_ms: 849.594
+  type: 'test'
+  ...
+# Subtest: F-1 proof 5: a late renewal after a sign-out installs nothing and sends nothing again
+ok 303 - F-1 proof 5: a late renewal after a sign-out installs nothing and sends nothing again
+  ---
+  duration_ms: 848.4237
+  type: 'test'
+  ...
+# Subtest: F-1 proof 6: the library's own renewal at the same moment leaves a working session of the same sign-in
+ok 304 - F-1 proof 6: the library's own renewal at the same moment leaves a working session of the same sign-in
+  ---
+  duration_ms: 941.3601
+  type: 'test'
+  ...
+# Subtest: F-1 proof 4: refusals in two tabs at once share one renewal across the browser
+ok 305 - F-1 proof 4: refusals in two tabs at once share one renewal across the browser
+  ---
+  duration_ms: 771.6316
+  type: 'test'
+  ...
+# Subtest: F-1 fixture: every fake access token is distinct, even two of one session in the same second
+ok 306 - F-1 fixture: every fake access token is distinct, even two of one session in the same second
+  ---
+  duration_ms: 1.2313
+  type: 'test'
+  ...
+# Subtest: F-3 a late refresh_token_not_found for S1, after S2 of the same account was signed in, leaves S2 signed in and working
+ok 307 - F-3 a late refresh_token_not_found for S1, after S2 of the same account was signed in, leaves S2 signed in and working
+  ---
+  duration_ms: 1923.494
+  type: 'test'
+  ...
+# Subtest: F-3 endSession() for S1 when S2 is saved ends nothing
+ok 308 - F-3 endSession() for S1 when S2 is saved ends nothing
+  ---
+  duration_ms: 1236.8106
+  type: 'test'
+  ...
+# Subtest: F-4 another tab signs in (S2) while S1's renewal is being installed: S1's renewal is not saved over S2
+ok 309 - F-4 another tab signs in (S2) while S1's renewal is being installed: S1's renewal is not saved over S2
+  ---
+  duration_ms: 2064.4627
+  type: 'test'
+  ...
+# Subtest: F-4 Sign out while a renewal's setSession() is pending (before the time limit): signed out, and the renewal is not reinstalled
+ok 310 - F-4 Sign out while a renewal's setSession() is pending (before the time limit): signed out, and the renewal is not reinstalled
+  ---
+  duration_ms: 2776.1314
+  type: 'test'
+  ...
+# Subtest: F-4 Sign out while a renewal's setSession() is pending (after the time limit): signed out, and the renewal is not reinstalled
+ok 311 - F-4 Sign out while a renewal's setSession() is pending (after the time limit): signed out, and the renewal is not reinstalled
+  ---
+  duration_ms: 7348.1458
+  type: 'test'
+  ...
+# Subtest: F-5 tab A signs out S1; while its sign-out is on its way, tab B signs in as S2; A's sign-out then succeeds: S2 stays signed in and working
+ok 312 - F-5 tab A signs out S1; while its sign-out is on its way, tab B signs in as S2; A's sign-out then succeeds: S2 stays signed in and working
+  ---
+  duration_ms: 3112.5081
+  type: 'test'
+  ...
+# Subtest: F-5 after a normal sign-out the guard is lifted: signing in again and out again in the same tab works
+ok 313 - F-5 after a normal sign-out the guard is lifted: signing in again and out again in the same tab works
+  ---
+  duration_ms: 1323.2373
+  type: 'test'
+  ...
+1..313
+# tests 313
+# suites 0
+# pass 312
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 625546.7612

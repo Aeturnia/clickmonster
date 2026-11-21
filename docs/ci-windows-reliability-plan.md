@@ -290,3 +290,39 @@ So on the laptop, the suite's `TIME_WAIT` entries peaked at a number equal to ab
    - **Machine-wide counts rising while loopback stays flat:** pressure from outside the harness.
 
    Neither outcome by itself identifies a fix.
+
+### 8.4 M4: the first failure with M2 running (2026-11-21)
+
+**The run:** `44929807369`, PR #70's CI, at its merge commit `23ae180`. Runner image `win25-vs2026 20261116.315.1`, on a **4-core, 16 GB** runner.
+
+**The failure:**
+- **The test:** `the entrance has no axe violations at phone, landscape, tablet and desktop sizes, signing in and resuming` (`entrance.test`, test 21 of 27; test 102 of the run).
+- **The cause:** `GET http://127.0.0.1:<port>/` failed with **`net::ERR_NO_BUFFER_SPACE`**, 28 ms into a new context, at about 17:27:36.7 UTC. This time it was in the job log too.
+- **No other signs:** no page errors. Machine CPU 65.9%, 13.4 GB free.
+
+The evidence is kept in `docs/ui-audit/ci-m4/`.
+
+**The runner changed.** Since the repository was made public (2026-11-20), the browser job has run on **4-core, 16 GB** runners. Before, the private repository's runners had 2 cores and 8 GB, as M0's metrics recorded. The fault occurs on the larger runner too.
+
+**Against three passing runs with M2, at the same point** (the start of the same test, 3.3 to 3.6 minutes into each run):
+
+| | Failing run | Passing runs |
+| --- | --- | --- |
+| Harness connections opened in the run so far (M1) | 762 | 762, 759, 762 |
+| Loopback `TimeWait`, the samples in the 60 s before | 440 to 502 | 384 to 498 |
+| Machine-wide connections, the same samples | 521 to 582 | 475 to 565 |
+| `CloseWait` | 0 to 2 | 0 to 2 |
+| Loopback `TimeWait`, the whole run's peak | 627 | 571 to 585 |
+| Dynamic TCP port range | 16,384 | 16,384 |
+
+**What this shows:**
+- **No difference in the TCP table before the failure.** In the minute before, the runner's counts were the same as in passing runs at the same point. That holds for connection entries by state, machine-wide and loopback, and for the harness's connections.
+- **About 3% of the dynamic range,** rising slowly, the same as in the passing runs.
+- **No accumulation:** the failure came 3.3 minutes into the run, at test 102.
+- **Not a small runner:** it happened with 4 cores and 13.4 GB free.
+
+**What it doesn't show:**
+- **Exhaustion between samples:** the samples are about 5 s apart, so a burst lasting under a second wouldn't show. The counts don't move much between samples, though (by about 25).
+- **Other kernel resources:** `TimeWait` counts aren't a measure of port occupancy (section 8.2), and kernel buffers and non-paged pool aren't measured at all.
+
+**So:** H1 (ephemeral ports in `TIME_WAIT`), as sustained exhaustion, is now much weaker. It was weak for this run in particular: the counts were normal, and two measurements agree, M1 for the harness and M2 for the operating system. The remaining candidates are H4 and H5 in section 3: Windows socket allocation, kernel resources, or something about the runner. Neither measurement here identifies which. **No change is proposed on this evidence.**
