@@ -55,8 +55,11 @@ test('LAC-15 the entrance shows the latest three published articles after the fo
   assert.equal(await page.getAttribute('#news .e-news-all a', 'href'), '/news');
   const order = await page.evaluate(() => [...document.querySelectorAll('#entry .e-wrap > *')].map((e) => e.id || e.className));
   assert.ok(order.indexOf('news') > order.findIndex((c) => String(c).includes('e-gate')), 'after the sign-in panel in reading order');
+  // Since MR-B2: "Skip to sign in" first (B2-2), then Enter reaches the email field.
   await page.keyboard.press('Tab');
-  assert.equal(await page.evaluate(() => document.activeElement.id), 'email', 'sign-in is still the first stop');
+  assert.equal(await page.evaluate(() => document.activeElement.className), 'e-skip', 'the skip link is still the first stop');
+  await page.keyboard.press('Enter');
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'email', 'and sign-in is one step away');
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   await noAxe(page, 'entrance with news, phone');
   await ctx.context.close();
@@ -110,6 +113,7 @@ test('Q5 maintenance: one line near the form while upcoming or under way; gone o
       assert.match((await page.textContent('#maint')).replace(/\s+/g, ' '), pattern, label);
       assert.equal(await page.getAttribute('#maint a', 'href'), '/news/server-maintenance');
       await page.keyboard.press('Tab');
+      await page.keyboard.press('Enter'); // "Skip to sign in" (MR-B2, B2-2)
       assert.equal(await page.evaluate(() => document.activeElement.id), 'email', `${label}: the form is still first`);
       await noAxe(page, `maintenance line, ${label}`);
     }

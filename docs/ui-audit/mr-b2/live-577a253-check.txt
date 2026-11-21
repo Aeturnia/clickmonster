@@ -1,0 +1,48 @@
+# node tools/public-pages-check.mjs https://monstraregna.com
+# main at 577a253 (PR #57 merged), published by Netlify; read-only GET requests; 2026-11-19T23:04:48Z
+/                            {"status":200,"location":null,"csp":"none","canonical":null,"menu":true,"footer":true}
+/guide                       {"status":200,"location":null,"csp":"no-script policy","canonical":"https://monstraregna.com/guide","menu":true,"footer":true}
+/guide/                      {"status":301,"location":"/guide","csp":"none","canonical":null,"menu":false,"footer":false}
+/leaderboard                 {"status":200,"location":null,"csp":"no-script policy","canonical":"https://monstraregna.com/leaderboard","menu":true,"footer":true}
+/leaderboard/                {"status":301,"location":"/leaderboard","csp":"none","canonical":null,"menu":false,"footer":false}
+/contact                     {"status":200,"location":null,"csp":"no-script policy","canonical":"https://monstraregna.com/contact","menu":true,"footer":true}
+/contact/                    {"status":301,"location":"/contact","csp":"none","canonical":null,"menu":false,"footer":false}
+/news                        {"status":200,"location":null,"csp":"no-script policy","canonical":"https://monstraregna.com/news","menu":true,"footer":true}
+/news/under-construction     {"status":200,"location":null,"csp":"no-script policy","canonical":"https://monstraregna.com/news/under-construction","menu":true,"footer":true}
+
+18 problem(s):
+- /guide/: status is 301, expected 200
+- /guide/: location is "/guide", expected null
+- /guide/: csp is "none", expected "no-script policy"
+- /guide/: canonical is null, expected "https://monstraregna.com/guide"
+- /guide/: menu is false, expected true
+- /guide/: footer is false, expected true
+- /leaderboard/: status is 301, expected 200
+- /leaderboard/: location is "/leaderboard", expected null
+- /leaderboard/: csp is "none", expected "no-script policy"
+- /leaderboard/: canonical is null, expected "https://monstraregna.com/leaderboard"
+- /leaderboard/: menu is false, expected true
+- /leaderboard/: footer is false, expected true
+- /contact/: status is 301, expected 200
+- /contact/: location is "/contact", expected null
+- /contact/: csp is "none", expected "no-script policy"
+- /contact/: canonical is null, expected "https://monstraregna.com/contact"
+- /contact/: menu is false, expected true
+- /contact/: footer is false, expected true
+# exit 1
+
+# The slash forms' first responses, with Netlify's cache status (fwd=miss: from the origin, not a stale cache), and where they lead:
+/guide/  HTTP/1.1 301 Moved Permanently
+/guide/  Cache-Status: "Netlify Edge"; fwd=miss; fwd-status=200; stored
+/guide/  Location: /guide
+/guide/  followed: 200 after 1 redirect(s), final https://monstraregna.com/guide
+/leaderboard/  HTTP/1.1 301 Moved Permanently
+/leaderboard/  Cache-Status: "Netlify Edge"; fwd=miss; fwd-status=200; stored
+/leaderboard/  Location: /leaderboard
+/leaderboard/  followed: 200 after 1 redirect(s), final https://monstraregna.com/leaderboard
+/contact/  HTTP/1.1 301 Moved Permanently
+/contact/  Cache-Status: "Netlify Edge"; fwd=miss; fwd-status=200; stored
+/contact/  Location: /contact
+/contact/  followed: 200 after 1 redirect(s), final https://monstraregna.com/contact
+
+# The same check against PR #57's deploy preview (https://deploy-preview-57--clickmonsters.netlify.app) gave the same 301s for the slash forms.

@@ -52,41 +52,68 @@ body.realm, body.creating {
 /* ---------------------------------------------------------------- frame */
 /* Its own scroll container: the game's stylesheet stops the body scrolling. */
 .entry { position: fixed; inset: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+/* The rows are spaced by each item's margin, not the grid's gap, so an area with nothing in it
+   takes no room: "status" is reserved for MR-S1's realm status line (Monstra Regna scope, 4.1),
+   and the news is hidden until there is some. */
 .entry .e-wrap {
   max-width: 68rem; margin: 0 auto;
   padding: max(1.5rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) 2.5rem max(1rem, env(safe-area-inset-left));
-  display: grid; gap: 1.25rem;
-  grid-template-areas: "id" "gate" "about";
+  display: grid; row-gap: 0;
+  grid-template-areas: "id" "nav" "status" "gate" "news" "foot";
 }
+.entry .e-wrap > * { margin-bottom: 1.25rem; }
+.entry .e-wrap > :last-child { margin-bottom: 0; }
 .entry .e-id { grid-area: id; text-align: center; }
+.entry .site-nav { grid-area: nav; }
 .entry .e-gate { grid-area: gate; }
-.entry .e-about { grid-area: about; }
+.entry .e-news { grid-area: news; }
+.entry .site-foot { grid-area: foot; }
 
-/* Side by side when there is room: identity and the realm on the left, the gate on the right.
-   The reading order stays identity, gate, realm. */
+/* Side by side when there is room: the title, the menu and the news on the left, the gate on the
+   right, the footer across. The reading order stays title, menu, gate, news, footer. */
 @media (min-width: 52em) {
   .entry .e-wrap {
     grid-template-columns: minmax(0, 1fr) minmax(20rem, 25rem);
-    grid-template-areas: "id gate" "about gate";
-    grid-template-rows: auto 1fr;
-    column-gap: clamp(2rem, 5vw, 4.5rem); row-gap: 1.75rem;
+    grid-template-areas: "id gate" "nav gate" "status gate" "news gate" "foot foot";
+    grid-template-rows: auto auto auto 1fr auto;
+    column-gap: clamp(2rem, 5vw, 4.5rem);
     padding-top: clamp(2rem, 8vh, 6rem);
     align-items: start;
   }
+  .entry .e-wrap > * { margin-bottom: 1.75rem; }
+  .entry .e-wrap > :last-child { margin-bottom: 0; }
   .entry .e-id { text-align: left; }
+  .entry .site-nav ul { justify-content: flex-start; }
 }
 
-/* ---------------------------------------------------------------- identity */
-.entry .e-kicker {
-  margin: 0 0 .35rem; font-size: .75rem; font-weight: 700; letter-spacing: .16em; text-transform: uppercase;
-  color: var(--muted);
+/* "Skip to sign in": the first Tab stop, shown when focused (entry.js moves focus to whatever the
+   sign-in panel is showing). */
+.entry .e-skip {
+  position: absolute; left: max(1rem, env(safe-area-inset-left)); top: .5rem; z-index: 2;
+  padding: .55rem .9rem; border-radius: 8px; background: var(--surface); border: 1px solid var(--gold);
+  color: var(--gold-soft); font-weight: 600; text-decoration: none;
+  transform: translateY(-200%);
 }
+.entry .e-skip:focus { transform: none; outline: 2px solid var(--focus); outline-offset: 2px; }
+
+/* The public pages' menu and footer (site.js): on the entrance, the news pages and the static
+   pages, which all load this file. */
+.site-nav ul, .site-foot ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; justify-content: center; gap: 0 1.25rem; }
+.site-nav ul { column-gap: clamp(.75rem, 3.5vw, 1.25rem); } /* one line on a 320px phone */
+.site-nav a { display: inline-block; padding: .5rem 0; color: var(--gold); font-weight: 600; text-decoration: none; }
+.site-nav a[aria-current="page"] { color: var(--text); text-decoration: underline; text-underline-offset: .3em; }
+.site-nav a:hover, .site-foot a:hover { text-decoration: underline; }
+.site-nav a:focus-visible, .site-foot a:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 2px; }
+.site-foot { display: flex; flex-wrap: wrap; justify-content: center; align-items: baseline; gap: .25rem 1.25rem; padding-top: 1rem; border-top: 1px solid var(--line); color: var(--muted); font-size: .875rem; }
+.site-foot p { margin: 0; }
+.site-foot a { display: inline-block; padding: .4rem 0; color: var(--gold); font-weight: 600; text-decoration: none; }
+
+/* ---------------------------------------------------------------- identity */
 .entry .e-title {
   margin: 0; font-family: Georgia, "Times New Roman", serif; font-weight: 600;
   font-size: clamp(2.25rem, 1.6rem + 3vw, 3.75rem); line-height: 1.05; letter-spacing: .02em;
   color: var(--gold-soft); text-shadow: 0 2px 18px rgba(220, 174, 76, .18);
 }
-.entry .e-sub { margin: .6rem 0 0; color: var(--muted); font-size: 1rem; }
 .entry .e-id::after {
   content: ""; display: block; width: 7rem; height: 1px; margin: 1.1rem auto 0;
   background: linear-gradient(90deg, transparent, var(--gold), transparent);
@@ -176,17 +203,6 @@ body.realm, body.creating {
 .entry .e-actions { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; }
 .entry .e-actions .e-btn { margin-top: .9rem; }
 
-/* ---------------------------------------------------------------- the realm */
-.entry .e-about { color: var(--muted); max-width: 40rem; margin: 0 auto; }
-.entry .e-about .e-h { color: var(--text); font-size: 1.125rem; margin-bottom: .5rem; }
-.entry .e-about p { margin: 0 0 .75rem; }
-.entry .e-points { margin: 0; padding: 0; list-style: none; display: grid; gap: .55rem; }
-.entry .e-points li { position: relative; padding-left: 1.1rem; }
-.entry .e-points li::before {
-  content: ""; position: absolute; left: 0; top: .62em; width: .4rem; height: .4rem;
-  border: 1px solid var(--gold); transform: rotate(45deg);
-}
-@media (min-width: 52em) { .entry .e-about { margin: 0; } }
 
 /* ---------------------------------------------------------------- arriving in the game */
 /* The game rises into place as the entrance gives way (transform only: fading text would fail

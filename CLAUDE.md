@@ -31,7 +31,12 @@ Read these first:
     - **What it covers:** the entrance's news and maintenance line (`js/entry-news.js`, loaded after the first paint) and the article pages (`netlify/edge-functions/news.js`).
     - **Findings:** L4-01 (the maintenance notice expires while the page is open), L4-02 (405 headers) and L4-03 (an open-ended notice under way comes first) are closed.
   - **Final baseline** on `main` at `d754dad`: engine 47/47 and browser 178/178, in each of 3 runs.
-  - **The entrance's startup budget** (LAC-2) is 34,000 decoded bytes: revised to 32,000 in the L-4 review, then to 34,000 by the owner for password recovery (2026-11-17). It is 33,987 with R-1, and 33,989 with MR-B1's rename ("Monstra Regna" is one character longer, in the title and the heading). Don't strip comments to meet it.
+  - **The entrance's first paint** is under MR-B2's performance contract (`docs/monstra-regna-scope.md`, 4.5), which replaced LAC-2's hard limit (32,000, then 34,000):
+    - **the tripwire:** at most 48,000 decoded bytes, failing CI;
+    - **the review threshold:** above 40,000, the milestone's report explains the increase;
+    - **hard checks:** at most 3 requests before the form, no game code for an anonymous visitor, and the news after the first paint.
+
+    It is 35,620 with MR-B2. Don't strip comments to meet it.
   - **Still open:**
     - the backlog's release checks: before release, sign-in on the live site and unpublishing; after release, the live maintenance line and the rest;
     - `/news` pagination (a follow-up);
@@ -45,9 +50,43 @@ Read these first:
     - **Accepted:** CI-A and CI-1a are complete; the record was merged as PR #42 (`a0d5629`).
     - **Required checks** are ready for the owner to configure: `engine`, `browser` and `database`, on PRs into `main` (Q2). Don't change branch protection yourself.
   - **Not authorized:** parts 2 and 3.
-- **MR-B1, identity and domain** (`docs/monstra-regna-scope.md`, section 3), authorized by the owner on 2026-11-18. The implementation PR is cutover step 1 only: the rename and `SITE_ORIGIN`, **without** the old-address redirect. See `docs/monstra-regna-b1-report.md`.
-  - **Step 2** (Supabase Auth URLs) was done early by the owner. **Steps 3–7** are the owner's, or need authorization, after the merge; the redirect is its own commit, merged only after steps 1–4 are verified.
-  - **MR-B2 and MR-S1** each need their own authorization.
+- **MR-B1, identity and domain** (`docs/monstra-regna-scope.md`, section 3), authorized by the owner on 2026-11-18. See `docs/monstra-regna-b1-report.md`.
+  - **Step 1 (the rename and `SITE_ORIGIN`, without the redirect) is complete:** merged as PR #48 (`ea2e4a4`) after independent review and green CI.
+  - **Step 2** (Supabase Auth URLs) was done early by the owner; it is recorded as such, not independently inspected.
+  - **Step 3: the applicable checks passed** under the current production authentication configuration (owner-reported, 2026-11-18): session kept and the reset link worked end to end on `monstraregna.com`. **Sign-up confirmation was not performed:** email confirmation is off in production (since the first setup). It is deferred until email confirmation and delivery are separately authorized and configured; don't enable it as part of other work.
+  - **Step 4 passed** (2026-11-18): titles, manifest, and news canonical and `og:url` on `monstraregna.com`, checked by the owner and independently by authorized read-only requests.
+  - **Next gate: the announcement (QB-2)**, published by the owner before the redirect; then the redirect PR (step 5), which needs its own go-ahead. Don't open or merge the redirect (prepared on `claude/mr-b1-redirect`, `b00a5c7`), and don't touch the Supabase allow-list, without authorization.
+  - **MR-B2, the homepage and navigation,** was authorized on 2026-11-19. See `docs/monstra-regna-b2-report.md`.
+    - **The milestone** merged as PR #56 (`1679855`).
+    - **Its routing correction** merged as PR #57 (`577a253`) and is live.
+    - **Accepted (2026-11-19)** under the revised canonical-address contract: the closing record merged as PR #60 (`9e788c3`), report section 7.5.
+    - **The `netlify.toml` cleanup** (section 7.6) is at its own review gate.
+    - **What it adds:** "Skip to sign in", the site menu (Home, Guide, Leaderboard, Contact), a footer on every public page, and the static pages `/guide`, `/leaderboard` and `/contact`.
+    - **Not yet:** Discord waits for a permanent invite (D9); Privacy and Terms wait for the legal milestone (D7).
+  - **MR-S1** needs its own authorization.
+- **Gameplay polish: complete** (2026-11-19). Scope `docs/gameplay-polish-scope.md` (PR #50, `cc736b5`; amendment 1 in its section 14, PR #52, `99357cb`). GP-1 was merged as PR #51 (`9fb022a`) and the `game` function redeployed (version 13); the owner's live check passed. See `docs/gameplay-polish-report.md`, section 10.
+  - **The fixes:**
+    - A: the XP cue plays once;
+    - B: numbers on the bars;
+    - C: only the current round shows;
+    - D: the outcome is shown once;
+    - E: a mastery gain is shown once, under its round;
+    - F1: a native monster drop-down;
+    - F2: no roaming monsters on a town tile.
+  - **Amendment 1:**
+    - "+XP" and gold changes float over the hero bar;
+    - two-line meters span the bar (an iPhone WebKit fix);
+    - no HP bars on the fight screen, except a world boss's Shared HP.
+  - **F2 is a game rule in the shared engine,** enforced by the live server since the redeploy.
+  - **Follow-ups:** the phone-landscape tabs below the screen's edge, and the Windows runner's `ERR_NO_BUFFER_SPACE` (`docs/backlog.md`).
+- **P1: sign-out on one device locks another out** (found 2026-11-19, live).
+  - **Scope:** `docs/sign-out-scope.md`, PR #53 (`bfad9b3`), with two amendments decided at review gates.
+  - **Delivered and resolved.** See `docs/sign-out-report.md`, section 22.
+    - **Merged** as PR #55 (`e1ffa43`, 2026-11-19).
+    - **The `game` function** was redeployed as version 14.
+    - **The owner confirmed** the lockout resolved on 2026-11-20.
+  - **A separate two-device check's results** are not recorded.
+  - **The CI work after it** was on tests, the fake backend and the runner (PRs #58, #59, #62, #63, #65; the plan in #64), not on this fix.
 - **Development moved to the owner's Windows laptop.** `npm run deploy:functions` now runs from any shell (PR #15) and needs `SUPABASE_ACCESS_TOKEN` set in the environment.
 - **Don't start another milestone, or make gameplay or server changes,** until the owner approves it.
 - **Release verification** is in `docs/backlog.md`. The owner split it on 2026-11-14, because there aren't the resources to test every device before release.
@@ -89,6 +128,8 @@ Read these first:
 
 ## Hard constraints
 
+- **Signing out never depends on the server** (`docs/sign-out-scope.md`, 5.5). The browser must always be able to discard its own saved session and return to the sign-in form, whatever the server answers or however long it takes. The server stays authoritative on whether a session is valid. Every change to sign-in or sign-out keeps this; `tests/ui/sign-out.test.mjs` (SO-5, SO-8, SO-13) tests it.
+
 - **Vanilla JS, no build.** No production dependencies; dev dependencies only with a justification (Playwright 1.63.0 and axe-core 4.10.2 are pinned).
 - **Unchanged unless the task is explicitly about them:** game rules, database schema, API contracts and moderation consequences. UI work is client-only.
 - **The server is authoritative.** Client checks only explain the rules (for example, the moderator 7-day sanction limit); never rely on hiding a control for security.
@@ -113,7 +154,19 @@ Read these first:
   - **Failures stay separate.** If the library, Supabase, the game's code or the first `state` call fails, the entrance stays with a message. A module that failed to load stays failed for the page, so Try again reloads in that case.
   - **Account isolation in `main.js`** (L-1 review, L1-01 and L1-02). Per-account UI state comes from `freshUi()`, and `stop()` replaces it. Every `start()` and `stop()` advances `gameGen`. Anything that awaits (an action in `runRemote()`, `loadBoard`, `refreshPlayers`, `loadHunts` and the other reads) records `gameGen` first and drops its result unless `live(g)`. New async game code must do the same.
   - **The entrance's CSS never reads `data-layout`.** Its colour tokens copy `style.css` `:root`, and `tests/entrance-files.test.mjs` checks they match.
-- **The Supabase client:** `net.js` owns the one client. `client()` loads `vendor/supabase-js@2.45.4/supabase.js` (Supabase's UMD build, byte-identical to the npm package; hashes and update steps in `public/vendor/README.md`) and creates the client once. `sb` is a live binding, and `signOut()` marks a player's own sign-out. Nothing else may call `createClient`. The admin console uses `await client()`.
+- **The Supabase client:** `net.js` owns the one client. `client()` loads `vendor/supabase-js@2.45.4/supabase.js` (Supabase's UMD build, byte-identical to the npm package; hashes and update steps in `public/vendor/README.md`) and creates the client once. `sb` is a live binding. Nothing else may call `createClient`. The admin console uses `await client()`.
+- **Signing out and refused sessions** (`net.js`; `docs/sign-out-report.md`):
+  - **`signOut()` and `endSession()`** end this device's session only (`scope: 'local'`), with a 5 s limit. If the library errs, runs out of time or leaves a session saved, they remove `clickmonster.auth` themselves (only if it is still the session being ended), keep the message in `sessionStorage` (`clickmonster.note`) and reload. `signOut()` is the player's own; `endSession()` says "Your session has ended".
+  - **Other tabs** follow a removed session through a `storage` listener.
+  - **`api(action, args, isCurrent)`:** on a 401 from `game`, one renewal, then the request once more, only if the sign-in is unchanged (`err.stale` otherwise).
+    - **The renewal is net.js's own request,** not `refreshSession()`: the library would itself remove the session on a 500 or 429. It runs one at a time, with a lock across tabs, and is installed with `setSession()`.
+    - **Only `refresh_token_not_found` ends a session** (`err.ended`, with `err.session`), and only while the browser still holds that session. A 429 backs off; anything else keeps the session.
+    - **The library saves and removes through a guard** (its `storage` option). A renewal being installed is refused at the save, and the session's removal during this tab's sign-out is refused, if the browser no longer holds that session. Both happen inside the library's lock, before anything is announced. A late result of one session never overwrites, ends or removes a newer one, even of the same account.
+    - **`endSession(expected)`** ends only that session.
+    - **Nothing else is retried.**
+    - **The library's own background renewal** still discards a session on a 500 or 429 (backlog).
+  - **The server:** the `game` function answers 401 only when `sessionFailure()` (`engine/session.js`) says "ended", and 503 otherwise. Its list comes from GoTrue's measured answers (`tests/session-answers.mjs`).
+  - **Watch out:** supabase-js reports GoTrue's `session_not_found` as `AuthSessionMissingError`, not as an `AuthApiError`, and its own `signOut()` then keeps the saved session.
 - **Game UI** is `public/js/main.js`:
   - `render()` paints regions with `paint(id, html)`, which keeps focus by key (`focusKey`: `id` or `data-a` + `data-v`).
   - Actions go through one delegated click handler. `handleLocal` covers view-only actions; `remoteCall`/`runRemote` call the server.
@@ -128,6 +181,16 @@ Read these first:
   - A shortcut presses the existing button, and `markShortcuts()` adds `aria-keyshortcuts` after every render.
   - The off setting is `prefs.keys`.
   - The keydown handler checks `defaultPrevented` first, so keys that chat already handled are left alone.
+- **The battle log** (gameplay polish C to E) is `logHtml()` in `main.js`, with the rules in `js/log-view.js`.
+  - **What shows:** only the current round. Earlier rounds are a collapsed `<details>`.
+  - **After a reload:** the lines already there are "Before this page loaded (N lines)", never rounds. The round marks exist only in the page (`ui.turnLog`).
+  - **`cardLine()`** hides, from the finished round, the rewards and losses its outcome card lists. It is presentation only: `char.battle.log` is never changed.
+- **Meters** (`meter()`, `fitMeters()`) carry their numbers on the bar. `fitMeters()` picks the full, short (`.compact`) or stacked (`.stack`) form after each render. It measures each part's own text width, not its box, because WebKit keeps a stale box width after the switch. On two lines, the label and the numbers span the bar. The hero bar is three paint regions (`hud-row`, `hud-hp`, `hud-xp`), so a regeneration tick doesn't recreate the XP meter.
+- **Gold and XP cues** (`showCues()`, `floatCue()`) are created once per change, directly in `#top`, which redraws never replace, and removed after 1.6 s (`CUE_MS`). They take no space in the hero bar. Tests read them through the harness's `watchCues()`.
+- **The fight screen** has no HP bars except a world boss's Shared HP. Each side has a strip (`.side-fx`) where `floatText()` puts the damage numbers, clear of the names.
+- **The monster drop-down** (`#mon-select`) is marked `data-keep`. `paint()` leaves such an element in place when the new HTML has the same one (`keepInPlace()`), so an open native picker survives redraws.
+  - **The Fight button** has no `data-v`; it reads the drop-down.
+  - **Arrow keys** don't move the hero while a `<select>` has focus.
 - **Chat** is `chat-ui.js`. It draws one chat state into the drawer or the desktop panel (`setMode()`).
   - Each sign-in is a chat session. `stop()` resets everything that belongs to the account. Anything awaited, including Realtime callbacks and confirmations, checks on return that its session is still current.
 - **Admin** is `admin.js` and `admin-zones.js`: grouped navigation with hash routes, `dataTable()`, `field()`, `checkForm`/`validate`/`submitting`, and form values kept across re-renders.
@@ -142,13 +205,25 @@ Read these first:
   - **Production checks:** `supabase/checks/news_precheck.sql` before applying, and `news_verify.sql` after. Both are read-only.
   - **The deploy procedure,** including how the migration history is read and reconciled, is in `docs/landing-l3-report.md`, section 4. Every step needs the owner's authorization.
   - **`tools/news-public-check.mjs`** requires `--published` and `--hidden`.
+- **The public pages' menu and footer** (MR-B2) are defined once, in `public/js/site.js` (`menuHtml()`, `footerHtml()`, `COPYRIGHT_HTML`).
+  - **The news pages** draw them from there.
+  - **`index.html` and the static pages** (`public/guide.html`, `leaderboard.html` and `contact.html`, plain HTML with no script) carry the same markup, and `tests/site-pages.test.mjs` checks they match.
+  - **Each static page is a single file** with a 200 rewrite in `netlify.toml`. Never a directory with an `index.html`: Netlify redirects such a directory's address to its slash form before any rewrite. That happened after MR-B2's first deployment.
+  - **The address contract** (owner, 2026-11-19; report section 7.5):
+    - the canonical, slashless address answers 200 directly;
+    - its slash form answers one 301 to it, from Netlify itself, before any rewrite.
+
+    No `force = true`, and no change to Pretty URLs.
+  - **`tools/public-pages-check.mjs`** checks the live pages read-only, from their first responses. Run it against a routing PR's deploy preview before review (`node tools/public-pages-check.mjs https://deploy-preview-<n>--clickmonsters.netlify.app`), and against the live site after the merge.
+  - **To add a menu item** (Discord, once there is a permanent invite) or a footer link (Privacy and Terms, after the legal milestone): change `site.js`, then each HTML copy.
+  - **Each January,** update the copyright year in `site.js` and its copies.
 - **Public news pages** are the Netlify Edge Function `netlify/edge-functions/news.js`, for `/news` and `/news/<slug>`.
   - **Data:** published rows only, read through the public REST API with the publishable key.
   - **Pages:** no script, a strict policy, `no-store`, and the canonical address from `public/js/site.js` (`SITE_ORIGIN`, which also holds `SITE_NAME`).
   - **Tests:** the handler is tested in Node (`tests/news-pages.test.mjs`), and the harness serves `/news` through it.
   - **The entrance's news** (`js/entry-news.js`) loads only after the first contentful paint, and failures show nothing.
 - **Password recovery: R-1 implemented and accepted,** pending production activation. It was merged as PR #45 (`48be811`, 2026-11-17). See `docs/password-recovery-r1-report.md`; the scope is `docs/password-recovery-scope.md`, PR #44 (`031a026`).
-  - **The startup budget** has only 11 bytes of room (33,989 of 34,000, after MR-B1). Plan for that before touching `entry.js`, `index.html` or `entry.css`.
+  - **The first paint** is 35,620 bytes, against MR-B2's 48,000-byte tripwire and 40,000 review threshold (see above).
   - **The guard** is in `entry.js`, in the first paint. A reset link, its error, a `PASSWORD_RECOVERY` event, or the `clickmonster.recovery` marker for the saved session's user holds the game back: no start and no preload. It is a UI guard, not server-enforced.
   - **The rest** is lazily loaded: `js/entry-recover.js`.
   - **`entry.js` stays the only auth listener;** the module gets sessions through hooks.
@@ -176,9 +251,9 @@ Read these first:
 ## Testing
 
 ```
-npm test                 # engine, entrance file checks, the startup budget, news rules and the news page handler (48)
-npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (202)
-npm run test:db          # database (pgTAP, 42) and API/function/recovery tests (12) on the LOCAL Supabase stack, with Mailpit
+npm test                 # engine, entrance file checks, the first-paint tripwire, the public pages, news rules, the news page handler, the town rule, the log rules and the session rule (71)
+npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (313)
+npm run test:db          # database (pgTAP, 42) and API/function/recovery/session tests (17, plus 1 opt-in) on the LOCAL Supabase stack, with Mailpit
 npx playwright install chromium   # once
 ```
 
@@ -199,9 +274,17 @@ npx playwright install chromium   # once
 - **Cost:** GitHub Pro's $18 a month of shared compute, at $0.006 a minute per job, rounded up per job. Batch fixes into one push.
 - **Failure diagnostics** (`tests/ui/diagnostics.mjs`, CI-A-01) are on in the CI browser job (`UI_DIAGNOSTICS=1`). For each failed test they save a Playwright trace, a screenshot, the DOM and `diag.json` under `tests/ui/artifacts/failures/`, in the failure artifact. Locally, run `UI_DIAGNOSTICS=1 npm run test:ui` to get the same. They only record; they never change a result.
   - **Every test** also writes resource measurements (duration, Node event-loop delay and CPU, machine CPU, memory) to `tests/ui/artifacts/metrics/`. CI uploads them on every run as `browser-metrics-attempt-<n>`.
+  - **Connection and context counters** (`docs/ci-windows-reliability-plan.md`, M1 and M3) are in the same lines:
+    - **per test:** the harness server's TCP connections opened and closed, how many were open at the end, the most open at once, and contexts created and still open;
+    - **per file:** a summary line when its last test ends, and another at process exit.
+
+    They only count, and change no connection behaviour.
+  - **The runner's TCP table** (M2, `tools/ci-tcp-sampler.ps1`): the browser job samples it about every 5 to 6 s (a 5 s pause after each sample), as aggregate counts by state, machine-wide and loopback. It also takes snapshots, with the dynamic port range, before and after. The results go in the `browser-tcp-attempt-<n>` artifact.
+    - **The steps** are `continue-on-error`, and the test step is unchanged, so they can't change its result.
+    - **Correlating:** the metrics lines' `endedAt` (UTC) line up with the samples' `t`. `docs/ci-windows-reliability-plan.md`, section 8.3, says how to read them with a failure.
   - **The trace has no screenshots,** to reduce load on the two-core runner. `UI_TRACE_SCREENSHOTS=1` turns them back on, for comparison only.
   - **Reading the event-loop delay on Windows:** an idle process reads about 31 ms.
-- **The startup budget** is now a test (`tests/entrance-budget.test.mjs`): the document plus every stylesheet and script `index.html` loads, counted as LF, at most 34,000 bytes.
+- **The first paint** is a test (`tests/entrance-budget.test.mjs`): the document plus every stylesheet and script `index.html` loads, counted as LF. At most 48,000 bytes (MR-B2's tripwire); above 40,000 is reported.
 
 **The local Supabase stack** (landing L-3) runs in Docker Desktop. The pinned CLI is a dev dependency.
 - **Start it:**
@@ -214,11 +297,11 @@ npx playwright install chromium   # once
 - **Memory:** on the owner's laptop (about 8 GB for Docker), don't run the browser suite while the stack is running. In L-3, the two together starved the browsers and the run was stopped. Stop the stack (`npx supabase stop`) before `npm run test:ui`.
 - **The functions run too,** at `127.0.0.1:54321/functions/v1/<name>`. The CLI mounts each imported file when the stack starts, so after adding or moving a shared file, stop and start the stack.
 
-**`tests/ui/harness.mjs`** answers every Supabase request with a fake backend built on the real engine. Any other host fails the test. supabase-js comes from `public/vendor/`; the CDN module is allowed only when `UI_PUBLIC_DIR` points at another checkout, which may be older code, and is cached in `tests/ui/.cache`. It provides:
+**`tests/ui/harness.mjs`** serves `public/` as Netlify does, as far as the tests need: a file first; then a directory's address without its slash redirected (301) to the slash form; then an address with a slash, where `x.html` exists, redirected (301) to `/x`; then `netlify.toml`'s 200 rewrites; then `x.html` for `/x`. It is a limited model: the live check is the authority for Netlify's routing. It answers every Supabase request with a fake backend built on the real engine. Any other host fails the test. supabase-js comes from `public/vendor/`; the CDN module is allowed only when `UI_PUBLIC_DIR` points at another checkout, which may be older code, and is cached in `tests/ui/.cache`. It provides:
 - **`FakeBackend({ hero, players, chat, events, zones, quests, reports, worldEvents, activeHunts })`**. Its admin actions write the audit log and refuse repeats the way `supabase/functions/admin/index.ts` does, so a duplicate request shows up as a duplicate audit entry (`backend.adminData().log`). Keep it in step when server behaviour changes. It also provides `failNext(action, status, msg)`, `hold(action)` (returns a release function) and `broadcast()` for Realtime. Recorded `calls` and `unexpected` requests are available for assertions.
 - **Test accounts:** `ACCOUNTS.player`, `admin`, `mod` (a moderator) and `fresh`.
-- **Auth:** `savedSession(acct, expiresIn)` builds a stored session to seed `localStorage` (a negative `expiresIn` gives an expired one). Refresh tokens are `refresh-<id>`; add one to `backend.revoked` to make the server refuse it. `backend.authCalls` lists the grant types requested, and `/auth/v1/signup` answers as with email confirmation on.
-- **Fixtures:** `makeHero()`, `bigZone(n)`, `fixedQuest()`, `ADMIN_CHAT`/`ADMIN_REPORTS`.
+- **Auth:** `savedSession(acct, expiresIn)` builds a stored session to seed `localStorage` (a negative `expiresIn` gives an expired one). Every access token is distinct (a `jti` counter). Refresh tokens are `refresh-<id>`; add one to `backend.revoked` to make the server refuse it. `backend.staleTokens = n` refuses the next n game calls, for one request at a time. For concurrent refusals, use `backend.expireIssuedTokens({ together: n })`: it refuses by token, answers the first n refusals together, and records `backend.tokenLog`. `backend.authCalls` lists the grant types requested, and `/auth/v1/signup` answers as with email confirmation on.
+- **Fixtures:** `makeHero()`, `bigZone(n)`, `townLairZone()` (a lair on the town tile), `fixedQuest()`, `ADMIN_CHAT`/`ADMIN_REPORTS`. `makeHero()` stands in Bramblebrook's village (5, 5), where no roaming monsters can be fought (F2): tests that fight use `makeHero({ y: 4 })` or step north first, and choose with `#mon-select`.
 - **Keyboard:** `fakeKeyboard()` / `setKeyboard(px, pan)` simulate an iOS-style overlay keyboard.
 - **Navigation and pages:** `adminTab()` opens admin sections on phones. `page.nativeDialogs` records any native dialog.
 

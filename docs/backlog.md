@@ -92,6 +92,53 @@ A separate staging Supabase project is dropped. The live sign-in session above c
 
 ## Follow-ups (not blocking)
 
+- **The sign-in library's own renewals discard a session on a temporary failure** (from the sign-out fix's F-1 review, 2026-11-19; a security-hardening investigation before the public launch).
+  - **What happens:** supabase-js 2.45.4 treats only 502, 503, 504 and "no response" as temporary. On a 500 or 429 during a renewal it starts itself, it removes the saved session and signs the player out. That covers its background renewal (`autoRefreshToken`, about an hour after each sign-in) and a renewal before a request when the device's clock says the token has expired.
+  - **What the sign-out fix covers:** only the renewal after a `game` 401, which is now the client's own (`docs/sign-out-report.md`, section 18).
+  - **To investigate:**
+    - option B, turning off the library's background renewal and renewing in `net.js` the same way;
+    - a newer supabase-js, if it treats these failures differently (a similar report exists upstream, supabase-js issue 2715);
+    - the cross-tab and scheduling risks either brings.
+  - **Not authorized.**
+
+- **A tab's stuck sign-in lock** (F-2 of the sign-out fix's review, 2026-11-19).
+  - **What happens:** the library's renewal, sign-in and sign-out wait for one lock shared by every tab of the site, with no time limit. If one tab's request never finishes, the other tabs' library calls wait behind it.
+  - **What the sign-out fix covers:** a sign-out still clears the session after 5 s, and other tabs follow through the `storage` event.
+  - **To investigate:** whether recovery in the *other* tabs can be made independent of a blocked lock.
+  - **Not authorized.**
+
+- **The `admin` function answers 401 for any sign-in check failure** (from the sign-out scope's review, 2026-11-19; deferred there by decision, Q2).
+  - **What it does:** `supabase/functions/admin/index.ts:672` answers 401 whenever `getUser` gives no user: an ended session, a bad token, or the sign-in service being briefly unreachable. Staff can't tell an outage from a session that has ended.
+  - **The fix:** the same classification as the `game` function's, once that exists (`docs/sign-out-scope.md`, 5.2): 401 only for a definitive refusal, 503 otherwise, from the shared `sessionFailure()` rule.
+  - **Not authorized;** it needs an `admin` redeploy.
+
+- **Sign-out on one device locks another out (P1, a user-facing sign-in recovery defect;** found by the owner on the live site, 2026-11-19). **Resolved:**
+  - **Delivered:** merged as PR #55 (`e1ffa43`), with the `game` function redeployed as version 14.
+  - **Confirmed:** the owner confirmed the defect resolved on 2026-11-20 (`docs/sign-out-report.md`, section 22).
+  - **Not recorded:** a separate two-device check's results.
+  - **Not part of this fix:** the test, fixture and CI items after it.
+
+  The entry is kept as found:
+  - **What happened:** signed in as the same account on a phone and a desktop, the owner signed out on the phone. The desktop then showed "Please sign in again". After a refresh, the entrance showed it again with Try again and Sign out. Try again failed the same way, Sign out did nothing visible, and the sign-in form stayed hidden, so no account could sign in on that browser. The phone kept working.
+  - **Not GP-1's:** it is in the entrance and `net.js`, and existed before GP-1.
+  - **Its own scope,** for independent review before any implementation: `docs/sign-out-scope.md`, PR #53.
+
+- **Phone landscape: the tabs below the screen's edge** (from GP-1's iPhone check, 2026-11-18; the owner chose to record it as a follow-up rather than change GP-1).
+  - **What the owner saw:** on an iPhone turned to landscape, on PR #51's deploy preview, the tabs (Explore, Hero, Gear, Map) were below the screen's edge. Resizing brought them into view, but then the browser's tab bar covered the hero bar.
+  - **The cause, measured in Chromium at 844 px wide:**
+    - In landscape the game uses the two-column layout. The right-hand column stacks the hero bar, the chat bar, the actions and the tabs, and nothing in it scrolls. When the column is taller than the visible height, the tabs fall off the bottom.
+    - Resizing shows them by moving the whole page up, which is why the hero bar went under the browser's tab bar.
+  - **It existed before GP-1, and GP-1 makes it worse.**
+    - At this column's width (about 300 px), the HP and XP bars sit one above the other. GP-1's bars carry their numbers and are taller, so the hero bar went from 65 px to 83 px.
+    - At 300 px of visible height, the tabs are 15 px off-screen while exploring before GP-1, and 34 px with it; in a fight, 0 px before and 7 px with it. At 340 px everything fits on both.
+    - On the phone, the home bar's space at the bottom (about 21 px, which the test browser doesn't have) and the browser's toolbars leave less height than that.
+  - **A possible fix, not scoped:**
+    - on short landscape screens, keep the HP and XP bars side by side, with the slimmer 1rem bar the gameplay polish scope already allows for a compact hero bar;
+    - and let the action area scroll when the column still doesn't fit, so the hero bar and the tabs always stay on screen.
+
+    Test at 844 × 300, exploring and in a fight; then check on the owner's iPhone, since the test browser can't reproduce its toolbars or the home bar's space.
+  - **This is not authorized:** neither the fix nor a scope for it.
+
 - **Cross-platform fonts and responsive layout** (from CI-A, 2026-11-14).
   - **What happened:** CI-A's first run (`43638208611`) ran the browser suite on Ubuntu, and five existing layout assertions failed. The browser job now runs on Windows by the owner's exception (`docs/ci-scope.md`, section 10). The Linux results stand, recorded in `docs/ci-a-report.md`.
   - **The likely cause** is Linux font metrics, but it isn't established. The game's stack is `system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`, and the thresholds were set with Segoe UI.
@@ -103,6 +150,135 @@ A separate staging Supabase project is dropped. The live sign-in session above c
     - the admin content starting at 278px on a phone, against at most 250.
   - **Keep the tests:** the thresholds and assertions stay as they are. Any fix is to the layout, not the tests, and only once scoped.
   - **This is not authorized:** neither a CSS change nor the investigation as a milestone.
+
+- **An intermittent timeout in `PR-4a a second tab with the saved session also shows the form`** (`tests/ui/password-recovery.test.mjs`): **cause found, a race in the test's setup; corrected in PR #58 (`0029aea`, merged 2026-11-19).**
+  - **The failure:** the second tab's `untilHeading(…, 'Choose a new password')` times out after 15 s.
+  - **Where it happened:**
+    - CI run `44368408591` on PR #50's docs-only commit `2cef100`, Windows (passed on its one re-run);
+    - local run 2 of 3 for GP-1, Linux. Runs 1 and 3 passed, and so did CI on PR #51;
+    - CI run `44596307837` on PR #57 (`4033a94`), Windows, 2026-11-19, the first time with diagnostics. Its failed job was re-run once, as authorized.
+  - **The cause** (from that run's trace):
+    - **The heading comes first.** The first tab shows the reset form from the link alone, before the library has read it. `entry.js` saves the session and the recovery marker only after that, once `/auth/v1/user` answers.
+    - **The test didn't wait for the save.** `arrive()` returned at the heading and the test opened the second tab at once. On the runner, the first tab's library load was slow (machine CPU about 51%), so the second tab loaded about 200 ms before the save. Finding no session, it rightly showed the sign-in form, and never loaded `entry-recover.js`, `net.js` or the library.
+    - **No defect elsewhere:** no page errors, failed requests or runner network faults, and nothing wrong in the application. The criterion is a new tab *with the saved session*, and this tab had none.
+    - **The two earlier failures** had no diagnostics; the same cause is likely but not shown.
+  - **The correction (test only):**
+    - **The wait:** the test now waits, by condition, until the first tab has saved both the session and the marker for this account, then opens the second tab. Its assertions are unchanged.
+    - **The proof:** a second test holds back the first tab's `/auth/v1/user` answer by 2.5 s and checks that nothing is saved when the heading shows. With the old setup it failed 3 of 3 times, with CI's error at the same line. With the correction it passed 3 of 3 times.
+  - **Eight passes in a row locally** (before the cause was known) did not show the test was sound: it depended on the machine's timing.
+- **SO-9 measured the page before the sign-out reload** (`tests/ui/sign-out.test.mjs`): **cause found, a race in the test; corrected in PR #59 (`b4d56ad`, merged 2026-11-19).**
+  - **The failure:** CI run `44634288178` on `main` at `577a253`, Windows, 2026-11-19. `SO-9 at 390x844…` failed: `page.evaluate: Execution context was destroyed, most likely because of a navigation`. The other two sizes passed. The run was not re-run.
+  - **The cause** (from that run's trace and diagnostics):
+    - **The reload is by design.** An ended session's `state` call got 401, the renewal 400 and the library's `/logout` 403 (`session_not_found`). The library then keeps the session, so `leave()` removes it and reloads (`net.js`).
+    - **The form shows before the reload.** `entry.js` leaves the resuming state before calling `endSession()`, so the sign-in form is visible while `/logout` is answered.
+    - **The test resolved on that early form.** `theForm()` returned at it, the test's `evaluate` started 10 ms later, and the reload destroyed it. The diagnostics show the page after the reload (124 ms old, navigation type `reload`), with no page errors or failed requests. The machine's CPU was at about 90%.
+  - **The correction (test only):**
+    - **The wait:** SO-9 now waits, by condition, for the page after the reload: navigation type `reload`, the document complete, the notice "Your session has ended. Please sign in again." and the form visible. Then it checks the notice and measures. Its viewport, keyboard and axe assertions are unchanged.
+    - **A fourth case:** it holds back `/logout` by 1.5 s, checks that the early form shows before the reload, then runs the same checks.
+  - **The proof, under the same delay:**
+    - **The old wait, with the new checks:** failed 3 of 3 times at "measured after the reload".
+    - **The literal old test:** passed 3 of 3 times, but falsely. It finished measuring the page before the reload arrived. So it can't be made to fail deterministically as written. On CI the reload landed mid-measurement.
+    - **The correction:** passed 3 of 3 times.
+  - **The same pattern elsewhere** (authorized by the owner, corrected on `claude/so-reload-hardening`, pending review). Each of SO-2, SO-3, SO-4 and F-1 proof 2 read the notice right after `theForm()`. A probe checked each one's navigations with `/logout` held back 1 s:
+    - **SO-2** (a saved session ended on the server) **reloads, and the form shows before the reload with no notice:** the same race as SO-9.
+    - **SO-3** (ended during play) **reloads, but the game stays on screen until then.** On the reloaded page, though, the form (plain HTML) shows before `entry.js` has loaded and shown the notice. With `entry.js` held back on that page, the form showed with no notice in 2 of 2 probe runs.
+    - **SO-4** (an expired session whose renewal is refused) **doesn't reload:** the library signs out itself, with no `/logout` call. Unchanged.
+    - **F-1 proof 2** (`refresh_token_not_found` during play) **doesn't reload:** `/logout` answers 204 and the library clears the session. Unchanged.
+  - **The correction (test only):**
+    - **The wait:** SO-2 and SO-3 now wait, by condition, for the reloaded page with its notice (`endedForm()`, moved up with SO-9's other helpers). Their assertions are unchanged: the notice, the saved session removed, no Try again and one renewal (SO-2), no global sign-out (SO-3).
+    - **A slow case for each:**
+      - **SO-2:** `/logout` held back by 1.5 s. It checks that the form shows before the reload, with no notice.
+      - **SO-3:** `entry.js` held back by 1.5 s on the reloaded page (`slowEntry()`). It checks that the form shows after the reload, before the notice.
+  - **The proof:**
+    - **The literal old SO-2 and SO-3** (from `main`), with only those delays added, **failed 3 of 3 times** each, at their own notice check, with an empty notice.
+    - **The corrections passed 3 of 3 times.**
+- **UX: a sign-in form that can be used just before the sign-out reload** (found with the SO-9 race, 2026-11-19; not authorized).
+  - **What happens:** when the server has ended a session, the entrance shows the sign-in form while the library's `/logout` is answered, then `leave()`'s fallback reloads the page. On a slow answer the form is usable for up to 5 s (`SIGN_OUT_MS`). Anything typed in it is lost in the reload.
+  - **Acceptance criterion:** credentials entered during this transition cannot be silently lost.
+  - **Constraint:** any change keeps the hard constraint that signing out never depends on the server (`CLAUDE.md`).
+- **`net::ERR_NO_BUFFER_SPACE` on the Windows browser runner** (CI run `44410857655`, 2026-11-18, PR #51 at `b60c6ae`).
+  - **Now planned and being measured:** `docs/ci-windows-reliability-plan.md`.
+  - **The real rate (M0, section 7 there):** 12 executions with the fault (13 tests) from 2026-11-17 to 2026-11-20, about 1 in 7 browser executions. That's more than the occurrences listed below, because most show only in the failure artifacts, not the log.
+  - **The counters:** M1 and M3 now count the harness server's connections and the browser's contexts in CI. The list below is as recorded at the time.
+  - **What happened:** `R1-02 an expired link (error_code only)…` failed when Chromium's request for `/js/data/items.js` from the harness's local server failed with a Windows socket-buffer error. The entrance showed "The game could not be loaded", as it should for a module that fails.
+  - **The diagnostics:** `diag.json` showed no page errors, no bad responses, and low CPU and memory.
+  - **The likely cause** is the runner's network stack under the suite's many short connections, after more than 200 tests. It isn't established.
+  - **Next step, when authorized:** see whether it recurs, and whether the harness's server should keep connections alive or the job should limit them. The `PR-4a` timeout above is a separate cause, a race in that test's setup: its third occurrence had no runner network error.
+  - **It recurs.** It has been seen four times on 2026-11-18 and 19:
+    - PR #47's docs-only commit (`/js/data/masteries.js`);
+    - run `44410857655` above;
+    - the `push` run on `main` after GP-1's merge (run `44432245764`, attempt 1): `GP-B4` failed at `page.goto: net::ERR_NO_BUFFER_SPACE`.
+    - PR #55's run on `8aa0349` (run `44538744904`, attempt 1): `P4-04` (admin console); the request for `/js/data/stats.js` failed, so the admin page's script never ran.
+
+    **The re-runs:**
+    - PR #47's run (`44238281270`): attempt 2, authorized by the owner, passed.
+    - Run `44410857655`: attempt 2 was started and then cancelled, most likely when the next push to the PR superseded it; it gave no result.
+    - The `push` run after GP-1's merge (`44432245764`): attempt 2, authorized by the owner, passed 248/248.
+    - PR #55's run on `8aa0349` (`44538744904`, 2026-11-19): `P4-04` in the admin console tests; its page's request for `/js/data/stats.js` failed, so the admin script never ran. Attempt 2, authorized by the owner after the diagnostics showed the fault: passed 288/288.
+
+    The passing re-runs support the diagnosis but don't fix the fault.
+
+- **B2-6 read the first-paint entry before the browser published it** (`tests/ui/homepage.test.mjs`): **cause found, a race in the test; corrected in PR #62 (`b84e7b0`, merged 2026-11-19).**
+  - **The failure:** CI run `44650435250` on PR #61 (`c521979`), Windows, 2026-11-19: `page.evaluate: TypeError: Cannot read properties of undefined (reading 'startTime')`. It was not re-run.
+  - **The cause:** B2-6 read `performance.getEntriesByType('paint')`'s `first-contentful-paint` entry as soon as `#authform` was visible. The browser publishes that entry asynchronously, so the form can be visible first.
+  - **The correction (test only):**
+    - **The wait:** B2-6 waits, by condition, for the entry, then counts against its own timestamp, as before.
+    - **Unchanged:** the limit (3), the exclusions (the icon and manifest), and the checks that a visitor loads no game code, `style.css` or supabase-js.
+    - **A second case** hides the paint entries for the page's first 1.5 s, as a late publication would, and checks that the form shows first.
+  - **The proof:**
+    - **The late entry:** with the old code, the second case failed 3 of 3 times with CI's error. With the correction it passed 3 of 3.
+    - **The limit still holds:** with a fourth request before the paint (an extra stylesheet in a copy of `public/`), both cases fail with "requests before the form: /, /css/entry.css, /css/news.css, /js/entry.js".
+- **F-1 proof 4's fixture can refuse a renewed request and accept an expired one** (`tests/ui/sign-out.test.mjs`, `F-1 proof 4: refusals in two tabs at once share one renewal across the browser`): **cause found, in the test's fixture, not the client; corrected on `claude/f1-fixture`, pending review.**
+  - **The failure:** once, locally, 2026-11-19 (run 2 of 3 on `claude/b2-6-fcp`): `['error 401', 'ok']` instead of `['ok', 'ok']`. It had no diagnostics.
+  - **The investigation** (authorized by the owner; the probe is `docs/ui-audit/f1-proof-4/probe.mjs`):
+    - **What it records:** each request's tab, the access token it carried, its arrival order and its answer, plus the renewals and every write to `clickmonster.auth` in both tabs.
+    - **How it controls the order:** page routes hold chosen requests.
+  - **The cause: the fixture's refusal is a counter.** `backend.staleTokens = 2` refuses whichever two `game` calls come next, whatever their token.
+    - **The sequence:** if tab A's resend (with the renewed token) arrives before tab B's first call (with the expired token), A's resend takes the second refusal. B's expired token is then accepted.
+    - **Reproduced deterministically** (B's first call held until A had finished), 3 of 3: `['error 401 ended', 'ok']`, one renewal. A's resend carried the renewed token and was refused; B's first call carried the expired token and got 200.
+    - **The client behaves correctly** under the same order when the refusal is tied to the expired token, as the real server's is: `['ok', 'ok']`, one renewal, both resends with the renewed token, 3 of 3.
+  - **The requirement still detects broken coordination.** With both first calls held until both are in, a token-tied refusal, and the cross-tab lock removed (`navigator.locks` undefined), there are **2 renewals**, 3 of 3, which the test's "one renewal" check catches. With the lock: one renewal, `['ok', 'ok']`, 10 of 10.
+  - **A second fixture flaw, found on the way:** the fake mints access tokens deterministically from the account, session id and expiry, and the expiry is in whole seconds (`fakeJwt()` in `tests/ui/harness.mjs`). So a renewal in the same second as the token it replaces is byte-identical to it.
+    - **How it showed up:** in the probe's token-tied mode this made both tabs end, 4 of 11 runs.
+    - **Why it isn't the client:** the auth-storage trace showed the renewal installed correctly: one write, by `setSession()` through `net.js`'s guard, with the rotated refresh token. The "renewed" access token was simply identical to the old one.
+    - **Confirmed:** with the renewal moved to a later second, 10 of 10 runs passed. Real GoTrue never issues an identical token.
+  - **The correction** (test fixture only, authorized by the owner; first proposed as follows):
+    1. **Make each fake access token unique** (a counter claim, such as `jti`, in `fakeJwt()`), so a renewal can never equal the token it replaces.
+    2. **Tie F-1 proof 4's refusal to the expired token:** a fake-backend option that refuses requests carrying the tokens issued before a point (for example `backend.expireIssuedTokens()`), not a count of the next calls.
+    3. **Add a barrier to F-1 proof 4:** hold both tabs' first calls until both have arrived, so "two refusals at once" is guaranteed rather than assumed.
+
+    **Kept:** both calls succeed, with one renewal. The proof would be the probe's modes as tests: the old fixture fails under the controlled order, the corrected one passes, and without the cross-tab lock the test fails.
+  - **Other tests using `staleTokens`:**
+    - **Exposed to the same flaw:** `SO-3 concurrent refusals share one renewal…` sends three requests at once in one tab with `staleTokens = 3`, so a resend could also take a refusal meant for a first call. It is less exposed: all three first calls leave in the same tick, before any renewal round trip. It isn't known to have failed.
+    - **One request at a time:** the other uses (`staleTokens = 1`) have no other request to take their refusal.
+
+    None is changed by the proposal unless the owner extends it.
+  - **As made** (on `claude/f1-fixture`):
+    - **Unique tokens:** `fakeJwt()` adds `jti`, the next number of a deterministic issuance counter (`ISSUED`), so every access token differs, renewals included.
+    - **Refusal by identity:** `backend.expireIssuedTokens({ together })` expires every token issued so far. The `game` function refuses a request carrying one (401), whichever request it is, and accepts a later token. `backend.tokenLog` records each such call as `expired` or `renewed`.
+    - **The barrier:** `together: n` holds the first n refusals until all n have arrived, then answers them at once. It stops waiting after 5 s and sets `together.timedOut`, so a client that sends fewer fails an assertion instead of hanging.
+    - **F-1 proof 4** uses `together: 2`, and **SO-3 concurrent refusals** uses `together: 3`. Both keep their assertions (every call succeeds, one renewal) and add two: the barrier didn't time out, and `tokenLog` shows every first call refused, then every resend accepted with the renewed token.
+    - **`staleTokens` is kept,** unchanged, for the single-request tests.
+    - **A new test,** `F-1 fixture: every fake access token is distinct…`, makes two tokens of one session in the same second and checks they differ.
+  - **The proof** (3 of 3 runs each):
+
+    | Case | Result |
+    | --- | --- |
+    | F-1 proof 4, the old counter, B's first call held until A is done | `['error 401', 'ok']`: the old test fails |
+    | The same order, the new refusal by identity, no barrier | `['ok', 'ok']`, 1 renewal, `tokenLog` `expired, renewed, expired, renewed` |
+    | The new fixture with the barrier, the cross-tab lock removed | 2 renewals: the corrected test fails |
+    | SO-3 concurrent, the old counter, the third first call held until a resend is answered | `['rejected', 'fulfilled', 'fulfilled']`: the old test fails. The same flaw, now shown |
+    | The same order, the new refusal by identity | all fulfilled, 1 renewal |
+    | SO-3 with the barrier, the in-tab shared renewal and the lock both removed (`net.js` served modified, for this case only) | 3 renewals: the corrected test fails |
+
+    **The uniqueness test fails on the old harness:** "a renewal never repeats the token it replaces".
+- **GP-B7 assumed the XP cue's animation had started by the forced tick** (`tests/ui/gameplay-polish.test.mjs`): **cause found, a timing assumption in the test, not an application defect. A correction is proposed, not authorized.**
+  - **The failure:** PR #59's CI run `44643826518`, attempt 2, Windows: `its animation started once`, `0 !== 1`.
+  - **The cause** (from that run's trace):
+    - **The forced tick came too soon:** it came 8.3 ms after the cue was inserted, under one frame.
+    - **So the event hadn't fired:** the browser fires `animationstart`, which `watchCues()` counts, asynchronously at the next frame, and it hadn't yet.
+    - **The cue itself was fine:** attached, at opacity 1, with no sign of a restart.
+  - **The proposed correction:** pull the tick forward only after the cue's first `animationstart`. The test would then still check that the tick neither replaces the cue nor restarts its animation, and that `starts` is 1 at removal.
 
 - **Pagination of `/news`** (from the L-4 review). The public list (`netlify/edge-functions/news.js`, `LIST_LIMIT = 100`) shows the 100 newest published articles. Older ones stay reachable by their address but drop off the list. Add pages (for example `/news?page=2`, or a link to older articles) before there are 100.
 
@@ -189,6 +365,7 @@ Raised by the owner on 2026-11-14. **Part 1 is scoped:** `docs/ci-scope.md`, app
 - **When:** nightly or on demand, to keep PR runs fast and within the free minutes.
 - **What it covers:** part of the "after release" browser list. It isn't real devices or screen readers.
 - **Expect fixes first:** the suite has only ever run in Chromium.
+- **Raised again by GP-1 (2026-11-18):** on the owner's iPhone, a meter that switched to two lines kept its one-line width and cut its label off. Chromium measured it correctly, so the suite couldn't see it (`docs/gameplay-polish-scope.md`, section 14). A WebKit run might expose problems like this, but Playwright's WebKit isn't Safari on iOS and font metrics differ between systems, so it doesn't replace checking on the affected device.
 
 **3. Live-site checks after each merge to `main`, and daily.** These repeat, with reads only, the checks made by hand in the L-4 report's section 9:
 - the live files match `main`;

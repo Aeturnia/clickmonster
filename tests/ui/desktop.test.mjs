@@ -10,8 +10,8 @@ let env;
 before(async () => { env = await setup(); });
 after(async () => { await env?.close(); });
 
-async function open(w, h, { touch = false, hero, fontPx, rootScale, signedIn = true, dsf } = {}) {
-  const backend = new FakeBackend({ hero: hero || makeHero() });
+async function open(w, h, { touch = false, hero, fontPx, rootScale, signedIn = true, dsf, y } = {}) {
+  const backend = new FakeBackend({ hero: hero || makeHero({ y }) });
   const ctx = await env.page({ backend, viewport: { width: w, height: h }, mobile: touch, ...(dsf ? { deviceScaleFactor: dsf } : {}) });
   if (fontPx) {
     // The browser's own text size (what "larger text" in the browser settings changes); em
@@ -40,8 +40,9 @@ const noAxe = async (page, label) => assert.deepEqual((await axe(page, { minImpa
 const box = (page, sel) => page.evaluate((s) => { const r = document.querySelector(s)?.getBoundingClientRect(); return r && { top: Math.round(r.top), bottom: Math.round(r.bottom), left: Math.round(r.left), right: Math.round(r.right), width: Math.round(r.width), height: Math.round(r.height) }; }, sel);
 
 // A hero who hits softly and lasts: fights run long enough for the battle log to fill.
+// One step out of town, where monsters roam (gameplay polish F2).
 function enduringHero() {
-  const c = makeHero();
+  const c = makeHero({ y: 4 });
   c.stats.str = 1;
   c.stats.vit = 400;
   c.hp = maxHp(c);
@@ -87,8 +88,9 @@ test('D-1 battle: the actions sit directly under the fight, at the start and onc
     const ctx = await open(w, h, { hero: enduringHero() });
     const { page } = ctx;
     // The strongest monster here (the last in the list) fights back for many turns.
-    const strongest = await page.evaluate(() => [...document.querySelectorAll('#main [data-a="fight"]')].at(-1).dataset.v);
-    await step(page, `#main [data-a="fight"][data-v="${strongest}"]`);
+    const strongest = await page.$eval('#mon-select', (s) => s.options[s.options.length - 1].value);
+    await page.selectOption('#mon-select', strongest);
+    await step(page, '#main [data-a="fight"]');
     const gap = () => page.evaluate(() => {
       const log = document.getElementById('log').getBoundingClientRect();
       const act = document.querySelector('.dock-battle button').getBoundingClientRect();
@@ -107,8 +109,10 @@ test('D-1 battle: the actions sit directly under the fight, at the start and onc
     });
     const first = await gap();
     assert.ok(first.gap >= 0 && first.gap <= 24 && first.inColumn && first.inView, `${w}×${h} at the start: actions ${first.gap}px under the log, in its column: ${first.inColumn}`);
-    // Fight on until the log has filled (or the fight ends).
+    // Fight on until the log has filled (or the fight ends). Only the current round shows by
+    // default (gameplay polish C), so Earlier rounds is opened: the log then grows with the fight.
     for (let i = 0; i < 40 && await page.isVisible('[data-a="melee"]'); i++) {
+      await page.evaluate(() => { const d = document.querySelector('#log details[data-g="earlier"]'); if (d && !d.open) d.querySelector('summary').click(); });
       if (await page.evaluate(() => { const l = document.getElementById('log'); return l.scrollHeight > l.clientHeight + 1; })) break;
       await step(page, '[data-a="melee"]');
     }
@@ -224,7 +228,7 @@ test('D-1 phones, tablets and narrow windows keep their layouts', async () => {
 });
 
 test('D-1 resizing across 1200px keeps focus where it was', async () => {
-  const ctx = await open(1440, 900);
+  const ctx = await open(1440, 900, { y: 4 });
   const { page } = ctx;
   await page.focus('[data-a="tab"][data-v="gear"]');
   await page.setViewportSize({ width: 1100, height: 900 });
@@ -234,7 +238,7 @@ test('D-1 resizing across 1200px keeps focus where it was', async () => {
   const fightV = (await focusInfo(page)).v;
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.waitForFunction(() => document.getElementById('app').dataset.layout === 'desktop');
-  assert.deepEqual([(await focusInfo(page)).a, (await focusInfo(page)).v], ['fight', fightV], 'focus stays on the monster row');
+  assert.deepEqual([(await focusInfo(page)).a, (await focusInfo(page)).v], ['fight', fightV], 'focus stays on the Fight button');
   assert.deepEqual(await order(page), ['top', 'nav', 'main', 'dock', 'side']);
   await done(ctx);
 });

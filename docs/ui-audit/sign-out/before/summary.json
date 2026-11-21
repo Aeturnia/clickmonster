@@ -1,0 +1,47 @@
+{
+  "ended session at start-up, 390": {
+    "form": false,
+    "tryAgain": true,
+    "signOut": true,
+    "game": false,
+    "message": "",
+    "saved": true
+  },
+  "after pressing Sign out, 390": {
+    "form": false,
+    "tryAgain": true,
+    "signOut": true,
+    "game": false,
+    "message": "",
+    "saved": true
+  },
+  "axe, 390": [],
+  "ended session at start-up, 1440": {
+    "form": false,
+    "tryAgain": true,
+    "signOut": true,
+    "game": false,
+    "message": "",
+    "saved": true
+  },
+  "after pressing Sign out, 1440": {
+    "form": false,
+    "tryAgain": true,
+    "signOut": true,
+    "game": false,
+    "message": "",
+    "saved": true
+  },
+  "axe, 1440": [],
+  "in-game Sign out refused by the server (500), 390": {
+    "form": false,
+    "tryAgain": false,
+    "signOut": false,
+    "game": true,
+    "message": "",
+    "saved": true,
+    "logouts": [
+      "global"
+    ]
+  }
+}

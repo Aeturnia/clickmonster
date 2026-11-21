@@ -1,0 +1,195 @@
+{
+  "entryModule": "js/entry.js",
+  "staticDepth": 1,
+  "gameDepth": 7,
+  "visitor": {
+    "requests": 7,
+    "bytes": 41834,
+    "byType": {
+      "document": {
+        "requests": 1,
+        "bytes": 5356
+      },
+      "css": {
+        "requests": 1,
+        "bytes": 11929
+      },
+      "ownJs": {
+        "requests": 3,
+        "bytes": 24545
+      },
+      "api": {
+        "requests": 2,
+        "bytes": 4
+      }
+    },
+    "modules": 3,
+    "gameModules": 1,
+    "library": false,
+    "loadedBeforeForm": [
+      "css",
+      "ownJs",
+      "api"
+    ],
+    "beforePaint": {
+      "firstContentfulPaintMs": 84,
+      "requests": 3,
+      "decodedBytes": 35620,
+      "resources": [
+        "/css/entry.css",
+        "/js/entry.js"
+      ]
+    },
+    "idle10s": {
+      "requests": 7,
+      "bytes": 41834,
+      "byType": {
+        "document": {
+          "requests": 1,
+          "bytes": 5356
+        },
+        "css": {
+          "requests": 1,
+          "bytes": 11929
+        },
+        "ownJs": {
+          "requests": 3,
+          "bytes": 24545
+        },
+        "api": {
+          "requests": 2,
+          "bytes": 4
+        }
+      },
+      "modules": 3,
+      "gameModules": 1,
+      "library": false
+    },
+    "afterFocus": {
+      "requests": 9,
+      "bytes": 168331,
+      "byType": {
+        "document": {
+          "requests": 2,
+          "bytes": 116153
+        },
+        "css": {
+          "requests": 1,
+          "bytes": 11929
+        },
+        "ownJs": {
+          "requests": 4,
+          "bytes": 40245
+        },
+        "api": {
+          "requests": 2,
+          "bytes": 4
+        }
+      },
+      "modules": 4,
+      "gameModules": 1,
+      "library": true
+    }
+  },
+  "returning": {
+    "requests": 48,
+    "bytes": 477941,
+    "byType": {
+      "document": {
+        "requests": 2,
+        "bytes": 116153
+      },
+      "css": {
+        "requests": 2,
+        "bytes": 80547
+      },
+      "ownJs": {
+        "requests": 30,
+        "bytes": 268318
+      },
+      "api": {
+        "requests": 14,
+        "bytes": 12923
+      }
+    },
+    "modules": 30,
+    "gameModules": 27,
+    "library": true
+  },
+  "formBlockedBy": {
+    "libraryDown": {
+      "formAppeared": true,
+      "screenText": "Skip to sign in Monstra Regna Home Guide Leaderboard Contact Enter the realm EMAIL PASSWORD Sign in New here? Create an "
+    },
+    "zonesDown": {
+      "formAppeared": true,
+      "screenText": "Skip to sign in Monstra Regna Home Guide Leaderboard Contact Enter the realm EMAIL PASSWORD Sign in New here? Create an "
+    }
+  },
+  "throttled": {
+    "msToForm": 704,
+    "runs": [
+      703,
+      704,
+      725
+    ],
+    "lcpMs": 624,
+    "cls": 0,
+    "focusMs": 11,
+    "labRuns": [
+      {
+        "lcp": 620,
+        "cls": 0,
+        "focus": 11
+      },
+      {
+        "lcp": 636,
+        "cls": 0,
+        "focus": 11
+      },
+      {
+        "lcp": 624,
+        "cls": 0,
+        "focus": 10
+      }
+    ]
+  },
+  "shots": [
+    {
+      "size": "320x640",
+      "formTop": 259,
+      "formBottomInView": true,
+      "violations": []
+    },
+    {
+      "size": "390x844",
+      "formTop": 223,
+      "formBottomInView": true,
+      "violations": []
+    },
+    {
+      "size": "844x390",
+      "formTop": 94,
+      "formBottomInView": true,
+      "violations": []
+    },
+    {
+      "size": "1024x768",
+      "formTop": 123,
+      "formBottomInView": true,
+      "violations": []
+    },
+    {
+      "size": "1440x900",
+      "formTop": 134,
+      "formBottomInView": true,
+      "violations": []
+    },
+    {
+      "size": "1920x1080",
+      "formTop": 148,
+      "formBottomInView": true,
+      "violations": []
+    }
+  ]
+}

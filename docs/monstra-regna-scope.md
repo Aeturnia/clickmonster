@@ -487,7 +487,7 @@ MR-B1 and MR-B2 were accepted in principle. MR-S1 needed a tighter contract.
 
 ### Step 2 was done early, by the owner (2026-11-17)
 
-**What happened:** the owner updated the production Supabase Auth URL settings **before step 1** (the rename merge), which hasn't been implemented or authorized yet. This is safe: `monstraregna.com` already serves exactly the same site as the Netlify address (section 2).
+**What happened:** the owner updated the production Supabase Auth URL settings **before step 1** (the rename merge), which at that time had not yet been implemented or authorized. MR-B1 was authorized on 2026-11-18, and step 1 has since merged as PR #48 (`ea2e4a4`); see "Step 1 is complete" below. Doing step 2 first was safe: `monstraregna.com` already serves exactly the same site as the Netlify address (section 2).
 
 **The settings applied,** as Claude described them to the owner and as the owner reports doing. They were **not read or verified by Claude,** and no credentials are involved:
 - **Site URL:** `https://monstraregna.com`.
@@ -498,6 +498,14 @@ MR-B1 and MR-B2 were accepted in principle. MR-S1 needed a tighter contract.
 - **The values before the change:** not recorded by Claude. The owner was asked to note them.
 
 **Don't repeat this step.** MR-B1's implementation starts at step 1 (the rename, without the redirect). Then it goes on to the step 3 checks: sign-up confirmation landing on `monstraregna.com`; sign-in and session restore there; and a valid reset link opening "Choose a new password". After that come steps 4–7. Confirming the settings with a read-only inspection would need the owner's authorization.
+
+### Step 1 is complete (2026-11-18)
+
+- **The rename merged** as PR #48 (`ea2e4a4`), after independent review at `2eaae3e` and green required checks (CI run `44326706062`: `engine` 51/51; `database` 42/42 pgTAP and 12/12 API; `browser` 208/208, on the merge commit `8429bc7`).
+- **Step 2** stays recorded as done early by the owner, not independently inspected.
+- **Step 3: the applicable checks passed** under the current production authentication configuration on 2026-11-18, as reported by the owner: session kept, and a dashboard reset link worked end to end on `monstraregna.com`. **Sign-up confirmation was not performed:** "Confirm email" has been off since the first setup. The check is deferred until email confirmation and delivery are separately authorized and configured.
+- **Step 4 passed** on 2026-11-18: the owner's browser check, and independently Claude's authorized read-only requests (titles, manifest, and `monstraregna.com` canonical and `og:url` on news pages, from both hosts).
+- **Next:** the announcement (QB-2), then step 5. The record is `docs/monstra-regna-b1-report.md`, section 3.
 
 ### Unchanged through the migration
 

@@ -1,0 +1,29 @@
+/                            {"status":200,"location":null,"csp":"none","canonical":null,"menu":true,"footer":true}
+/guide                       {"status":301,"location":"/guide/","csp":"none","canonical":null,"menu":false,"footer":false}
+/guide/                      {"status":200,"location":null,"csp":"no-script policy","canonical":"https://monstraregna.com/guide","menu":true,"footer":true}
+/leaderboard                 {"status":301,"location":"/leaderboard/","csp":"none","canonical":null,"menu":false,"footer":false}
+/leaderboard/                {"status":200,"location":null,"csp":"no-script policy","canonical":"https://monstraregna.com/leaderboard","menu":true,"footer":true}
+/contact                     {"status":301,"location":"/contact/","csp":"none","canonical":null,"menu":false,"footer":false}
+/contact/                    {"status":200,"location":null,"csp":"no-script policy","canonical":"https://monstraregna.com/contact","menu":true,"footer":true}
+/news                        {"status":200,"location":null,"csp":"no-script policy","canonical":"https://monstraregna.com/news","menu":true,"footer":true}
+/news/under-construction     {"status":200,"location":null,"csp":"no-script policy","canonical":"https://monstraregna.com/news/under-construction","menu":true,"footer":true}
+
+18 problem(s):
+- /guide: status is 301, expected 200
+- /guide: location is "/guide/", expected null
+- /guide: csp is "none", expected "no-script policy"
+- /guide: canonical is null, expected "https://monstraregna.com/guide"
+- /guide: menu is false, expected true
+- /guide: footer is false, expected true
+- /leaderboard: status is 301, expected 200
+- /leaderboard: location is "/leaderboard/", expected null
+- /leaderboard: csp is "none", expected "no-script policy"
+- /leaderboard: canonical is null, expected "https://monstraregna.com/leaderboard"
+- /leaderboard: menu is false, expected true
+- /leaderboard: footer is false, expected true
+- /contact: status is 301, expected 200
+- /contact: location is "/contact/", expected null
+- /contact: csp is "none", expected "no-script policy"
+- /contact: canonical is null, expected "https://monstraregna.com/contact"
+- /contact: menu is false, expected true
+- /contact: footer is false, expected true

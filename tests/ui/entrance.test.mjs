@@ -124,14 +124,18 @@ test('LAC-2 / LAC-5a an anonymous visitor downloads no game code; the form start
   await done(ctx);
 });
 
-test('LAC-7 sign-in first: the email field is the first stop, and the form is on screen', async () => {
+test('LAC-7 sign-in first: "Skip to sign in" is the first stop and leads to the email field, and the form is on screen', async () => {
   for (const [w, h, whole] of [[320, 640, true], [390, 844, true], [844, 390, false]]) {
     const ctx = await open({ viewport: { width: w, height: h } });
     const { page } = ctx;
     await page.goto(`${env.url}/`);
     await page.waitForSelector('#authform', { state: 'visible' });
+    // Since MR-B2 the first stop is "Skip to sign in" (B2-2), ahead of the site menu; Enter on it
+    // reaches the email field.
     await page.keyboard.press('Tab');
-    assert.equal(await page.evaluate(() => document.activeElement.id), 'email', `${w}x${h}: Tab goes to the email field first`);
+    assert.equal(await page.evaluate(() => document.activeElement.className), 'e-skip', `${w}x${h}: Tab goes to "Skip to sign in" first`);
+    await page.keyboard.press('Enter');
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'email', `${w}x${h}: and it leads to the email field`);
     const email = await box(page, '#email');
     assert.ok(email.bottom <= h, `${w}x${h}: the email field is on screen`);
     if (whole) assert.ok((await box(page, '#authform button[type=submit]')).bottom <= h, `${w}x${h}: the Sign in button is on screen`);
@@ -548,7 +552,8 @@ test('the entrance has no axe violations at phone, landscape, tablet and desktop
 
 // Two accounts with heroes in the same village (so the same buttons), told apart by name.
 function twoHeroes(opts = {}) {
-  const backend = new FakeBackend(opts);
+  // Account A stands one step out of town, where monsters roam (gameplay polish F2).
+  const backend = new FakeBackend({ hero: makeHero({ y: 4 }), ...opts });
   backend.heroes[ACCOUNTS.mod.id] = makeHero({ name: 'Moderator Mia' });
   backend.charIds[ACCOUNTS.mod.id] = 'char-mod';
   return backend;
@@ -604,7 +609,7 @@ test('L1-01 a late action answer for the previous account never reaches the next
 });
 
 test("L1-02 a delayed quest board for the previous account never fills the next account's board", async () => {
-  const backend = twoHeroes({ quests: [fixedQuest()] });
+  const backend = twoHeroes({ hero: makeHero(), quests: [fixedQuest()] }); // in town, for the quest board
   const ctx = await open({ backend });
   const { page } = ctx;
   // A's board request is held, then answered with an empty board (B's own is the real one).

@@ -7,7 +7,7 @@
 //     older code that loads it from the CDN) is the pinned CDN module allowed, cached on disk
 //     after the first download so later runs are offline.
 import http from 'node:http';
-import { track } from './diagnostics.mjs';
+import { track, watchServer, watchBrowser } from './diagnostics.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -22,6 +22,7 @@ import { buy, buyAndEquip, sell, equip, unequip, socketGem, extractGem, deposit,
 import { generateQuests, accept, hourBucket } from '../../public/js/engine/quests.js';
 import { canSend } from '../../public/js/engine/chat.js';
 import { duel } from '../../public/js/engine/pvp.js';
+import { startHuntBattle } from '../../public/js/engine/hunt.js';
 import { checkNews, canDeleteNews } from '../../public/js/data/news.js';
 import { newsResponse } from '../../netlify/edge-functions/news.js';
 
@@ -33,16 +34,44 @@ const ALLOWED_CDN = process.env.UI_PUBLIC_DIR ? /^https:\/\/cdn\.jsdelivr\.net\/
 
 // ---------------------------------------------------------------- static server
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.png': 'image/png' };
+// Netlify's serving, as far as the tests need it (MR-B2's routing correction,
+// docs/monstra-regna-b2-report.md, section 7), in its order:
+//   1. a file at the address is served as it is;
+//   2. a directory's address without its trailing slash answers 301 to the slash form, before any
+//      rewrite (this is what sent /guide to /guide/ in production);
+//   3. an address with a trailing slash, where there is no such directory but there is an x.html,
+//      answers 301 to the slashless address, also before any rewrite (Pretty URLs, as measured live
+//      after the correction's deployment: /guide/ to /guide; report section 7.5);
+//   4. netlify.toml's 200 rewrites, read from the checkout being served (beside its public/);
+//   5. a directory with the slash serves its index.html; /x serves x.html if it exists.
+const REWRITES = (() => {
+  const toml = path.join(PUBLIC, '..', 'netlify.toml');
+  if (!fs.existsSync(toml)) return {};
+  const text = fs.readFileSync(toml, 'utf8').replace(/\r\n/g, '\n');
+  return Object.fromEntries([...text.matchAll(/\[\[redirects\]\]\n\s*from = "([^"]+)"\n\s*to = "([^"]+)"\n\s*status = 200\b/g)].map((m) => [m[1], m[2]]));
+})();
+const isFile = (f) => fs.existsSync(f) && fs.statSync(f).isFile();
+const isDir = (f) => fs.existsSync(f) && fs.statSync(f).isDirectory();
+
 export function startServer() {
   const server = http.createServer((req, res) => {
     const url = new URL(req.url, 'http://x');
-    let file = path.join(PUBLIC, decodeURIComponent(url.pathname));
+    const at = (p) => path.join(PUBLIC, decodeURIComponent(p));
+    let file = at(url.pathname);
     if (!file.startsWith(PUBLIC)) { res.writeHead(403).end(); return; }
-    if (fs.existsSync(file) && fs.statSync(file).isDirectory()) file = path.join(file, 'index.html');
-    if (!fs.existsSync(file)) { res.writeHead(404).end('not found'); return; }
+    if (!isFile(file)) {
+      if (isDir(file) && !url.pathname.endsWith('/')) { res.writeHead(301, { Location: `${url.pathname}/${url.search}` }).end(); return; }
+      const bare = url.pathname.replace(/\/$/, '');
+      if (bare && bare !== url.pathname && !isDir(file) && isFile(`${at(bare)}.html`)) { res.writeHead(301, { Location: `${bare}${url.search}` }).end(); return; }
+      if (REWRITES[url.pathname]) file = at(REWRITES[url.pathname]);
+      else if (isDir(file)) file = path.join(file, 'index.html');
+      else if (isFile(`${file}.html`)) file = `${file}.html`;
+    }
+    if (!isFile(file)) { res.writeHead(404).end('not found'); return; }
     res.writeHead(200, { 'Content-Type': TYPES[path.extname(file)] || 'application/octet-stream' });
     fs.createReadStream(file).pipe(res);
   });
+  watchServer(server); // counts connections when UI_DIAGNOSTICS=1 (M1); changes nothing
   return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve({ server, url: `http://127.0.0.1:${server.address().port}` })));
 }
 
@@ -82,18 +111,31 @@ export function makeHero({ name = 'Bartholomew Thorne', race = 'halfling', level
   return c;
 }
 
-function fakeJwt(sub, email, expiresIn = 3600) {
+// Sessions, as GoTrue keeps them: each sign-in starts a session (session_id, numbered in order),
+// its tokens carry that id, and a renewal keeps it while rotating the refresh token
+// (refresh-<account>~<session>~<n>). So a session can end on the server (FakeBackend.endSessions())
+// while one started after it keeps working, and a renewed session can be told from a new sign-in.
+let SESSION = 0;
+let ROTATION = 0;
+// Every access token issued carries the next ISSUED number (jti), so no two are ever the same, even
+// two of one session in the same second, as a renewal and the token it replaces can be (docs/backlog.md,
+// F-1 proof 4). FakeBackend.expireIssuedTokens() refuses tokens by this number.
+let ISSUED = 0;
+function fakeJwt(sub, email, expiresIn = 3600, sessionId = ++SESSION) {
   const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
   const exp = Math.floor(Date.now() / 1000) + expiresIn;
-  return `${b64({ alg: 'HS256', typ: 'JWT' })}.${b64({ sub, email, role: 'authenticated', aud: 'authenticated', exp })}.signature`;
+  return `${b64({ alg: 'HS256', typ: 'JWT' })}.${b64({ sub, email, role: 'authenticated', aud: 'authenticated', exp, session_id: sessionId, jti: ++ISSUED })}.signature`;
 }
+// The account and session a refresh token belongs to (null if it isn't one of ours).
+const refreshOf = (t) => { const m = /^refresh-([^~]+)(?:~(\d+))?/.exec(String(t)); return m && { acct: Object.values(ACCOUNTS).find((x) => x.id === m[1]), session: Number(m[2]) || null }; };
+const claims = (token) => { try { return JSON.parse(Buffer.from(String(token).split('.')[1], 'base64url').toString()); } catch { return null; } };
 
 // A session as supabase-js stores it (localStorage 'clickmonster.auth') and as the token endpoint
 // returns it. expiresIn below zero gives an expired one, for session-restore tests.
-export function savedSession(acct, expiresIn = 3600) {
+export function savedSession(acct, expiresIn = 3600, sessionId = ++SESSION) {
   return {
-    access_token: fakeJwt(acct.id, acct.email, expiresIn), token_type: 'bearer', expires_in: expiresIn,
-    expires_at: Math.floor(Date.now() / 1000) + expiresIn, refresh_token: `refresh-${acct.id}`,
+    access_token: fakeJwt(acct.id, acct.email, expiresIn, sessionId), token_type: 'bearer', expires_in: expiresIn,
+    expires_at: Math.floor(Date.now() / 1000) + expiresIn, refresh_token: `refresh-${acct.id}~${sessionId}~${++ROTATION}`,
     user: { id: acct.id, email: acct.email, aud: 'authenticated', role: 'authenticated' },
   };
 }
@@ -145,7 +187,20 @@ export class FakeBackend {
     this.holds = {}; // action -> promise: requests for it wait until released
     this.offline = false;
     this.sockets = [];
-    this.revoked = new Set(); // refresh tokens the auth server refuses
+    this.revoked = new Set(); // refresh-<account id>: that account's refresh tokens are refused
+    this.renewed = []; // for each token grant, the session renewed (null for a sign-in)
+    // Sign-out and session recovery (docs/sign-out-scope.md):
+    this.endedBefore = {}; // account id -> its sessions up to this session_id have ended on the server (endSessions())
+    this.refreshFail = null; // the next renewal fails: a status, { status, code, retryAfter }, or 'drop'
+    this.staleTokens = 0; // the next n game calls answer 401, as for an expired access token that still renews
+    // Expired access tokens by identity (expireIssuedTokens()): for concurrent refusals, where a count
+    // of "the next n calls" could refuse a renewed resend and accept an expired first call.
+    this.expiredUpTo = 0; // game calls with a token issued up to this number (jti) answer 401
+    this.together = null; // { n, arrived, timedOut }: the first n refusals are answered together
+    this.tokenLog = []; // game calls while tokens are expired: 'expired' (refused) or 'renewed' (accepted)
+    this.logoutFail = null; // the next sign-out (local or global): a status, 'drop' or 'hang'
+    this.authHold = null; // a promise the token endpoint waits for (a slow renewal)
+    this.stepHolds = {}; // 'password' or 'user' -> a promise that step waits for (holdStep())
     this.authCalls = []; // grant types requested from /auth/v1/token, in order
     // Password recovery: reset requests ({ email, redirectTo }), changed passwords by user id, password
     // updates and sign-out scopes, in order. recoverStatus = 429 refuses a reset request;
@@ -162,7 +217,30 @@ export class FakeBackend {
     this.quests = quests || generateQuests(hourBucket()).map((q, i) => ({ ...q, id: `quest-${i}`, completedBy: null }));
   }
 
-  failNext(action, status, message) { this.failures.push({ action, status, message }); }
+  failNext(action, status, message) { this.failures.push({ action, status, message }); } // status 'drop': the connection is dropped
+
+  // The account's sessions so far end on the server, as when another device signs out everywhere:
+  // their tokens are refused (game 401; /user and /logout 403 session_not_found, which supabase-js
+  // reports as AuthSessionMissingError) and their renewal is refused. A later sign-in works.
+  endSessions(acct) { this.endedBefore[acct.id] = SESSION; }
+  ended(token) { const c = claims(token); return !!c && (c.session_id || 0) <= (this.endedBefore[c.sub] ?? -1); }
+  endedRefresh(t) { const r = refreshOf(t); return !!r?.acct && (r.session || 0) <= (this.endedBefore[r.acct.id] ?? -1); }
+  // Every access token issued so far expires: the game function refuses it (401) as the server
+  // refuses an expired token, whichever request carries it, and accepts one issued later (a renewal).
+  // together: n holds the first n refusals until all n have arrived, then answers them at once, so
+  // "n refusals at once" is certain, not assumed. After 5 s it answers anyway (together.timedOut),
+  // so a client that sends fewer fails an assertion instead of hanging.
+  expireIssuedTokens({ together = 0 } = {}) {
+    this.expiredUpTo = ISSUED;
+    this.tokenLog = [];
+    this.together = together > 1 ? { n: together, arrived: 0, timedOut: false, release: null, done: null } : null;
+    if (this.together) this.together.done = new Promise((r) => { this.together.release = r; });
+  }
+  // Hold the token endpoint (sign-in and renewal) until the returned function is called.
+  holdAuth() { let release; this.authHold = new Promise((r) => { release = r; }); return () => { this.authHold = null; release(); }; }
+  // Hold only sign-ins (password grants), or only the token check (GET /auth/v1/user, which
+  // supabase-js's setSession() makes under its lock), until the returned function is called.
+  holdStep(step) { let release; this.stepHolds[step] = new Promise((r) => { release = r; }); return () => { delete this.stepHolds[step]; release(); }; }
 
   // Keep requests for an action waiting (a slow server) until the returned function is called.
   hold(action) {
@@ -175,6 +253,7 @@ export class FakeBackend {
     try {
       const payload = JSON.parse(Buffer.from(String(token).split('.')[1], 'base64url').toString());
       if (payload.exp && payload.exp * 1000 < Date.now()) return null; // expired, as the real server refuses it
+      if (this.ended(token)) return null; // its session has ended on the server
       return Object.values(ACCOUNTS).find((a) => a.id === payload.sub) || null;
     } catch { return null; }
   }
@@ -222,6 +301,12 @@ export class FakeBackend {
         if (p.stats) Object.assign(t.stats, p.stats); // a test can make the opponent stronger
         t.hp = maxHp(t);
         duel(c, t, rng);
+      },
+      // Joining a world-boss hunt (the game function's startHuntBattle; the shared damage is not modelled).
+      hunt: () => {
+        const h = this.activeHunts.find((x) => x.id === args.huntId);
+        if (!h) throw Object.assign(new Error('That hunt is over.'), { status: 400 });
+        startHuntBattle(c, h);
       },
       accept: () => accept(c, this.quests.find((q) => q.id === args.questId), now),
       chat: () => {
@@ -563,9 +648,13 @@ async function cdnFetch(route) {
   await route.fulfill({ response: res, body });
 }
 
-function json(route, status, body) {
-  return route.fulfill({ status, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(body) });
+function json(route, status, body, headers = {}) {
+  return route.fulfill({ status, contentType: 'application/json', headers: { 'access-control-allow-origin': '*', ...headers }, body: JSON.stringify(body) });
 }
+// GoTrue's answer for a token whose session has ended. With the API version header, as GoTrue sends
+// it, supabase-js reads the code and reports AuthSessionMissingError (tests/session-answers.mjs).
+const sessionGone = (route) => json(route, 403, { code: 'session_not_found', msg: 'Session from session_id claim in JWT does not exist' },
+  { 'x-supabase-api-version': '2024-01-01', 'access-control-expose-headers': 'x-supabase-api-version' });
 
 export async function attach(context, backend, baseUrl) {
   await context.route('**/*', async (route) => {
@@ -595,15 +684,29 @@ export async function attach(context, backend, baseUrl) {
     const p = url.pathname;
     try {
       if (p === '/auth/v1/token') {
+        if (backend.authHold) await backend.authHold;
         const body = JSON.parse(req.postData() || '{}');
-        // Refresh tokens are refresh-<account id>; anything else (or a revoked one) is refused.
-        const acct = url.searchParams.get('grant_type') === 'refresh_token'
-          ? (backend.revoked.has(body.refresh_token) ? null : Object.values(ACCOUNTS).find((x) => body.refresh_token === `refresh-${x.id}`))
+        // Refresh tokens are refresh-<account id>~<session>~<n>; one of an ended session, or of an
+        // account in `revoked` (refresh-<account id>), is refused, as GoTrue refuses it.
+        const renewal = url.searchParams.get('grant_type') === 'refresh_token';
+        if (!renewal && backend.stepHolds.password) await backend.stepHolds.password;
+        const r = renewal ? refreshOf(body.refresh_token) : null;
+        const acct = renewal
+          ? (!r?.acct || backend.revoked.has(`refresh-${r.acct.id}`) || backend.endedRefresh(body.refresh_token) ? null : r.acct)
           : Object.values(ACCOUNTS).find((x) => x.email === body.email && (backend.passwords[x.id] ?? x.password) === body.password);
         backend.authCalls.push(url.searchParams.get('grant_type') || 'password');
-        if (!acct && url.searchParams.get('grant_type') === 'refresh_token') return json(route, 400, { error: 'invalid_grant', error_description: 'Invalid Refresh Token: Refresh Token Not Found', msg: 'Invalid Refresh Token: Refresh Token Not Found', code: 'refresh_token_not_found' });
+        if (renewal && backend.refreshFail) {
+          const f = typeof backend.refreshFail === 'object' ? backend.refreshFail : { status: backend.refreshFail };
+          backend.refreshFail = null;
+          if (f.status === 'drop') return route.abort('connectionreset');
+          return json(route, f.status, { code: f.code || 'unexpected_failure', msg: 'Temporary failure' },
+            { 'x-supabase-api-version': '2024-01-01', 'access-control-expose-headers': 'x-supabase-api-version, retry-after', ...(f.retryAfter ? { 'retry-after': String(f.retryAfter) } : {}) });
+        }
+        if (!acct && renewal) return json(route, 400, { error: 'invalid_grant', error_description: 'Invalid Refresh Token: Refresh Token Not Found', msg: 'Invalid Refresh Token: Refresh Token Not Found', code: 'refresh_token_not_found' }, { 'x-supabase-api-version': '2024-01-01', 'access-control-expose-headers': 'x-supabase-api-version' });
         if (!acct) return json(route, 400, { error: 'invalid_grant', error_description: 'Invalid login credentials', msg: 'Invalid login credentials' });
-        return json(route, 200, savedSession(acct));
+        if (!renewal) backend.revoked.delete(`refresh-${acct.id}`); // a new session, a new refresh token
+        backend.renewed.push(renewal ? r.session : null);
+        return json(route, 200, renewal ? savedSession(acct, 3600, r.session) : savedSession(acct));
       }
       // Password recovery (docs/password-recovery-scope.md). A changed password is kept per backend
       // (backend.passwords), never in the shared ACCOUNTS.
@@ -618,10 +721,20 @@ export async function attach(context, backend, baseUrl) {
         }
         return json(route, 200, { id: user.id, email: user.email, aud: 'authenticated', role: 'authenticated' });
       }
+      if (p === '/auth/v1/user' && req.method() === 'GET' && backend.stepHolds.user) await backend.stepHolds.user;
+      if (p === '/auth/v1/user' && backend.ended(token)) return sessionGone(route);
       if (p === '/auth/v1/user') return user ? json(route, 200, { id: user.id, email: user.email, aud: 'authenticated', role: 'authenticated' }) : json(route, 401, { msg: 'no user' });
       if (p === '/auth/v1/logout') {
         const scope = url.searchParams.get('scope') || 'global';
         backend.logouts.push(scope);
+        if (backend.ended(token)) return sessionGone(route); // as GoTrue answers (tests/session-answers.mjs)
+        if (scope !== 'others' && backend.logoutFail) {
+          const f = backend.logoutFail;
+          backend.logoutFail = null;
+          if (f === 'drop') return route.abort('connectionreset');
+          if (f === 'hang') { backend.hungLogout = route; return; } // answered by the test, or never
+          return json(route, f, { msg: 'Internal server error' });
+        }
         if (scope === 'others' && backend.failOthersLogout > 0) { backend.failOthersLogout--; return json(route, 500, { msg: 'Internal server error' }); }
         return route.fulfill({ status: 204 });
       }
@@ -645,7 +758,21 @@ export async function attach(context, backend, baseUrl) {
         const fail = backend.failures.findIndex((f) => f.action === body.action);
         if (fail >= 0) {
           const f = backend.failures.splice(fail, 1)[0];
+          if (f.status === 'drop') return route.abort('connectionreset');
           return json(route, f.status, { error: f.message });
+        }
+        if (fnName === 'game' && backend.staleTokens > 0) { backend.staleTokens--; return json(route, 401, { error: 'Please sign in again.' }); }
+        if (fnName === 'game' && backend.expiredUpTo) {
+          const expired = (claims(token)?.jti ?? 0) <= backend.expiredUpTo;
+          backend.tokenLog.push(expired ? 'expired' : 'renewed');
+          if (expired) {
+            const t = backend.together;
+            if (t && t.arrived < t.n) {
+              if (++t.arrived === t.n) t.release();
+              else if (await Promise.race([t.done.then(() => 'all in'), new Promise((r) => setTimeout(r, 5000, 'time'))]) === 'time') t.timedOut = true;
+            }
+            return json(route, 401, { error: 'Please sign in again.' });
+          }
         }
         if (!user) return json(route, 401, { error: 'Please sign in again.' });
         try {
@@ -719,6 +846,7 @@ export async function attach(context, backend, baseUrl) {
 export async function setup() {
   const { server, url } = await startServer();
   const browser = await chromium.launch();
+  watchBrowser(browser); // counts contexts when UI_DIAGNOSTICS=1 (M3); changes nothing
   return {
     url, browser,
     // bypassCSP: only so axe can be injected into the news pages, whose policy allows no script.
@@ -753,6 +881,40 @@ export async function settle(page) {
   await page.waitForTimeout(80);
   await page.waitForFunction(() => !document.querySelector('.pending, [aria-busy="true"]'));
   await page.waitForTimeout(120);
+}
+
+// Records each floating gold or XP cue as it is added to the hero bar (gameplay polish amendment
+// G1). A cue lives 1.6 s, so tests read this record instead of racing to find it. Each record has
+// the cue's text, classes and computed style when added, the XP meter and gold line as they were
+// then, how many times its animation started, and when it was added and removed
+// (performance.now()). Read with page.evaluate(() => window.__cues).
+export async function watchCues(page) {
+  await page.evaluate(() => {
+    window.__cues = [];
+    const top = document.getElementById('top');
+    new MutationObserver((muts) => {
+      for (const m of muts) {
+        for (const n of m.addedNodes) {
+          if (n.nodeType !== 1 || !n.classList.contains('cue')) continue;
+          const cs = getComputedStyle(n);
+          const xp = top.querySelector('#hud-xp .meter');
+          const rec = {
+            text: n.textContent, cls: n.className, ariaHidden: n.getAttribute('aria-hidden'),
+            anim: cs.animationName, opacity: cs.opacity, color: cs.color, background: cs.backgroundColor,
+            inMeter: !!n.closest('.meter'),
+            xpLabel: xp?.querySelector('.meter-name').textContent,
+            xpFit: xp ? ['compact', 'stack'].filter((c) => xp.classList.contains(c)) : null,
+            goldWidth: top.querySelector('#hud-row .hud-res')?.getBoundingClientRect().width,
+            added: performance.now(), removed: null, starts: 0,
+          };
+          n.addEventListener('animationstart', () => { rec.starts++; });
+          n.__cue = rec;
+          window.__cues.push(rec);
+        }
+        for (const n of m.removedNodes) if (n.__cue) n.__cue.removed = performance.now();
+      }
+    }).observe(top, { childList: true });
+  });
 }
 
 // axe-core run; returns violations at or above the given impact.
@@ -797,6 +959,18 @@ export function bigZone(size = 40, id = 'test-expanse') {
   };
 }
 
+// A zone whose boss lair is on its town tile (gameplay polish GP-F5b). No built-in zone has one;
+// a zone edited in the console could. Pass it to FakeBackend({ zones: [townLairZone()] }).
+export function townLairZone(id = 'test-hamlet') {
+  return {
+    id, name: 'Test Hamlet', desc: 'A lair under the square.', size: 6, starter: false, pvp: false, minLevel: 0, exitLevel: 0,
+    overworld: null, entry: { x: 3, y: 6 }, town: { x: 3, y: 3, name: 'Hamlet' }, shop: null,
+    lairs: [{ x: 3, y: 3 }], portals: [],
+    monsters: [{ name: 'Cellar Rat', level: 1, arch: 'quick', verb: 'bites' }, { name: 'Moth Swarm', level: 2, arch: 'caster', verb: 'stings', element: 'storm' }],
+    boss: { name: 'The Undercroft King', level: 5, arch: 'tank', verb: 'crushes', proper: true },
+  };
+}
+
 // An on-screen keyboard as iOS Safari presents it: the layout viewport keeps its size and only
 // the visual viewport shrinks, so anything anchored to the bottom ends up behind the keyboard.
 // Call before navigation; then setKeyboard(page, px) opens (or, with 0, closes) it.
@@ -825,6 +999,10 @@ export const PAGE_METRICS = () => {
   const rowsIn = [...document.querySelectorAll('#main .row[data-a="fight"]')];
   const visibleRows = rowsIn.filter((r) => { const b = r.getBoundingClientRect(); return b.top >= m.top - 1 && b.bottom <= m.bottom + 1 && b.bottom <= innerHeight; }).length;
   const firstRow = rowsIn[0]?.getBoundingClientRect();
+  // Gameplay polish F1: the monsters are one drop-down and a Fight button; F2: in town, a message.
+  const inMain = (el) => { if (!el) return false; const b = el.getBoundingClientRect(); return b.height > 0 && b.top >= m.top - 1 && b.bottom <= m.bottom + 1 && b.bottom <= innerHeight; };
+  const pickVisible = inMain(document.querySelector('#mon-select')) && inMain(document.querySelector('#mon-pick [data-a="fight"]'));
+  const calmVisible = inMain(document.querySelector('#main .town-calm'));
   const clip = (sel) => [...document.querySelectorAll(sel)].some((el) => el.scrollWidth > el.clientWidth + 1);
   const dockBtns = [...document.querySelectorAll('#dock button')].map((b) => b.getBoundingClientRect()).filter((b) => b.width && b.height);
   let overlaps = 0;
@@ -837,7 +1015,7 @@ export const PAGE_METRICS = () => {
   const dock = document.getElementById('dock').getBoundingClientRect();
   const top = document.getElementById('top').getBoundingClientRect();
   return {
-    mainH: Math.round(m.height), visibleRows, firstRowTop: firstRow ? Math.round(firstRow.top - m.top) : null,
+    mainH: Math.round(m.height), visibleRows, pickVisible, calmVisible, firstRowTop: firstRow ? Math.round(firstRow.top - m.top) : null,
     hudH: Math.round(top.height), hudClipped: clip('#top .hud-name') || clip('#top .hud-res'),
     dockH: Math.round(dock.height), dockOverlaps: overlaps, dockMinTarget: minTarget, dockOffscreen: offscreen,
     hOverflow: document.documentElement.scrollWidth > innerWidth + 1,
