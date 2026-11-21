@@ -15,6 +15,16 @@
   [headers.values]
     Cache-Control = "public, max-age=0, must-revalidate"
 
+# MR-B1, cutover step 5 (docs/monstra-regna-scope.md, 3.2): the old Netlify address sends every
+# path, with its query string, to the canonical domain. Host-based, so deploy previews
+# (deploy-preview-<n>--clickmonsters.netlify.app) are different hosts and stay reachable.
+# Merge only after cutover steps 1-4 are verified; check on the real old host (B1-4b, B1-4c).
+[[redirects]]
+  from = "https://clickmonsters.netlify.app/*"
+  to = "https://monstraregna.com/:splat"
+  status = 301
+  force = true
+
 # Staff console at /admin. The page is public HTML, but every action is checked by the server.
 [[redirects]]
   from = "/admin"

@@ -55,7 +55,9 @@ Read these first:
   - **Step 2** (Supabase Auth URLs) was done early by the owner; it is recorded as such, not independently inspected.
   - **Step 3: the applicable checks passed** under the current production authentication configuration (owner-reported, 2026-11-18): session kept and the reset link worked end to end on `monstraregna.com`. **Sign-up confirmation was not performed:** email confirmation is off in production (since the first setup). It is deferred until email confirmation and delivery are separately authorized and configured; don't enable it as part of other work.
   - **Step 4 passed** (2026-11-18): titles, manifest, and news canonical and `og:url` on `monstraregna.com`, checked by the owner and independently by authorized read-only requests.
-  - **Next gate: the announcement (QB-2)**, published by the owner before the redirect; then the redirect PR (step 5), which needs its own go-ahead. Don't open or merge the redirect (prepared on `claude/mr-b1-redirect`, `b00a5c7`), and don't touch the Supabase allow-list, without authorization.
+  - **The announcement (QB-2) was waived** by the owner on 2026-11-21, as there are no players yet.
+  - **The redirect PR (step 5):** opened on the owner's instruction (branch `claude/mr-b1-redirect`, rule `b00a5c7`). It's at its review gate; merging needs the owner's authorization.
+  - **Don't touch** the Supabase allow-list (step 7) without authorization.
   - **MR-B2, the homepage and navigation,** was authorized on 2026-11-19. See `docs/monstra-regna-b2-report.md`.
     - **The milestone** merged as PR #56 (`1679855`).
     - **Its routing correction** merged as PR #57 (`577a253`) and is live.
