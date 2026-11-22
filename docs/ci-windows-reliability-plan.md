@@ -5,8 +5,9 @@
 - **M1 and M3:** observation-only counters in the test harness (`tests/ui/diagnostics.mjs`), in their own reviewed PR.
 - **M4:** passive correlation, once the counters have data. Its first case is in section 8.1.
 - **M2:** prepared as its own observation-only PR, for review before it runs on `main` (section 8.2).
+- **The Chromium NetLog experiment** (2026-11-22): its own observation-only PR, stopping at review (section 9).
 
-**Not authorized:** M5, and any change to connection behaviour, keep-alive settings, concurrency, timeouts or retries.
+**Not authorized:** M5; any change to connection behaviour, keep-alive settings, concurrency, timeouts or retries; upgrading Playwright or Chromium; and disabling `TcpPortRandomizationWin` or adding any other Chromium switch.
 
 ## 1. The problem
 
@@ -326,3 +327,115 @@ The evidence is kept in `docs/ui-audit/ci-m4/`.
 - **Other kernel resources:** `TimeWait` counts aren't a measure of port occupancy (section 8.2), and kernel buffers and non-paged pool aren't measured at all.
 
 **So:** H1 (ephemeral ports in `TIME_WAIT`), as sustained exhaustion, is now much weaker. It was weak for this run in particular: the counts were normal, and two measurements agree, M1 for the harness and M2 for the operating system. The remaining candidates are H4 and H5 in section 3: Windows socket allocation, kernel resources, or something about the runner. Neither measurement here identifies which. **No change is proposed on this evidence.**
+
+## 9. The Chromium NetLog experiment (authorized by the owner, 2026-11-22)
+
+### 9.1 Why
+
+**Codex's independent investigation** (`docs/codex_report_11222026.md`, kept outside this PR) identified an upstream lead:
+- **The lead:** Chromium's randomized TCP source-port allocation on Windows (`TcpPortRandomizationWin`, which sets `SO_RANDOMIZE_PORT` before `connect()`).
+- **The upstream reports:** [Chromium issue 572515601](https://issuetracker.google.com/issues/572515601), [Playwright issue 43545](https://github.com/microsoft/playwright/issues/43545), and Playwright's mitigation in [PR 43605](https://github.com/microsoft/playwright/pull/43605). They recorded Winsock `10055` on `TCP_CONNECT_ATTEMPT`, under a loopback, many-context workload, with the same Chromium build this suite uses (153.0.8010.12, with Playwright 1.63.0) on Windows Server 2025, build 26100.
+
+**It's the leading hypothesis, not an established cause.** M1 to M3 can't say which native socket operation failed. A Chromium NetLog can:
+- the URL request, its stream and its socket;
+- whether the socket was new or reused;
+- `TCP_CONNECT_ATTEMPT` with its `os_error`, and socket read and write errors.
+
+### 9.2 What it adds (observation only)
+
+**`tests/ui/netlog.mjs`, used by `setup()` in `tests/ui/harness.mjs`.**
+- **Off unless `UI_NETLOG_DIR` is set** to an absolute directory. When it's off, the harness calls `chromium.launch()` with no options, exactly as before.
+- **When it's on, each test file's one Chromium launch** gets exactly one added argument, `--log-net-log=<UI_NETLOG_DIR>/<file>-<node pid>-<time>-<n>.netlog.json`, unique per launch.
+  - **Capture mode:** Chromium's default; no `--net-log-capture-mode` is passed.
+  - **Playwright's own browser log is turned on** (`DEBUG=pw:browser`, set before Playwright loads). It records the resolved launch command line and the browser's PID in the suite's output, and the module copies both into the metadata.
+- **A `<same name>.meta.json` beside each NetLog,** written at launch and updated at close. It records:
+  - the test file;
+  - the harness server's address and port;
+  - when the launch was requested and done, and when the close was requested and done;
+  - Chromium's PID and the full launch command line;
+  - the Playwright, Chromium and Node versions, and the runner image;
+  - whether Chromium exited unexpectedly;
+  - the NetLog's size, whether it was flushed (Chromium closes the JSON on a normal shutdown), whether it parses as JSON, and its number of events.
+
+  The NetLog is read but never changed or truncated. An incomplete one is kept and marked.
+
+**The CI browser job** (`.github/workflows/ci.yml`):
+- **Before the suite:** a read-only step records the runner image, the Windows version and build, `tcpip.sys`'s file version, `netsh int ipv4 show dynamicport tcp` and `netsh int ipv4 show excludedportrange protocol=tcp` in `windows-network.txt`.
+- **The test step** gets `UI_NETLOG_DIR: ${{ runner.temp }}\netlog`. Its command and shell are unchanged.
+- **After the suite:**
+  - a step writes each NetLog's size and state to the job summary and to `summary.txt`. It says so if the total exceeds **500 MB**, or if any log wasn't flushed or isn't valid JSON;
+  - the folder is uploaded as **`browser-netlog-attempt-<n>`**, kept 7 days, whether the suite passes or fails.
+- **These steps are `continue-on-error`,** so they can't change or hide the suite's result. M1 to M3 and the existing artifacts are unchanged.
+
+**`tools/netlog-trace.mjs`** reads a NetLog, complete or not, and has three modes:
+- **`--summary`:** counts of requests, connect attempts, reused sockets, and errors by event;
+- **`--errors`:** every event with an error, with `-176` and `10055` marked;
+- **`--url <part> [--near <ISO time>]`:** follows one request through its source dependencies (stream job, connect job, socket), and names the first failed operation.
+
+**Not changed:**
+- Playwright, Chromium, and every other launch argument: `TcpPortRandomizationWin` is left at its default, and Playwright's own `--disable-features` list is untouched;
+- browser and context lifecycles, keep-alive, connection pooling and socket settings;
+- test order and concurrency, timeouts, retries, the fake backend, test assertions, and the application.
+
+### 9.3 Validation (local, the owner's Windows laptop)
+
+1. **Chromium starts with the argument.** The resolved command line has exactly one `--log-net-log=`, and exactly one `--disable-features=` (Playwright's list).
+2. **Nothing else in the launch changes.** The resolved command lines with and without `UI_NETLOG_DIR` have the same 45 switches. The only differences are the added `--log-net-log` and the per-launch temporary `--user-data-dir`.
+3. **The files are valid NetLogs.** All 16 parse as JSON, with Chromium's NetLog structure: `constants` (event, source and phase tables, `timeTickOffset`) and `events`.
+   - **Not done:** opening them in Chromium's NetLog viewer by hand.
+4. **Local requests appear,** and can be followed to their socket. For example, `/js/entry.js`: URL request, then HTTP stream job, then TCP connect job (`127.0.0.1:<the harness port>`), then the socket's `TCP_CONNECT_ATTEMPT`. Later requests show `SOCKET_POOL_REUSED_AN_EXISTING_SOCKET`, with its idle time.
+5. **One distinct file per launch:** 16 launches, 16 files, 16 server ports.
+6. **A normal shutdown flushes the log:** all 16 were flushed and parse as JSON.
+7. **An unexpected exit is kept and marked:** with Chromium killed mid-capture, the partial NetLog (92 KB) was kept, the metadata records the unexpected exit, and the trace tool reads it as far as it goes (321 events), labelled incomplete.
+8. **The suite is unaffected:** `UI_DIAGNOSTICS=1` with `UI_NETLOG_DIR`: 313 of 313.
+
+### 9.4 Size and overhead (local)
+
+- **Size:** one full suite gives 16 NetLogs, **158 MB** in all. The largest is `sign-out.test` at 25.7 MB, the smallest 1.8 MB. Compressed, that's **9.0 MB**.
+- **The budget:**
+  - **expected:** about 160 MB raw and about 10 MB as an artifact, per attempt;
+  - **flagged:** above 500 MB raw, which the job summary reports. Nothing is truncated;
+  - **retention:** 7 days.
+- **Overhead, locally** (both runs with `UI_DIAGNOSTICS=1`, 313 of 313):
+  - **with NetLog:** 729.6 s;
+  - **without:** 731.3 s. That run overlapped other local work (the privacy scan), so it was if anything slowed.
+
+  **No measurable difference** at this resolution. The CI runner's figure is recorded on the PR from its first run.
+
+### 9.5 Privacy and artifact safety (checked on the 16 local NetLogs)
+
+**Default capture mode strips credentials:**
+- every `Authorization` and cookie value is replaced by a "[N bytes were stripped]" marker (5,564 in all), and none is left;
+- no request or response bodies are recorded.
+
+**What remains:**
+- **Hosts:** only `127.0.0.1` (the harness) and the Supabase project host. Playwright answers the latter's requests with the fake backend, so nothing goes to the real Supabase.
+- **The `apikey` header:** the publishable key, which is public by design.
+- **Tokens:** 100 JWTs, all the harness's fakes (signature `signature`, test-account IDs, `@example.test`), in the recovery tests' local URLs (`#access_token=`); and the fake refresh tokens (`refresh-<test id>~n~n`).
+- **"password":** only as `grant_type=password` in the sign-in URL (the value is in the body, which isn't logged), and in Chromium's error names.
+- **Local paths:** the launch line and NetLog paths name the machine's temp folder. On CI that's the runner's account, not a person's.
+
+**Conclusion:** in CI, where every request goes to the fake backend, a NetLog holds only fake test data, the public key and runner paths. Raw NetLogs are never committed to the repository.
+
+### 9.6 Reading a future `ERR_NO_BUFFER_SPACE`
+
+1. **From the failure's `diag.json`:** take the failed request's URL, `capturedAt`, the request's `at`, and the test file.
+2. **Find the NetLog:** in `browser-netlog-attempt-<n>`, the `.meta.json` with that `testFile` gives the NetLog and the server port.
+3. **Follow the request:** `node tools/netlog-trace.mjs <netlog> --url <path> --near <time>`. That traces it to its stream job, connect job and socket.
+4. **Get the first failed operation:** connect, read or write, with `net_error` and `os_error`, and whether the socket was new or reused.
+5. **Get the whole picture:** `--errors` lists every `-176` and `10055` in the log, including neighbouring requests that succeeded, and any retry inside Chromium.
+
+**What decides it:**
+- **Case A:** `TCP_CONNECT_ATTEMPT` returns `os_error: 10055` on the request's own socket. That supports a separately authorized comparison of the default features against `TcpPortRandomizationWin` disabled. **Not to be done without authorization.**
+- **Case B:** the error comes from a read or write on an established socket. Then the next step examines I/O and connection reuse.
+- **Case C:** the NetLog is incomplete, or can't identify the operation. Then record exactly why, and propose the smallest change to the capture. A missing event in an incomplete log is never taken as evidence that something didn't happen.
+- **Case D:** no failure in the observation window. Then report the clean runs and the measurements. **Don't claim it's resolved.**
+
+### 9.7 Observation limits, and switching it off
+
+**Observation:** after the owner reviews and authorizes the merge, from ordinary required CI runs only. No extra runs, and no retries or stress tests. It ends at the first of:
+- one attributable `ERR_NO_BUFFER_SPACE` captured;
+- eight ordinary completed browser jobs without one;
+- unacceptable overhead, unsafe artifacts, or other interference.
+
+**Switching it off:** remove `UI_NETLOG_DIR` from the test step, and the harness launches Chromium exactly as before. The three NetLog steps then upload nothing. Reverting the PR removes it entirely.

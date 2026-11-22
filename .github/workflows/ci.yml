@@ -107,11 +107,37 @@ jobs:
           ./tools/ci-tcp-sampler.ps1 -Out ci-output/tcp -Mode snapshot -Label start
           $p = Start-Process pwsh -ArgumentList '-NoProfile', '-File', 'tools/ci-tcp-sampler.ps1', '-Out', 'ci-output/tcp' -PassThru -WindowStyle Hidden
           Set-Content -Path ci-output/tcp/sampler.pid -Value $p.Id
+      # Chromium NetLog experiment (docs/ci-windows-reliability-plan.md, section 9): read-only Windows
+      # network settings first, then UI_NETLOG_DIR on the test step makes the harness add one argument,
+      # --log-net-log=<unique file>, to each test file's Chromium launch (tests/ui/netlog.mjs). Nothing
+      # else in the launch, the suite or its result changes. To switch it off, remove UI_NETLOG_DIR.
+      - name: Record the Windows network settings (NetLog experiment, observation only)
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP 'netlog'
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          $os = Get-CimInstance Win32_OperatingSystem
+          $ubr = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion').UBR
+          @(
+            "recorded (UTC): $((Get-Date).ToUniversalTime().ToString('o'))"
+            "runner image: $env:ImageOS $env:ImageVersion"
+            "Windows: $($os.Caption) $($os.Version), build $($os.BuildNumber).$ubr"
+            "tcpip.sys: $((Get-Item "$env:SystemRoot\System32\drivers\tcpip.sys").VersionInfo.FileVersion)"
+            ''
+            '== netsh int ipv4 show dynamicport tcp'
+            (netsh int ipv4 show dynamicport tcp | Out-String).Trim()
+            ''
+            '== netsh int ipv4 show excludedportrange protocol=tcp'
+            (netsh int ipv4 show excludedportrange protocol=tcp | Out-String).Trim()
+          ) | Set-Content -Path (Join-Path $dir 'windows-network.txt') -Encoding utf8
       - name: npm run test:ui (Playwright and axe, against the fake backend)
         # Failure diagnostics (tests/ui/diagnostics.mjs, CI-A review CI-A-01): a trace, screenshot, DOM
         # and page state for each failed test, under tests/ui/artifacts/failures/. Records only.
+        # UI_NETLOG_DIR: the NetLog experiment above (tests/ui/netlog.mjs). Records only.
         env:
           UI_DIAGNOSTICS: '1'
+          UI_NETLOG_DIR: ${{ runner.temp }}\netlog
         run: mkdir -p ci-output && npm run test:ui 2>&1 | tee ci-output/browser.txt
       - name: Stop the TCP sampler (M2)
         if: always()
@@ -132,6 +158,32 @@ jobs:
         with:
           name: browser-tcp-attempt-${{ github.run_attempt }}
           path: ci-output/tcp/
+          if-no-files-found: ignore
+          retention-days: 7
+      # The NetLogs' sizes and state, from their .meta.json files, into the job summary and summary.txt.
+      # Nothing is truncated or changed. Expected about 160 MB raw (about 9 MB compressed) per attempt.
+      # Above 500 MB, or any log not flushed or not valid JSON, the summary says so.
+      - name: Summarize the NetLogs (NetLog experiment)
+        if: always()
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP 'netlog'
+          $metas = @(Get-ChildItem -Path $dir -Filter '*.meta.json' -ErrorAction SilentlyContinue | ForEach-Object { Get-Content $_.FullName -Raw | ConvertFrom-Json })
+          $total = ($metas | Measure-Object -Property sizeBytes -Sum).Sum
+          $lines = @('### NetLog experiment', '', "launches: $($metas.Count); total: $([math]::Round($total / 1MB, 1)) MB", '', '| test file | port | browser pid | MB | flushed | valid JSON | unexpected exit |', '| --- | --- | --- | --- | --- | --- | --- |')
+          foreach ($m in $metas) { $lines += "| $($m.testFile) | $($m.server.port) | $($m.browserPid) | $([math]::Round($m.sizeBytes / 1MB, 1)) | $($m.flushed) | $($m.validJson) | $($m.disconnectedUnexpectedly) |" }
+          if ($total -gt 500MB) { $lines += '', "**Above the 500 MB budget: $([math]::Round($total / 1MB)) MB. Nothing was truncated.**" }
+          if (@($metas | Where-Object { -not $_.flushed -or -not $_.validJson }).Count) { $lines += '', '**At least one NetLog was not flushed or is not valid JSON: treat it as incomplete evidence.**' }
+          $lines | Add-Content -Path $env:GITHUB_STEP_SUMMARY
+          $lines | Set-Content -Path (Join-Path $dir 'summary.txt') -Encoding utf8
+      - name: Keep the NetLogs (NetLog experiment)
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: browser-netlog-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/netlog/
           if-no-files-found: ignore
           retention-days: 7
       - name: Keep the output of a failed run

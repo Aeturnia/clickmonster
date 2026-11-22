@@ -287,6 +287,12 @@ npx playwright install chromium   # once
   - **The runner's TCP table** (M2, `tools/ci-tcp-sampler.ps1`): the browser job samples it about every 5 to 6 s (a 5 s pause after each sample), as aggregate counts by state, machine-wide and loopback. It also takes snapshots, with the dynamic port range, before and after. The results go in the `browser-tcp-attempt-<n>` artifact.
     - **The steps** are `continue-on-error`, and the test step is unchanged, so they can't change its result.
     - **Correlating:** the metrics lines' `endedAt` (UTC) line up with the samples' `t`. `docs/ci-windows-reliability-plan.md`, section 8.3, says how to read them with a failure.
+  - **The Chromium NetLog** (`tests/ui/netlog.mjs`; plan section 9). It's on only when `UI_NETLOG_DIR` is set, which CI's browser job does.
+    - **What it adds:** each file's Chromium launch gets one added `--log-net-log=<unique file>`, in the default capture mode. A `.meta.json` beside it records the file, the server port, the PID, the launch command line (`DEBUG=pw:browser`) and whether the log was flushed.
+    - **The artifact:** `browser-netlog-attempt-<n>`, with `windows-network.txt` and a size summary.
+    - **Reading it:** `tools/netlog-trace.mjs`.
+    - **Switching it off:** remove `UI_NETLOG_DIR`; the launch is then exactly as before.
+    - **Never commit raw NetLogs.**
   - **The trace has no screenshots,** to reduce load on the two-core runner. `UI_TRACE_SCREENSHOTS=1` turns them back on, for comparison only.
   - **Reading the event-loop delay on Windows:** an idle process reads about 31 ms.
 - **The first paint** is a test (`tests/entrance-budget.test.mjs`): the document plus every stylesheet and script `index.html` loads, counted as LF. At most 48,000 bytes (MR-B2's tripwire); above 40,000 is reported.
