@@ -8,6 +8,7 @@
 //     after the first download so later runs are offline.
 import http from 'node:http';
 import { track, watchServer, watchBrowser } from './diagnostics.mjs';
+import { netlogLaunch } from './netlog.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -845,7 +846,10 @@ export async function attach(context, backend, baseUrl) {
 // One browser per test file; a fresh context per test.
 export async function setup() {
   const { server, url } = await startServer();
-  const browser = await chromium.launch();
+  // Chromium NetLog (netlog.mjs): only with UI_NETLOG_DIR set; otherwise the same launch as before.
+  const netlog = netlogLaunch(server);
+  const browser = netlog ? await chromium.launch(netlog.options) : await chromium.launch();
+  netlog?.launched(browser);
   watchBrowser(browser); // counts contexts when UI_DIAGNOSTICS=1 (M3); changes nothing
   return {
     url, browser,
@@ -863,7 +867,7 @@ export async function setup() {
       page.on('dialog', (d) => { page.nativeDialogs.push({ type: d.type(), message: d.message() }); d.accept(); });
       return { page, context, backend };
     },
-    async close() { await browser.close(); server.close(); },
+    async close() { netlog?.beforeClose(); await browser.close(); server.close(); netlog?.afterClose(); },
   };
 }
 
