@@ -1,6 +1,16 @@
 # MR-B1: identity and domain (report)
 
-**Status: cutover step 1 complete** (2026-11-18). Authorized by the owner on 2026-11-18; independently reviewed at `2eaae3e` and approved to merge after green CI; merged as PR #48 (`ea2e4a4`).
+**Status (2026-11-22): the redirect is complete; MR-B1's cutover stays open.**
+
+| Criterion or step | Disposition |
+| --- | --- |
+| Step 5: the redirect | **Complete.** PR #70 (`a468ee0`), the host rule; PR #72 (`543a844`), the news edge function's fallback |
+| B1-4b: the old host redirects | **Passed, with a documented encoding exception** (section 8): accepted by the owner, 2026-11-22 |
+| B1-4c: a sign-in link issued before the move | **Not performed:** no such link was available |
+| Step 6: verification | **Partly complete:** B1-4c is outstanding |
+| Step 7: remove the old origin from the Supabase Auth allow-list | **Not authorized** |
+
+*Earlier status, as recorded at the time:* **cutover step 1 complete** (2026-11-18). Authorized by the owner on 2026-11-18; independently reviewed at `2eaae3e` and approved to merge after green CI; merged as PR #48 (`ea2e4a4`).
 - **Step 3: the applicable checks passed** under the current production authentication configuration (owner-reported, 2026-11-18): session restore and the password-reset link on `monstraregna.com`. **Sign-up confirmation was not performed:** email confirmation is off in production, and the check is deferred until email confirmation and delivery are separately authorized and configured.
 - **Step 4 passed** (2026-11-18): the public pages, checked by the owner in a browser and independently by Claude with authorized read-only requests (section 3). **QB-2, the announcement, was waived** by the owner on 2026-11-21: there are no public players, or any other players, yet. **The redirect PR (step 5) was opened** on the owner's instruction (2026-11-21), for review; merging needs the owner's authorization. The redirect (step 5) and removing the Netlify origin from the allow-list (step 7) are **not** done and not authorized here. MR-B2 and MR-S1 are not started.
 - **Unchanged:** public password-reset requests stay off (`RECOVERY_REQUESTS = false`).
@@ -57,8 +67,8 @@
 | 4. Public pages on the new domain: `/news` and `/news/<slug>` with canonical and `og:url` on `monstraregna.com`; the manifest and titles | Owner, or read-only requests by Claude if authorized | **Passed, 2026-11-18.** Checked by the owner in a browser, then by Claude with read-only GET requests (authorized; no credentials, nothing sent):<br>- `https://monstraregna.com/`: 200, `<title>Monstra Regna</title>`, heading "Monstra Regna"; byte-identical to `main`'s `public/index.html`.<br>- `/news`: 200, title "News · Monstra Regna", canonical and `og:url` `https://monstraregna.com/news`, `og:site_name` "Monstra Regna".<br>- `/news/under-construction`: 200, `no-store`, title "Under Construction · Monstra Regna", canonical and `og:url` `https://monstraregna.com/news/under-construction`.<br>- `/manifest.webmanifest`: 200, `name` and `short_name` "Monstra Regna".<br>- `/admin.html`: 200, title "Monstra Regna Admin".<br>- **The old host, before the redirect:** `https://clickmonsters.netlify.app/` serves the same `index.html` (200), and its `/news/under-construction` also gives `https://monstraregna.com/...` as canonical and `og:url` (B1-2, live). |
 | QB-2. Publish the announcement article (the move, the new address, the possible one-time sign-in) | Owner, in the admin console | **Waived** by the owner, 2026-11-21: no players yet |
 | 5. Turn on the redirect | Owner merges the redirect PR | **Done, 2026-11-21:** PR #70 merged as `a468ee0`; live within about 20 s |
-| 6. Verify the redirect (B1-4b, B1-4c) | Read-only requests, if authorized; the owner's own old email if one exists | **B1-4b: one deviation,** `/news` not redirected (section 6); fallback in its own PR (section 7). **B1-4c: not performed** |
-| 7. Remove the Netlify origin from the Supabase allow-list | Owner | After step 6 |
+| 6. Verify the redirect (B1-4b, B1-4c) | Read-only requests, if authorized; the owner's own old email if one exists | **B1-4b: passed, with a documented encoding exception** (sections 6 to 8; after the news fallback, PR #72). **B1-4c: not performed** |
+| 7. Remove the Netlify origin from the Supabase allow-list | Owner | **Not authorized** (B1-4c is outstanding) |
 
 **What players notice after this PR merges:** the name, on both addresses. Nobody is signed out: the storage keys are unchanged, and each address keeps its own saved session. A player moves address only when the redirect turns on (step 5), and then signs in once on `monstraregna.com`, as the announcement will say.
 
@@ -77,7 +87,7 @@
 - **The database suite,** locally (no Docker daemon in this environment). CI runs it.
 - **The production Supabase Auth settings** (step 2): reported by the owner, not read.
 - **How "Monstra Regna" displays** as an installed app's name on real home screens (QB-1).
-- **Everything in steps 3–7,** which happens after the merge.
+- **Everything in steps 3–7,** which happens after the merge. (Later: steps 3 to 5 are recorded above. Step 6 is partly complete, with B1-4c not performed, and step 7 is not authorized. See the status at the top and section 8.)
 
 ## 6. After the redirect went live: B1-4b and B1-4c (2026-11-21)
 
@@ -126,3 +136,59 @@ So search engines and link previews already point at the new domain. A visitor f
 **What the tests caught:** against the old function, with only the constant added, the redirect tests fail (three of the five; the other two guard unchanged behaviour). The old identity test rejects the new constant. The host name added to any other shipped file fails both identity tests.
 
 **After an authorized merge (B1-4b again):** read-only requests to the old host's `/news`, `/news/<slug>` and their query forms should answer 301 to `monstraregna.com`, and the canonical pages 200, with no loop. If the function still answers there, the evidence is recorded and work stops.
+
+## 8. B1-4b after the news fallback: passed, with a documented encoding exception (2026-11-22)
+
+**PR #72** (the news edge function's fallback, section 7) was approved and merged as `543a844` on 2026-11-22 at 01:14 UTC. The old host's `/news` answered 200 at 01:14:39 and **301** at 01:14:55. The checks below ran at 01:15 UTC, read-only. The full output is on PR #72.
+
+**The old host, `https://clickmonsters.netlify.app`** (the first response's status and `Location`, then the chain):
+
+| Address | Status | Location | Chain |
+| --- | --- | --- | --- |
+| `/news` | 301 | `https://monstraregna.com/news` | 301 > 200 |
+| `/news/` | 301 | `https://monstraregna.com/news/` | 301 > 200 |
+| `/news?page=2` | 301 | `https://monstraregna.com/news?page=2` | 301 > 200 |
+| `/news/under-construction` | 301 | `https://monstraregna.com/news/under-construction` | 301 > 200 |
+| `/news/under-construction?x=1&y=a%20b` | 301 | `https://monstraregna.com/news/under-construction?x=1&y=a+b` | 301 > 200 |
+| `/news/no-such-article` | 301 | `https://monstraregna.com/news/no-such-article` | 301 > **404** |
+| `/news/no-such-article?q=1` | 301 | `https://monstraregna.com/news/no-such-article?q=1` | 301 > 404 |
+| `/` | 301 | `https://monstraregna.com/` | 301 > 200 |
+| `/guide?ref=x` | 301 | `https://monstraregna.com/guide?ref=x` | 301 > 200 |
+
+The site's other static routes, checked in section 6 after PR #70, answer 301 the same way.
+
+**Recorded, as the owner set out:**
+1. **The old host answers 301** for the site's static routes (section 6) and, since PR #72, its news routes.
+2. **The canonical destinations answer as expected:** 200 for the pages and articles, and **404 for an unknown article**.
+3. **Canonical and Open Graph addresses are correct:** on `monstraregna.com`, `/news` and `/news/under-construction` answered 200, with `<link rel="canonical">` and `og:url` equal to their own address.
+4. **Deploy previews are unaffected:** `deploy-preview-72--…` `/news` and `/news/under-construction?x=1` answered 200, with no `Location`.
+5. **No redirect loops:** every chain ends within two responses.
+6. **Query strings are preserved semantically,** under standard form-style query decoding (`application/x-www-form-urlencoded`, as `URLSearchParams` implements it). They are **not** preserved byte for byte in one case: on the news routes, Netlify normalizes a `%20` in the query to `+` before the edge function receives the request.
+7. **A literal plus encoded as `%2B` keeps its value:** it arrives as `%2B`.
+
+**The query-encoding exception** (the news routes, through the function, compared with the host rule on `/guide`):
+
+| Query sent | Through the news function | Through the host rule |
+| --- | --- | --- |
+| `?y=a%20b` | `?y=a+b` | `?y=a%20b` |
+| `?q=%2B1` (a literal plus) | `?q=%2B1` | `?q=%2B1` |
+| `?q=a+b` | `?q=a+b` | `?q=a+b` |
+| `?q=%26x%3D1` | unchanged | unchanged |
+| `?q=%C3%A9` | unchanged | unchanged |
+| `?q=a%25b` | unchanged | unchanged |
+| `?q=%22%3C%3E` | unchanged | unchanged |
+
+A `%20` in the path is kept (`/news/a%20b`).
+
+**Where it comes from:** the function passes the request URL's query through unchanged, and its unit test with `%20` keeps `%20`. The `+` comes from Netlify's edge runtime, before the function runs.
+
+**Why it's accepted:** the owner accepted it on 2026-11-22, because the current site reads none of these query parameters, and the decoded values tested are equivalent.
+
+**What it doesn't claim:**
+- **Query preservation is not byte-exact.** The URLs are equivalent under form-style decoding but aren't byte-identical, and other systems (for example, ones that sign raw query strings) may tell them apart.
+- **Future features need their own review:** any feature that relies on raw query bytes, signed query parameters or encoding-sensitive processing on these routes needs a new review.
+
+**Still outstanding:**
+- **B1-4c is not performed:** no sign-in link issued before the move was available, and none was made up.
+- **Step 7** (removing the old host from the Supabase Auth allow-list) is **not authorized**.
+- **No changes** were made to the edge function, the redirect rules, authentication, the database or production configuration for this record.
