@@ -56,7 +56,10 @@ Read these first:
   - **Step 3: the applicable checks passed** under the current production authentication configuration (owner-reported, 2026-11-18): session kept and the reset link worked end to end on `monstraregna.com`. **Sign-up confirmation was not performed:** email confirmation is off in production (since the first setup). It is deferred until email confirmation and delivery are separately authorized and configured; don't enable it as part of other work.
   - **Step 4 passed** (2026-11-18): titles, manifest, and news canonical and `og:url` on `monstraregna.com`, checked by the owner and independently by authorized read-only requests.
   - **The announcement (QB-2) was waived** by the owner on 2026-11-21, as there are no players yet.
-  - **The redirect PR (step 5):** opened on the owner's instruction (branch `claude/mr-b1-redirect`, rule `b00a5c7`). It's at its review gate; merging needs the owner's authorization.
+  - **Step 5, the redirect, is live:** PR #70 merged as `a468ee0` (2026-11-21).
+    - **B1-4b found one deviation:** `/news` and `/news/*` on the old host are served by the news edge function, not redirected. The function's fix is its own PR (report sections 6 and 7).
+    - **B1-4c wasn't performed.**
+    - **The old host name** is allowed only as `LEGACY_HOST` in `netlify/edge-functions/news.js` (`tests/identity.test.mjs`).
   - **Don't touch** the Supabase allow-list (step 7) without authorization.
   - **MR-B2, the homepage and navigation,** was authorized on 2026-11-19. See `docs/monstra-regna-b2-report.md`.
     - **The milestone** merged as PR #56 (`1679855`).
@@ -253,7 +256,7 @@ Read these first:
 ## Testing
 
 ```
-npm test                 # engine, entrance file checks, the first-paint tripwire, the public pages, news rules, the news page handler, the town rule, the log rules and the session rule (71)
+npm test                 # engine, entrance file checks, the first-paint tripwire, the public pages, news rules, the news page handler, the town rule, the log rules and the session rule (77)
 npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (313)
 npm run test:db          # database (pgTAP, 42) and API/function/recovery/session tests (17, plus 1 opt-in) on the LOCAL Supabase stack, with Mailpit
 npx playwright install chromium   # once

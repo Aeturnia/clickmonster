@@ -2,7 +2,7 @@
 // LAC-17), run in Node with the network replaced, so nothing reaches Supabase.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { newsResponse } from '../netlify/edge-functions/news.js';
+import { newsResponse, LEGACY_HOST } from '../netlify/edge-functions/news.js';
 import { SITE_ORIGIN } from '../public/js/site.js';
 import { SUPABASE_URL, SUPABASE_KEY } from '../public/js/config.js';
 
@@ -155,4 +155,75 @@ test('HEAD is answered without a body; other methods are refused', async () => {
     assert.match(await res.text(), /That isn't allowed here/, method);
     assert.equal(calls.length, 0, `${method}: nothing asked`);
   }
+});
+
+// ---------------------------------------------------------------- MR-B1 step 5: the old Netlify address
+// Netlify runs this function before netlify.toml's host redirect on the old address (B1-4b), so the
+// function sends those requests to the canonical domain itself (docs/monstra-regna-b1-report.md).
+const OLD = `https://${LEGACY_HOST}`;
+const at = (origin, path, init = {}) => new Request(`${origin}${path}`, init);
+
+test('MR-B1 the old address: list, article, trailing slash, query and unknown article each get a 301 to the same path on the canonical domain, with no query', async () => {
+  for (const p of ['/news', '/news/', '/news?page=2&x=a%20b', '/news/patch-notes-1-2', '/news/patch-notes-1-2/', '/news/patch-notes-1-2?ref=old', '/news/no-such-article']) {
+    for (const method of ['GET', 'HEAD']) {
+      const { fetchImpl, calls } = api([ARTICLE]);
+      const res = await newsResponse(at(OLD, p, { method }), { fetchImpl });
+      assert.equal(res.status, 301, `${method} ${p}`);
+      assert.equal(res.headers.get('location'), `${SITE_ORIGIN}${p}`, `${method} ${p}: the same path and query, on SITE_ORIGIN`);
+      assert.equal(calls.length, 0, `${method} ${p}: no Supabase request`);
+      assert.equal(await res.text(), '', `${method} ${p}: no body`);
+    }
+  }
+});
+
+test('MR-B1 the old address: other methods still get the 405, not a redirect', async () => {
+  for (const method of ['POST', 'PUT', 'DELETE']) {
+    const { fetchImpl, calls } = api([ARTICLE]);
+    const res = await newsResponse(at(OLD, '/news', { method }), { fetchImpl });
+    assert.equal(res.status, 405, method);
+    assert.equal(res.headers.get('allow'), 'GET, HEAD', method);
+    assert.equal(res.headers.get('location'), null, method);
+    assert.equal(calls.length, 0, method);
+  }
+});
+
+test('MR-B1 the canonical domain and deploy previews are unchanged: they serve the pages, with one read', async () => {
+  for (const origin of [SITE_ORIGIN, `https://deploy-preview-70--${LEGACY_HOST}`, `https://main--${LEGACY_HOST}`]) {
+    const { fetchImpl, calls } = api([ARTICLE]);
+    const res = await newsResponse(at(origin, '/news/patch-notes-1-2'), { fetchImpl });
+    assert.equal(res.status, 200, origin);
+    assert.equal(res.headers.get('location'), null, origin);
+    assert.equal(calls.length, 1, `${origin}: one read`);
+    const list = api([ARTICLE]);
+    assert.equal((await newsResponse(at(origin, '/news'), { fetchImpl: list.fetchImpl })).status, 200, `${origin} /news`);
+  }
+});
+
+test('MR-B1 forged host headers can neither trigger the redirect nor change where it goes', async () => {
+  const forged = { host: LEGACY_HOST, forwarded: `host=${LEGACY_HOST}`, 'x-forwarded-host': LEGACY_HOST };
+  // On the canonical domain, headers naming the old host change nothing.
+  const canon = api([ARTICLE]);
+  const res1 = await newsResponse(at(SITE_ORIGIN, '/news/patch-notes-1-2', { headers: forged }), { fetchImpl: canon.fetchImpl });
+  assert.equal(res1.status, 200);
+  assert.equal(res1.headers.get('location'), null);
+  assert.equal(canon.calls.length, 1);
+  // On the old host, headers naming another host don't move the destination.
+  const evil = { host: 'evil.example', forwarded: 'host=evil.example;proto=http', 'x-forwarded-host': 'evil.example', 'x-forwarded-proto': 'http' };
+  const old = api([ARTICLE]);
+  const res2 = await newsResponse(at(OLD, '/news/patch-notes-1-2?x=1', { headers: evil }), { fetchImpl: old.fetchImpl });
+  assert.equal(res2.status, 301);
+  assert.equal(res2.headers.get('location'), `${SITE_ORIGIN}/news/patch-notes-1-2?x=1`);
+  assert.equal(old.calls.length, 0);
+});
+
+test('MR-B1 only the exact old host is redirected (a look-alike host is not)', async () => {
+  for (const host of [`${LEGACY_HOST}.evil.example`, `evil-${LEGACY_HOST}`, `x${LEGACY_HOST}`]) {
+    const { fetchImpl, calls } = api([ARTICLE]);
+    const res = await newsResponse(at(`https://${host}`, '/news'), { fetchImpl });
+    assert.equal(res.status, 200, host);
+    assert.equal(calls.length, 1, host);
+  }
+  // The URL parser lower-cases the host, so a differently cased old host is still the old host.
+  const { fetchImpl } = api([ARTICLE]);
+  assert.equal((await newsResponse(at(`https://${LEGACY_HOST.toUpperCase()}`, '/news'), { fetchImpl })).status, 301);
 });
