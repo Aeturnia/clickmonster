@@ -11,6 +11,37 @@ Read these first:
 - `docs/ui-modernization-audit.md`: the Phase 0 audit and the phase plan.
 - `docs/ui-phase-1-report.md` … `docs/ui-phase-4-report.md`: what each phase changed, its acceptance criteria, deviations and the review corrections.
 - `docs/backlog.md`: agreed but unscheduled work (sign-in news, password recovery, follow-ups), and the release verification still owed, split into before and after release.
+- The owner's design notes, records rather than approved scopes:
+  - `docs/monstra-regna-world-zones-kingdoms-design-notes.md`: world, nested zones and Kingdoms;
+  - `docs/monstra-regna-security-hardening-design-notes.md`: security hardening, authentication, action frequency and engagement verification;
+  - `docs/monstra-regna-github-project-setup-brief.md`: the brief for the GitHub tracking below.
+
+## Tracking (GitHub, set up 2026-11-22)
+
+- **The Project:** [Monstra Regna — Development & Release](https://github.com/users/Aeturnia/projects/1), a private user-level Project linked to this repository.
+  - **Fields:** Status, Priority (set by the owner only), Work type and Area.
+  - **Status values:** Backlog, Research / Design, Scoped, Authorized, In progress, Review, Blocked, Done.
+  - **Views:** Board, Roadmap (grouped by milestone), Backlog, Review gates, and Security & release.
+- **Milestones #1 to #7** have no due dates; don't invent any:
+  - Security Hardening — Baseline;
+  - Authentication & Session Recovery — follow-ups;
+  - Kingdoms — Design & Foundation;
+  - Progression & Economy Simulation;
+  - World & Zone Expansion Research;
+  - Monstra Regna — Identity & Homepage;
+  - Public Launch Readiness.
+- **Issues #76 to #99** mirror the open work. Each entry in `docs/backlog.md` names its issue.
+- **The rules:**
+  - **The Markdown documents stay authoritative** (the backlog, the scopes and the reports). Issues link to them, not the reverse.
+  - **A Status, milestone or assignment is a tracking signal, never authorization.** Only the owner's explicit instructions and accepted scopes authorize work, merges or deployment.
+  - **Keep both in step:** when work is authorized, starts, reaches a review gate or completes, update the issue's Status. Cite the issue number in the PR and the report. Add new backlog entries as issues, linked both ways.
+  - **Closed work stays closed.** Don't reopen it, or assign old PRs to milestones afterwards.
+  - **Exploitable security findings** go in a private security advisory, not a public issue. The repository is public.
+  - **No secrets or personal details** in issues, as elsewhere.
+- **How to edit it:**
+  - **Most changes:** `gh` with the `project` scope (`gh project item-add`, `item-edit`, `field-list`) and `gh issue`.
+  - **The Status options and views:** GitHub's GraphQL API (`updateProjectV2Field`, `createProjectV2View`, `updateProjectV2View`).
+  - **Web UI only:** view grouping and the built-in workflows.
 
 ## Where things stand (2026-11-14)
 
@@ -83,7 +114,7 @@ Read these first:
     - two-line meters span the bar (an iPhone WebKit fix);
     - no HP bars on the fight screen, except a world boss's Shared HP.
   - **F2 is a game rule in the shared engine,** enforced by the live server since the redeploy.
-  - **Follow-ups:** the phone-landscape tabs below the screen's edge, and the Windows runner's `ERR_NO_BUFFER_SPACE` (`docs/backlog.md`).
+  - **Follow-ups:** the phone-landscape tabs below the screen's edge (#95), and the Windows runner's `ERR_NO_BUFFER_SPACE` (#97, parked by the owner on 2026-11-22: the NetLog capture only observes ordinary CI runs, and nothing more is done unless the owner asks).
 - **P1: sign-out on one device locks another out** (found 2026-11-19, live).
   - **Scope:** `docs/sign-out-scope.md`, PR #53 (`bfad9b3`), with two amendments decided at review gates.
   - **Delivered and resolved.** See `docs/sign-out-report.md`, section 22.

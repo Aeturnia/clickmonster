@@ -2,6 +2,8 @@
 
 Planned work that is not yet scheduled into a phase. Each item names what it builds on.
 
+**Tracking (2026-11-22):** open items are mirrored as GitHub issues on the Project [Monstra Regna — Development & Release](https://github.com/users/Aeturnia/projects/1), and each entry below names its issue. **This file stays authoritative:** an issue links here, and its Status or milestone is a tracking signal, not authorization.
+
 ## Release verification
 
 The UI modernization (Phases 1–4), the desktop layout and the landing page were tested in Chromium only, against a fake backend. These checks are verification, not new features. Each comes from a phase report's "Not verified" section.
@@ -9,6 +11,8 @@ The UI modernization (Phases 1–4), the desktop layout and the landing page wer
 **Split by the owner on 2026-11-14.** There aren't the resources to test every device and browser before release.
 - **Before release:** a short list, on the owner's laptop and own phone, covering what would break the game for everyone.
 - **After release:** the rest, as players report problems (see "Bug reports" below).
+
+**Tracked in #91** (before release). The after-release list stays here only.
 
 ### Before release
 
@@ -92,7 +96,7 @@ A separate staging Supabase project is dropped. The live sign-in session above c
 
 ## Follow-ups (not blocking)
 
-- **The sign-in library's own renewals discard a session on a temporary failure** (from the sign-out fix's F-1 review, 2026-11-19; a security-hardening investigation before the public launch).
+- **The sign-in library's own renewals discard a session on a temporary failure** (from the sign-out fix's F-1 review, 2026-11-19; a security-hardening investigation before the public launch). **Tracked in #81.**
   - **What happens:** supabase-js 2.45.4 treats only 502, 503, 504 and "no response" as temporary. On a 500 or 429 during a renewal it starts itself, it removes the saved session and signs the player out. That covers its background renewal (`autoRefreshToken`, about an hour after each sign-in) and a renewal before a request when the device's clock says the token has expired.
   - **What the sign-out fix covers:** only the renewal after a `game` 401, which is now the client's own (`docs/sign-out-report.md`, section 18).
   - **To investigate:**
@@ -101,13 +105,13 @@ A separate staging Supabase project is dropped. The live sign-in session above c
     - the cross-tab and scheduling risks either brings.
   - **Not authorized.**
 
-- **A tab's stuck sign-in lock** (F-2 of the sign-out fix's review, 2026-11-19).
+- **A tab's stuck sign-in lock** (F-2 of the sign-out fix's review, 2026-11-19). **Tracked in #81.**
   - **What happens:** the library's renewal, sign-in and sign-out wait for one lock shared by every tab of the site, with no time limit. If one tab's request never finishes, the other tabs' library calls wait behind it.
   - **What the sign-out fix covers:** a sign-out still clears the session after 5 s, and other tabs follow through the `storage` event.
   - **To investigate:** whether recovery in the *other* tabs can be made independent of a blocked lock.
   - **Not authorized.**
 
-- **The `admin` function answers 401 for any sign-in check failure** (from the sign-out scope's review, 2026-11-19; deferred there by decision, Q2).
+- **The `admin` function answers 401 for any sign-in check failure** (from the sign-out scope's review, 2026-11-19; deferred there by decision, Q2). **Tracked in #82.**
   - **What it does:** `supabase/functions/admin/index.ts:672` answers 401 whenever `getUser` gives no user: an ended session, a bad token, or the sign-in service being briefly unreachable. Staff can't tell an outage from a session that has ended.
   - **The fix:** the same classification as the `game` function's, once that exists (`docs/sign-out-scope.md`, 5.2): 401 only for a definitive refusal, 503 otherwise, from the shared `sessionFailure()` rule.
   - **Not authorized;** it needs an `admin` redeploy.
@@ -123,7 +127,7 @@ A separate staging Supabase project is dropped. The live sign-in session above c
   - **Not GP-1's:** it is in the entrance and `net.js`, and existed before GP-1.
   - **Its own scope,** for independent review before any implementation: `docs/sign-out-scope.md`, PR #53.
 
-- **Phone landscape: the tabs below the screen's edge** (from GP-1's iPhone check, 2026-11-18; the owner chose to record it as a follow-up rather than change GP-1).
+- **Phone landscape: the tabs below the screen's edge** (from GP-1's iPhone check, 2026-11-18; the owner chose to record it as a follow-up rather than change GP-1). **Tracked in #95.**
   - **What the owner saw:** on an iPhone turned to landscape, on PR #51's deploy preview, the tabs (Explore, Hero, Gear, Map) were below the screen's edge. Resizing brought them into view, but then the browser's tab bar covered the hero bar.
   - **The cause, measured in Chromium at 844 px wide:**
     - In landscape the game uses the two-column layout. The right-hand column stacks the hero bar, the chat bar, the actions and the tabs, and nothing in it scrolls. When the column is taller than the visible height, the tabs fall off the bottom.
@@ -139,7 +143,7 @@ A separate staging Supabase project is dropped. The live sign-in session above c
     Test at 844 × 300, exploring and in a fight; then check on the owner's iPhone, since the test browser can't reproduce its toolbars or the home bar's space.
   - **This is not authorized:** neither the fix nor a scope for it.
 
-- **Cross-platform fonts and responsive layout** (from CI-A, 2026-11-14).
+- **Cross-platform fonts and responsive layout** (from CI-A, 2026-11-14). **Tracked in #98.**
   - **What happened:** CI-A's first run (`43638208611`) ran the browser suite on Ubuntu, and five existing layout assertions failed. The browser job now runs on Windows by the owner's exception (`docs/ci-scope.md`, section 10). The Linux results stand, recorded in `docs/ci-a-report.md`.
   - **The likely cause** is Linux font metrics, but it isn't established. The game's stack is `system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`, and the thresholds were set with Segoe UI.
   - **The investigation must cover:**
@@ -192,11 +196,11 @@ A separate staging Supabase project is dropped. The live sign-in session above c
   - **The proof:**
     - **The literal old SO-2 and SO-3** (from `main`), with only those delays added, **failed 3 of 3 times** each, at their own notice check, with an empty notice.
     - **The corrections passed 3 of 3 times.**
-- **UX: a sign-in form that can be used just before the sign-out reload** (found with the SO-9 race, 2026-11-19; not authorized).
+- **UX: a sign-in form that can be used just before the sign-out reload** (found with the SO-9 race, 2026-11-19; not authorized). **Tracked in #81.**
   - **What happens:** when the server has ended a session, the entrance shows the sign-in form while the library's `/logout` is answered, then `leave()`'s fallback reloads the page. On a slow answer the form is usable for up to 5 s (`SIGN_OUT_MS`). Anything typed in it is lost in the reload.
   - **Acceptance criterion:** credentials entered during this transition cannot be silently lost.
   - **Constraint:** any change keeps the hard constraint that signing out never depends on the server (`CLAUDE.md`).
-- **`net::ERR_NO_BUFFER_SPACE` on the Windows browser runner** (CI run `44410857655`, 2026-11-18, PR #51 at `b60c6ae`).
+- **`net::ERR_NO_BUFFER_SPACE` on the Windows browser runner** (CI run `44410857655`, 2026-11-18, PR #51 at `b60c6ae`). **Tracked in #97. Parked by the owner on 2026-11-22:** the NetLog capture (PR #74) observes ordinary CI runs only, and nothing more is done unless the owner asks.
   - **Now planned and being measured:** `docs/ci-windows-reliability-plan.md`.
   - **The real rate (M0, section 7 there):** 12 executions with the fault (13 tests) from 2026-11-17 to 2026-11-20, about 1 in 7 browser executions. That's more than the occurrences listed below, because most show only in the failure artifacts, not the log.
   - **The counters:** M1 and M3 now count the harness server's connections and the browser's contexts in CI. The list below is as recorded at the time.
@@ -228,7 +232,7 @@ A separate staging Supabase project is dropped. The live sign-in session above c
   - **The proof:**
     - **The late entry:** with the old code, the second case failed 3 of 3 times with CI's error. With the correction it passed 3 of 3.
     - **The limit still holds:** with a fourth request before the paint (an extra stylesheet in a copy of `public/`), both cases fail with "requests before the form: /, /css/entry.css, /css/news.css, /js/entry.js".
-- **F-1 proof 4's fixture can refuse a renewed request and accept an expired one** (`tests/ui/sign-out.test.mjs`, `F-1 proof 4: refusals in two tabs at once share one renewal across the browser`): **cause found, in the test's fixture, not the client; corrected on `claude/f1-fixture`, pending review.**
+- **F-1 proof 4's fixture can refuse a renewed request and accept an expired one** (`tests/ui/sign-out.test.mjs`, `F-1 proof 4: refusals in two tabs at once share one renewal across the browser`): **cause found, in the test's fixture, not the client; corrected in PR #65 (`1be2ea4`, merged 2026-11-20).**
   - **The failure:** once, locally, 2026-11-19 (run 2 of 3 on `claude/b2-6-fcp`): `['error 401', 'ok']` instead of `['ok', 'ok']`. It had no diagnostics.
   - **The investigation** (authorized by the owner; the probe is `docs/ui-audit/f1-proof-4/probe.mjs`):
     - **What it records:** each request's tab, the access token it carried, its arrival order and its answer, plus the renewals and every write to `clickmonster.auth` in both tabs.
@@ -272,7 +276,7 @@ A separate staging Supabase project is dropped. The live sign-in session above c
     | SO-3 with the barrier, the in-tab shared renewal and the lock both removed (`net.js` served modified, for this case only) | 3 renewals: the corrected test fails |
 
     **The uniqueness test fails on the old harness:** "a renewal never repeats the token it replaces".
-- **GP-B7 assumed the XP cue's animation had started by the forced tick** (`tests/ui/gameplay-polish.test.mjs`): **cause found, a timing assumption in the test, not an application defect. A correction is proposed, not authorized.**
+- **GP-B7 assumed the XP cue's animation had started by the forced tick** (`tests/ui/gameplay-polish.test.mjs`): **cause found, a timing assumption in the test, not an application defect. A correction is proposed, not authorized. Tracked in #98.**
   - **The failure:** PR #59's CI run `44643826518`, attempt 2, Windows: `its animation started once`, `0 !== 1`.
   - **The cause** (from that run's trace):
     - **The forced tick came too soon:** it came 8.3 ms after the cue was inserted, under one frame.
@@ -280,16 +284,20 @@ A separate staging Supabase project is dropped. The live sign-in session above c
     - **The cue itself was fine:** attached, at opacity 1, with no sign of a restart.
   - **The proposed correction:** pull the tick forward only after the cue's first `animationstart`. The test would then still check that the tick neither replaces the cue nor restarts its animation, and that `starts` is 1 at removal.
 
-- **Pagination of `/news`** (from the L-4 review). The public list (`netlify/edge-functions/news.js`, `LIST_LIMIT = 100`) shows the 100 newest published articles. Older ones stay reachable by their address but drop off the list. Add pages (for example `/news?page=2`, or a link to older articles) before there are 100.
+- **Pagination of `/news`** (from the L-4 review). The public list (`netlify/edge-functions/news.js`, `LIST_LIMIT = 100`) shows the 100 newest published articles. Older ones stay reachable by their address but drop off the list. Add pages (for example `/news?page=2`, or a link to older articles) before there are 100. **Tracked in #99.**
 
-- **Audit entries are best effort** (from the L-3 review).
+- **Audit entries are best effort** (from the L-3 review). **Tracked in #80.**
   - The `admin` function's `log()` reports a failed `admin_log` insert to the server console but doesn't fail the action. Any admin change, news included, can therefore succeed without its audit entry if that insert fails.
   - Normal operation writes exactly one entry per change.
   - Guaranteeing the entry (the change and its log in one transaction, for example through a database function) would be a change across every admin action. It needs its own decision.
 
-- **The entrance's startup budget** (landing LAC-2) is 34,000 decoded bytes. It was revised to 32,000 in the L-4 review, then to 34,000 by the owner for password recovery (2026-11-17). The first paint is 33,987 bytes with R-1, and 33,989 with MR-B1's rename. Comments are not to be stripped to meet it (the owner's direction).
+- **The entrance's startup budget** is now MR-B2's performance contract (`docs/monstra-regna-scope.md`, 4.5), which replaced LAC-2's hard limit:
+  - **the tripwire:** at most 48,000 decoded bytes, failing CI (`tests/entrance-budget.test.mjs`);
+  - **the review threshold:** above 40,000, the milestone's report explains the increase.
 
-- **Queued battle effects across an account change** (from the L-1 final review).
+  The first paint is 35,620 bytes (2026-11-22). History: LAC-2 was 34,000, revised to 32,000 in the L-4 review, then to 34,000 by the owner for password recovery (2026-11-17); the first paint was 33,987 bytes with R-1 and 33,989 with MR-B1's rename. Comments are not to be stripped to meet it (the owner's direction).
+
+- **Queued battle effects across an account change** (from the L-1 final review). **Tracked in #96.**
   - `playEffects()` in `main.js` schedules battle animations with `setTimeout`. The timers aren't tied to the game session (`gameGen`).
   - If a battle ends and the account changes at once, a remaining animation could run on the next account's screen. It can't change hero or server state; it would be a brief visual glitch.
   - Fix by checking `live(g)` in the callbacks, or clearing the timers in `stop()`.
@@ -305,7 +313,7 @@ Built in landing phase L-2 and merged as PR #27 on 2026-11-13. See `docs/landing
 
 ## Maintenance mode
 
-Raised by the owner on 2026-11-14, after publishing a real maintenance notice. Not yet scoped or scheduled.
+Raised by the owner on 2026-11-14, after publishing a real maintenance notice. Not yet scoped or scheduled. **Tracked in #93.**
 
 - **Today:** a maintenance notice is information only. It is a news article of kind `maintenance`, shown as a line on the entrance (landing L-4). Nothing enforces it: players can still sign in and play while it is under way, as the owner saw on 2026-11-14.
 - **Wanted:** a real maintenance mode that stops play while it is on.
@@ -324,7 +332,7 @@ Raised by the owner on 2026-11-14, after publishing a real maintenance notice. N
 
 ## Bug reports
 
-Raised by the owner on 2026-11-14. Most device and browser checks are done after release (see "Release verification" above), so players need a way to report what breaks. Not yet scoped or scheduled.
+Raised by the owner on 2026-11-14. Most device and browser checks are done after release (see "Release verification" above), so players need a way to report what breaks. Not yet scoped or scheduled. **Tracked in #94.**
 
 - **Today:** players can report chat messages (`chat_reports`, reviewed in the admin console's moderation section). There is no way to report a bug.
 - **Wanted:**
@@ -361,13 +369,13 @@ Raised by the owner on 2026-11-14. **Part 1 is scoped:** `docs/ci-scope.md`, app
 - **The startup budget, measured exactly.** The runners check out LF line endings, so LAC-2 (32,000 decoded bytes) can be enforced as a failing check, with no Windows CRLF inflation.
 - **Optional:** require these checks before merging. This may need a paid GitHub plan for a private repo.
 
-**2. The browser suite in Firefox and WebKit** (Playwright's builds; WebKit is Safari's engine):
+**2. The browser suite in Firefox and WebKit** (Playwright's builds; WebKit is Safari's engine). **Tracked in #98:**
 - **When:** nightly or on demand, to keep PR runs fast and within the free minutes.
 - **What it covers:** part of the "after release" browser list. It isn't real devices or screen readers.
 - **Expect fixes first:** the suite has only ever run in Chromium.
 - **Raised again by GP-1 (2026-11-18):** on the owner's iPhone, a meter that switched to two lines kept its one-line width and cut its label off. Chromium measured it correctly, so the suite couldn't see it (`docs/gameplay-polish-scope.md`, section 14). A WebKit run might expose problems like this, but Playwright's WebKit isn't Safari on iOS and font metrics differ between systems, so it doesn't replace checking on the affected device.
 
-**3. Live-site checks after each merge to `main`, and daily.** These repeat, with reads only, the checks made by hand in the L-4 report's section 9:
+**3. Live-site checks after each merge to `main`, and daily (tracked in #98).** These repeat, with reads only, the checks made by hand in the L-4 report's section 9:
 - the live files match `main`;
 - the news pages' statuses and headers (`no-store`, the no-script policy, 404 for unknown addresses, 405 for POST);
 - the `/vendor/*` cache header.
@@ -382,7 +390,7 @@ Netlify posts no deploy status for `main`, so this confirms that a deploy landed
 
 ## Password recovery
 
-Raised in the landing-page scope review (2026-11-13, Q14). It is tracked separately from that milestone, as a higher-priority account-reliability item.
+Raised in the landing-page scope review (2026-11-13, Q14). It is tracked separately from that milestone, as a higher-priority account-reliability item. **Production activation is tracked in #92.**
 
 - **Today:** there is no way to reset a forgotten password. A player who forgets it loses access to their hero.
 - **Needs:**
@@ -394,7 +402,7 @@ Raised in the landing-page scope review (2026-11-13, Q14). It is tracked separat
 - **Status (2026-11-17):**
   - **Scoped and accepted** in `docs/password-recovery-scope.md` (PR #44, merged as `031a026`).
   - **R-1 is implemented and accepted, pending production activation.** It was merged as PR #45 (`48be811`), with "Forgot your password?" switched off (`RECOVERY_REQUESTS = false`). See `docs/password-recovery-r1-report.md`.
-  - **Startup budget:** the first paint is 33,989 of 34,000 bytes after MR-B1, so any change to `entry.js`, `index.html` or `entry.css` has only 11 bytes of room.
+  - **Startup budget:** at the time, the first paint was 33,989 of LAC-2's 34,000 bytes. MR-B2's contract (a 48,000-byte tripwire, review above 40,000) has since replaced that limit; the first paint is 35,620 bytes (2026-11-22).
 - **Production activation** is not authorized. The checklist is in the R-1 report, section 7:
   1. a Resend account;
   2. a verified sending domain the owner controls;
