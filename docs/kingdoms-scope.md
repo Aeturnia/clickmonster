@@ -4,7 +4,11 @@
 - **Design only.** No implementation, migration, deploy or balance numbers are authorized.
 - **Authorized:** the owner authorized writing this scope on 2026-11-22, for [#83](https://github.com/Aeturnia/clickmonster/issues/83) (ownership, the Kingdom Zone and the management interface) and [#84](https://github.com/Aeturnia/clickmonster/issues/84) (resources and buildings), together.
 - **What's here:** what the code supports today, what the owner has already decided, proposed designs, and the decisions only the owner can make (section 6).
-- **How decisions are marked:** each is K-D*n*, with options and a recommendation. **None is decided by this document.**
+- **How decisions are marked:** each is K-D*n*, with options and a recommendation.
+- **The owner decided all 20 on 2026-11-23** (section 6). The design below is written to those decisions. Two differ from the original recommendations:
+  - **K-D12:** management only in the Kingdom Zone;
+  - **K-D19:** timed construction from the start.
+- **The document is still a draft for independent review.** The decisions don't authorize any implementation.
 
 ## 1. Method and limits
 
@@ -101,36 +105,42 @@ From the world notes, 1.2, 1.3 and 6, kept apart from everything proposed below:
 
 ## 5. Proposed design
 
-### 5.1 What the Kingdom Zone is (K-D1)
+### 5.1 What the Kingdom Zone is (K-D1: decided, C)
 
 | Option | What it means | For | Against |
 |---|---|---|---|
 | **A. An ordinary walkable zone** with an exemption from the 40-cell limit | A `zones` row of size 100, entered by a portal, with heroes standing on cells | Reuses movement, portals, "who's here" and the zone editor | The editor, validation and map assume small hunting zones. The zone's definition would be mixed with ownership. An admin resize or delete could orphan plots (3.1) |
 | **B. A plot map, not a walkable zone** | The Kingdom Zone is a separate screen listing plots. The hero never stands in it | Simplest. No conflict with the zone code | No sense of place. Geography (adjacency, travel) would need building from scratch later |
-| **C. A place reached by a portal, drawn as a plot map** *(recommended)* | A `kingdoms` zone entry with a fixed id, reached by a portal. It is drawn by its own plot-map view, not `viewMap()`, and no monsters roam there. The plots live in their own table (5.3), not in the zone's definition | Keeps the world consistent, and keeps a location for later geography or sieges. The zone editor never sees 10,000 plots | One special case in the zone code: its id is reserved, the editor can't delete or resize it, and the size check is exempted for it |
+| **C. A place reached by a portal, drawn as a plot map** *(decided)* | A `kingdoms` zone entry with a fixed id, reached by a portal. It is drawn by its own plot-map view, not `viewMap()`, and no monsters roam there. The plots live in their own table (5.3), not in the zone's definition | Keeps the world consistent, and keeps a location for later geography or sieges. The zone editor never sees 10,000 plots | One special case in the zone code: its id is reserved, the editor can't delete or resize it, and the size check is exempted for it |
 
-**Recommendation: C.**
+**Decided: C** (the owner, 2026-11-23).
 - Its size, 100, is a fixed constant of the Kingdom code, not an editable zone field.
-- **Entry:** a portal from the Overworld's Crossroads, or from every town. That is part of K-D1, and the level requirement is K-D2.
+- **Entry:** a portal from the Overworld's Crossroads, as proposed. Portals from every town would be an alternative, raised in the review (section 12).
+- **The level requirement for entry** is the same as for claiming (K-D2) unless the review says otherwise.
 
 ### 5.2 The plot map
 
 - **Not 10,000 buttons.** The map shows a **window** of the grid (for example 10 × 10; the size is a parameter), with:
   - controls to move the window by a window or a row, and to jump to coordinates;
-  - **"My Kingdom"** and **"Find a free plot"**, which jumps to the nearest free plot, or to a random one (K-D3);
+  - **"My Kingdom"**, and two finders (K-D3, decided: both):
+    - **"Nearest free plot":** the free plot nearest the window, or a chosen point;
+    - **"Random free plot".**
   - a list of the plots in view, for screen readers and small phones.
 - **Keyboard:** the same roving focus and arrow keys as today's map. Moving past the window's edge moves the window.
-- **Each plot's label:** its coordinates, then "Free", "Reserved", or the owner's hero name and Kingdom name (K-D4).
-- **Claiming:** select a free plot, then "Claim this plot". The cost is on the button if there is one (K-D2), so it's tier 4: no dialog.
-  - **Recommendation: tier 2 instead (a dialog with focus on Cancel),** because a claim is permanent until released (K-D5). The owner decides.
+- **Each plot's label:** its coordinates, then "Free", "Reserved", or "Claimed by" and the owner's hero name (K-D4, decided). The Kingdom's name is the hero's name (K-D8).
+- **Claiming:** select a free plot, then "Claim this plot". It needs the minimum level and costs the claim price (K-D2, decided), and the price is on the button.
+  - **A priced button would normally be tier 4,** with no dialog.
+  - **Proposed: tier 2 instead (a dialog with focus on Cancel),** because a claim lasts until it's released (K-D5). This isn't one of the 20 decisions: for the review (section 12).
 
-### 5.3 Ownership: where it is stored (K-D6)
+### 5.3 Ownership: where it is stored (K-D6: decided, S1)
 
 **A new table, `kingdom_plots`:**
 - `x`, `y`: the primary key, within 1 to 100;
 - `character_id`: unique, referencing `characters(id)` on delete cascade (K-D7);
-- `kingdom_name` (K-D8) and `claimed_at`;
+- `claimed_at`;
 - `status`: claimed, or reserved for plots held by staff or kept back (K-D9).
+
+There's no name column: the Kingdom takes the hero's name (K-D8, decided).
 
 **Who can read and write it:**
 - signed-in players can read the plot columns, as with `characters`;
@@ -141,10 +151,10 @@ From the world notes, 1.2, 1.3 and 6, kept apart from everything proposed below:
 
 | Option | For | Against |
 |---|---|---|
-| **S1. In `characters.data.kingdom`** *(recommended for the foundation)* | One row: spending materials and upgrading a building is one versioned save, like every action today. No new transaction problem for #84 | Another player's action can't change it without writing the owner's row. That matters for #85 |
+| **S1. In `characters.data.kingdom`** *(decided)* | One row: spending materials and upgrading a building is one versioned save, like every action today. No new transaction problem for #84 | Another player's action can't change it without writing the owner's row. That matters for #85 |
 | **S2. A separate `kingdoms` table** | Ready for other players' actions (#85) | Every build spends from `characters.data` and writes `kingdoms`. That's two rows per action, so each needs a Postgres function |
 
-**Recommendation: S1.**
+**Decided: S1** (the owner, 2026-11-23).
 - **Only the claim** crosses two rows: the plot and the hero, with any claim cost. It goes through **one Postgres function**, `kingdom_claim()`, in one transaction. The function:
   - inserts the plot;
   - updates the hero only where `version` matches;
@@ -152,41 +162,48 @@ From the world notes, 1.2, 1.3 and 6, kept apart from everything proposed below:
 - The function follows `hunt_hit()`'s pattern, but writes the hero too. The other order (insert the plot, then save the hero) could leave a claimed plot with an unpaid cost after a 409.
 - **For #85 (out of scope),** S1 doesn't preclude sieges. They would act through Postgres functions on both heroes' rows with version checks, or the state could move into a table at that point. **That choice belongs to #85's scope.**
 
-### 5.4 Claim rules (K-D2, K-D5, K-D7, K-D9, K-D10)
+### 5.4 Claim rules (K-D2, K-D5, K-D7, K-D9, K-D10: decided)
 
-- **Eligibility and cost** (K-D2): a level requirement, a gold or material cost, both, or neither.
+- **Eligibility and cost** (K-D2, decided): a minimum hero level **and** a claim cost. Both values come from #86.
 - **Concurrency:**
   - two heroes claiming the same plot at once: the primary key lets exactly one win, and the other is told the plot was just taken;
   - one hero claiming from two tabs: the unique `character_id` lets one succeed.
   - **Both are proved with tests on the local stack,** not by reasoning.
-- **Release and relocation** (K-D5): permanent, releasable, or movable, and at what cost.
-  - **Recommendation for the foundation:** release is allowed and loses the Kingdom's buildings (tier 1, type the name to confirm). There's no relocation.
-- **Deleting the hero** (K-D7): the plot row cascades, so the plot becomes free.
-  - The delete confirmation's text names the Kingdom it destroys. **That changes existing copy.**
-- **Reserved plots and the full map** (K-D9): staff plots, plots kept back for later, and what happens when every plot is taken.
-  - **Recommendation:** decide before a large share is claimed. The scope doesn't need the answer for the foundation, but the `status` column allows for it.
-- **Inactive owners** (K-D10):
-  - **Recommendation for the foundation:** no automatic reclaiming. Record the owner's last activity; `characters.updated_at` already exists. Decide a policy before the map nears full, with players told the rule before it applies (security notes, section 8).
+- **Release** (K-D5, decided):
+  - a player can release their plot, losing its buildings and its stock, after typing the name to confirm (tier 1);
+  - **there's no relocation;**
+  - a player who releases can claim a new plot, meeting the level and paying the claim cost again.
+- **Deleting the hero** (K-D7, decided): the plot row cascades, so the plot becomes free at once.
+  - The existing delete confirmation already asks for the hero's name to be typed (`main.js:1543`). Its text gains a line naming the Kingdom it destroys. **That changes existing copy.**
+- **Reserved plots and the full map** (K-D9, decided):
+  - admins can mark plots reserved from the start, using the `status` column;
+  - **the full-map policy** is decided before half the plots are claimed.
+- **Inactive owners** (K-D10, decided):
+  - no automatic reclaiming in the foundation;
+  - each owner's last activity is recorded, so a policy can be set later. `characters.updated_at` already exists. The implementation phase checks whether it is enough, or whether a separate Kingdom activity time is needed;
+  - any later policy is told to players before it applies (security notes, section 8).
 - **Sanctions:** a banned or jailed hero keeps their plot. Only an admin can revoke it, with an audit entry (5.10).
 
-### 5.5 The management interface (K-D11)
+### 5.5 The management interface (K-D11, K-D12: decided)
 
-**Where it opens:**
+**Where it opens** (K-D11, decided): a **Kingdom section in the Hero tab.** There's no fifth tab, so the phone-landscape tab problem (#95) isn't made worse.
 
-| Option | For | Against |
-|---|---|---|
-| **A fifth tab, "Kingdom"** | Always one tap away | Adds to the tab row's phone-landscape problem (#95), and to the narrowest screens |
-| **A section of the Hero tab** *(recommended)*, with a "Manage my Kingdom" entry that opens its own view | No new tab. Fits "managed through an interface" | Two taps |
-| **Only while in the Kingdom Zone** | A sense of place | Travel before every upgrade |
+**Where it can be managed from** (K-D12, decided): **only while the hero is in the Kingdom Zone,** anywhere in it, outside a fight.
+- **In the Kingdom Zone:** "Manage my Kingdom" opens the management view, where the player can start and cancel constructions (5.8).
+- **Anywhere else:** the Hero tab's section is a **read-only summary**, and says "Travel to the Kingdom Lands to manage it". It shows:
+  - the plot;
+  - the stock;
+  - the building levels;
+  - any construction under way and when it finishes.
+- **The server enforces it,** not only the interface: a management action from outside the Kingdom Zone is refused with a plain message. The engine checks `char.loc.zone`.
+- **A hero without a plot** sees a line pointing to the Kingdom Lands, with the claim requirements.
 
-**Where it can be managed from** (K-D12): anywhere outside a fight (recommended), or only in a town or in the Kingdom Zone.
-
-**Contents:**
-- the Kingdom's name and plot;
+**The management view contains:**
+- the Kingdom's name (the hero's, K-D8) and its plot;
 - the resource stock, with each storage cap;
-- the buildings, each with its level, output and the next upgrade's cost;
-- Build and Upgrade buttons, with the price on the button;
-- a short history of recent changes, if wanted.
+- the four buildings (5.8), each with its level, its output, and the next level's cost and construction time;
+- the construction under way, if any: what it is, when it finishes, and Cancel (full refund);
+- Build and Upgrade buttons with the price on the button. They're unavailable, with the reason given, while a construction is running.
 
 It follows the existing patterns:
 - the pending state is tracked by key (`kingdom:<building>:<op>`);
@@ -196,38 +213,35 @@ It follows the existing patterns:
 
 **Desktop:** the same view in the main column. The side column is unchanged.
 
-### 5.6 Resources (#84; K-D13, K-D14)
+### 5.6 Resources (#84; K-D13, K-D14, K-D15: decided)
 
 - **Two sources** (owner's direction):
-  - **materials, from fighting monsters;**
+  - **a material, from fighting monsters;**
   - **produced resources, from buildings:** the mine, the farm and the woodcutter.
-- **The categories** (K-D13): the names below are placeholders.
-  - **Produced:** ore (mine), food (farm), wood (woodcutter).
-  - **Materials from monsters:** one generic kind, or several, for example by element (the game has five elements and 10 gem kinds) or by level band.
-  - **Recommendation:** few categories in the foundation. Add more only where a building or recipe needs them.
-- **Gold:** whether buildings also cost gold (K-D14). Gold is the one currency the ledger already tracks, and a gold sink.
+- **The categories** (K-D13, decided). The names are placeholders.
+  - **Three produced resources:** ore (mine), food (farm), wood (woodcutter).
+  - **One generic monster material.**
+  - **The owner's note:** the material **doesn't drop on every kill.** Like gems and relics, it has a chance to drop (5.7).
+- **Gold** (K-D14, decided): building and upgrading cost **gold as well as resources.** It's a gold sink, recorded in the gold ledger.
 - **Storage:** counters in `characters.data.kingdom`, like `gems`, not pack items. That keeps the 40-item pack unchanged.
-  - Each resource has a storage cap. The cap is a parameter, and possibly a building (5.8).
-- **Trading** between players (K-D15):
-  - **Recommendation:** out of the foundation.
-  - Any trade is a cross-hero transfer, with invariants 4 and 5 and a risk of collusion (security notes, section 10).
+  - Each produced resource has a storage cap, raised by the storehouse (5.8).
+  - **Whether the monster material has a cap** is a parameter (section 7).
+- **Trading** (K-D15, decided): **not in the foundation.** Any trade would be a cross-hero transfer, with invariants 4 and 5 and a risk of collusion (security notes, section 10). It needs its own scope.
 
-### 5.7 Materials from monsters: a game-rule change (K-D16)
+### 5.7 Materials from monsters: a game-rule change (K-D16: decided)
 
 Today a kill drops gold and at most one bonus drop, a gem or a relic (3.4). Materials change the shared engine's loot rule, which [`CLAUDE.md`](../CLAUDE.md) treats as a game-rule change. That makes it explicit here.
 
-- **Options:**
-  - **(a) A separate material roll** *(recommended)*: the gem and relic chances are unchanged.
-  - **(b) A third kind of bonus drop:** existing gem and relic rates fall.
-- **Which monsters drop materials** (K-D16):
-  - all of them;
-  - by level band;
-  - by zone or element;
-  - only heroes who own a Kingdom.
-  - **Recommendation:** all monsters, but only for heroes who own a plot. A hero without a Kingdom is otherwise unaffected.
-- **The `drop` multiplier, elites, variants and world-boss hunts:**
-  - whether they apply, and whether there's a new `materials` multiplier key (K-D16);
-  - **recommendation:** a separate `materials` key, so admins can tune it without touching gems.
+**Decided (the owner, 2026-11-23):**
+- **Its own chance:** the material has **a separate roll,** with a drop chance like gems and relics. It isn't on every kill. The gem and relic chances, and the one-bonus-drop rule between them, are unchanged. One kill can give a gem or relic **and** a material.
+- **Plot owners only:** only a hero who has claimed a plot rolls for the material. Every other hero's loot is exactly as today.
+- **A new `materials` multiplier** joins `MULT_KEYS` (`world-config.js`), so admins and timed events can tune it without touching gems and relics.
+
+**Still open, for the review or #86:**
+- **Elites, variants and world-boss hunts:**
+  - whether elites and variants raise the material chance, as they raise gold;
+  - whether world-boss hunts, which pay out through `pending_rewards`, give materials. That is question 3 in section 12.
+- **Whether the chance or amount varies** by monster level. Both are parameters (section 7).
 - **The deploy order:** as for F2 (3.4).
   - The `game` function first, so the server's rule leads.
   - The client after, so it shows materials the server now awards.
@@ -236,21 +250,37 @@ Today a kill drops gold and at most one bonus drop, a gem or a relic (3.4). Mate
 - **The ledger:** materials and produced resources need their own accounting if #86 and staff are to see inflows and outflows.
   - **Recommendation:** a `resource_ledger` (source, resource, amount), filled the way `ledger()` fills the gold one.
 
-### 5.8 Buildings (#84; K-D17 to K-D19)
+### 5.8 Buildings and construction (#84; K-D17 to K-D19: decided)
 
-- **The kinds in the foundation** (K-D17):
-  - **recommended:** the mine, the farm and the woodcutter, plus a storehouse that raises the storage caps;
-  - **"Others offering useful benefits":** bonuses to the hero, for example to XP or gold. These cross from the Kingdom into character progression, which the world notes' section 4 flags for simulation. **Recommendation:** defer them until #86.
-- **Slots** (K-D18): one of each kind, which is simplest and fits "one tile, one interface"; or a number of slots to fill with any kinds.
-- **Levels:** each building has a level. Its upgrade cost and its output are functions of that level, with their curves as parameters (section 7).
-  - **Whether the levels have a maximum** is a parameter, not decided here.
-- **Instant or timed construction** (K-D19):
-  - **Instant** *(recommended for the foundation)*: one action, one save, nothing to schedule.
-  - **Timed:** an upgrade completes at a server time, evaluated lazily like production (5.9).
-  - **Recommendation:** decide timed construction with #86's results, if they show it's needed to pace progression.
-- **An upgrade request carries the level it upgrades from.** The server refuses it if the building has already changed. A retried request, or one from a second tab, then upgrades once. The same applies to building.
+- **The kinds** (K-D17, decided): **the mine, the farm, the woodcutter, and a storehouse** that raises the storage caps.
+  - **Buildings that benefit the hero** (for example XP or gold bonuses) wait until #86. They cross from the Kingdom into character progression, which the world notes' section 4 flags for simulation.
+- **Slots** (K-D18, decided): **one of each kind.** A Kingdom grows by upgrading levels.
+  - Each building starts unbuilt, at level 0; building it is the upgrade to level 1.
+- **Levels:** each level's cost (resources and gold, K-D14), its output and its construction time are functions of the level. Their curves are parameters (section 7).
+  - **Whether the levels have a maximum** is a parameter.
 
-### 5.9 Production (#84; K-D20)
+**Timed construction** (K-D19, decided: timed from the start). The owner's rules:
+- **One construction at a time per Kingdom.** Starting a second while one is under way is refused.
+- **The cost is paid when the construction starts.** The building's new level applies when it finishes, at a server time: the start plus that level's construction time.
+- **A building keeps producing at its current level while it's upgraded,** and at the new level from the moment the construction finishes.
+- **A construction under way can be cancelled, for a full refund** of everything paid.
+- **It finishes whether or not the player is signed in.** Like production (5.9), it is worked out lazily on the next request, on server time only. It isn't a job that runs on its own.
+- **Starting and cancelling are management, so they happen only in the Kingdom Zone** (K-D12).
+  - Applying a finished construction, and accruing production, happen on any request, wherever the hero is.
+  - **Cancelling counts as management:** that's an assumption, for the review to confirm (section 12).
+
+**How finishing interacts with production:** when a request covers a period in which a construction finished, production is accrued up to the finish time at the old level, then from the finish time at the new level. A building's output never depends on when the player happens to act.
+
+**State,** in `characters.data.kingdom`:
+- each building's level;
+- `construction`: the building, the level it raises it to, the start and finish times, and exactly what was paid; or null.
+
+**Safe to retry:**
+- **Starting** carries the building and the level it upgrades from. The server refuses it if that building has changed, or if a construction is already under way. A retried or doubled start, including from a second tab, starts once and charges once.
+- **Cancelling** carries the construction it cancels, by its start time. The server refuses it if that construction has already finished or been cancelled. A doubled cancel refunds once.
+- **Finishing** is a calculation from the stored times, not an action, so it can't happen twice.
+
+### 5.9 Production (#84; K-D20: decided)
 
 - **Lazy, on server time,** like `applyRegen()` (3.3):
   - each Kingdom keeps `kingdom.lastTick`;
@@ -258,20 +288,20 @@ Today a kill drops gold and at most one bonus drop, a gem or a relic (3.4). Mate
   - it advances `lastTick` by the time accounted for;
   - no background job, and no client clock.
   - **This closes off production-clock manipulation** (security notes, section 10).
-- **Offline production** (K-D20): whether it continues while the player is signed out.
-  - **Recommendation:** yes, up to the storage caps. The caps are what limit it.
+- **Offline production** (K-D20, decided): **it continues while the player is signed out, up to each resource's storage cap.** The storehouse raises the caps.
   - This is game-provided idle production, which the security notes, section 6, separate from outside automation.
-- **Collecting:** output accrues to the stock automatically (recommended); or a Collect action is needed.
-  - **Recommendation:** automatic. A Collect chore adds requests and rewards frequent check-ins, which works against the idle balance the owner hasn't decided yet (#78).
+- **Collecting** (K-D20, decided): **output goes into the stock automatically.** There's no Collect action, so it's credited on any request, wherever the hero is.
+- **During construction:** production follows the building's current level until the construction finishes (5.8).
 - **Precision:** whole units only, with any remainder carried in `lastTick`, as regeneration does. No floating-point stock.
 
 ### 5.10 Integrity, abuse and staff tools
 
-- **Every Kingdom action is a `game` action:** `kingdomClaim`, `kingdomRelease`, `kingdomBuild` and `kingdomUpgrade` (names indicative).
+- **Every Kingdom action is a `game` action:** `kingdomClaim`, `kingdomRelease`, `kingdomStart` (build or upgrade) and `kingdomCancel` (names indicative).
   - Each is validated by the shared engine and saved once, with the version check. The claim goes through its Postgres function (5.3).
+  - The claim, and every management action (start, cancel, release), are refused outside the Kingdom Zone (K-D12).
 - **A retry is safe:**
   - the claim's unique constraints;
-  - the "from level" check on building and upgrading (5.8);
+  - the "from level" and "one at a time" checks on starting, and the start-time check on cancelling (5.8);
   - a 409 for a stale save, as today.
 - **Rate limits:** whether Kingdom actions join `FAST_ACTIONS`. **Recommendation:** yes, with the same 150 ms floor. Numeric limits are #78's.
 - **The admin console:**
@@ -280,32 +310,34 @@ Today a kill drops gold and at most one bonus drop, a gem or a relic (3.4). Mate
   - **correct a Kingdom's stock or buildings:** as the hero editor corrects a hero;
   - **reserve plots** (K-D9);
   - each change writes one audit entry. Audit entries are best effort today ([#80](https://github.com/Aeturnia/clickmonster/issues/80)), and these would be too unless #80 changes that.
-- **Kingdom names** (K-D8): if players can name their Kingdom, the name follows the hero-name rules (`NAME_RE`) and is moderated by staff. **Recommendation:** use the hero's name ("Alda's Kingdom") in the foundation, which needs no moderation.
+- **Kingdom names** (K-D8, decided): **the hero's name,** as in "Alda's Kingdom". There's no player-chosen name, so nothing new to moderate.
 
-## 6. Decisions for the owner
+## 6. The owner's decisions (2026-11-23)
 
-| # | Decision | Options | Recommendation |
-|---|---|---|---|
-| K-D1 | What the Kingdom Zone is | A walkable zone; B plot map; C portal-reached place drawn as a plot map (5.1) | C; entry from the Crossroads |
-| K-D2 | Who can claim, and the cost | Level requirement; gold or material cost; both; neither | A level requirement and a cost, values from #86 |
-| K-D3 | Finding a free plot | Nearest to a chosen point; random; both | Both |
-| K-D4 | What the map shows of others' plots | Owner hero name; Kingdom name; level; nothing but "claimed" | Hero name and "claimed" |
-| K-D5 | Release and relocation | Permanent; releasable; movable, with a cost | Releasable, losing the buildings; no relocation |
-| K-D6 | Where Kingdom state lives | S1 in `characters.data`; S2 a table (5.3) | S1, with the plot in `kingdom_plots` |
-| K-D7 | Deleting a hero | Frees the plot; plot kept reserved for a time | Frees it; the confirmation names the Kingdom |
-| K-D8 | Kingdom names | The hero's name; a player-chosen name, moderated | The hero's name |
-| K-D9 | Reserved plots, and a full map | Staff and reserved plots; what happens at full | Allow reserved plots now; decide a full-map policy before half are claimed |
-| K-D10 | Inactive owners | None; reclaim after a period, announced first | None in the foundation; record activity |
-| K-D11 | Where the interface opens | Fifth tab; Hero section; only in the Kingdom Zone | Hero section |
-| K-D12 | Where it can be managed from | Anywhere outside a fight; towns; the Kingdom Zone | Anywhere outside a fight |
-| K-D13 | Resource categories | Ore, food, wood; one or several monster materials | Few: the three produced, one or two monster materials |
-| K-D14 | Gold in building costs | Yes; no | Yes, as a gold sink |
-| K-D15 | Trading | In; out | Out of the foundation |
-| K-D16 | Materials from monsters | Separate roll or shared bonus slot; which monsters; multipliers | A separate roll, all monsters, plot owners only, a new `materials` multiplier |
-| K-D17 | Building kinds | Mine, farm, woodcutter; storehouse; hero-benefit buildings | The first four; hero benefits after #86 |
-| K-D18 | Slots | One of each kind; N free slots | One of each kind |
-| K-D19 | Construction time | Instant; timed | Instant in the foundation; revisit with #86 |
-| K-D20 | Offline production | Continues to a cap; stops when signed out | Continues to the storage caps, accruing automatically |
+The owner answered all 20, one at a time, on 2026-11-23. "As recommended" means the owner chose the option this draft recommended.
+
+| # | Decision | The owner's answer |
+|---|---|---|
+| K-D1 | What the Kingdom Zone is | **C:** a place reached by a portal, drawn as a windowed plot map. Plots are in their own table. As recommended |
+| K-D2 | Who can claim, and the cost | **A minimum hero level and a claim cost.** Values from #86. As recommended |
+| K-D3 | Finding a free plot | **Both:** nearest free plot (to the window or a chosen point), and a random free plot. As recommended |
+| K-D4 | What the map shows of others' plots | **"Claimed by" and the owner's hero name.** As recommended |
+| K-D5 | Release and relocation | **Release is allowed,** losing the buildings, with a type-the-name confirmation. **No relocation.** As recommended |
+| K-D6 | Where Kingdom state lives | **S1:** in `characters.data`, with the plot in `kingdom_plots` and the claim through one Postgres function. As recommended |
+| K-D7 | Deleting a hero | **The plot is freed at once.** The delete confirmation names the Kingdom. As recommended |
+| K-D8 | Kingdom names | **The hero's name.** As recommended |
+| K-D9 | Reserved plots, and a full map | **Admins can reserve plots from the start.** The full-map policy is decided before half the plots are claimed. As recommended |
+| K-D10 | Inactive owners | **No reclaiming in the foundation.** Last activity is recorded, and any later policy is announced before it applies. As recommended |
+| K-D11 | Where the interface opens | **A Kingdom section in the Hero tab.** No fifth tab. As recommended |
+| K-D12 | Where it can be managed from | **Only in the Kingdom Zone,** anywhere in it. Elsewhere, the Hero tab shows a read-only summary and "Travel to the Kingdom Lands to manage it". **Differs from the recommendation,** which was anywhere outside a fight |
+| K-D13 | Resource categories | **Ore, food and wood, produced, and one generic monster material.** The owner's note: the material drops by chance, like gems and relics, not on every kill. As recommended, with that note |
+| K-D14 | Gold in building costs | **Yes, gold as well as resources.** As recommended |
+| K-D15 | Trading | **Not in the foundation.** As recommended |
+| K-D16 | Materials from monsters | **A separate drop chance,** with gem and relic chances unchanged. **Plot owners only.** **A new `materials` multiplier.** As recommended |
+| K-D17 | Building kinds | **The mine, the farm, the woodcutter and a storehouse.** Hero-benefit buildings wait for #86. As recommended |
+| K-D18 | Slots | **One of each kind,** grown by levels. As recommended |
+| K-D19 | Construction time | **Timed from the start.** One construction at a time per Kingdom; a building keeps producing at its current level while upgraded; cancelling refunds in full. **Differs from the recommendation,** which was instant |
+| K-D20 | Offline production | **It continues while signed out, up to each storage cap,** and goes into the stock automatically. As recommended |
 
 ## 7. Parameters for #86 (all undecided)
 
@@ -315,32 +347,34 @@ Today a kill drops gold and at most one bonus drop, a gem or a relic (3.4). Mate
 | `PLOT_WINDOW` | cells per side | The plot map's window (5.2) |
 | `CLAIM_MIN_LEVEL` | hero level | Who can claim (K-D2) |
 | `CLAIM_COST` | gold and/or materials | The claim's price (K-D2) |
-| `MATERIAL_CHANCE` | probability per kill | The material roll (K-D16) |
+| `MATERIAL_CHANCE(level?)` | probability per kill | The material's own drop chance, for plot owners (K-D13, K-D16). Whether it varies by monster level is undecided |
 | `MATERIAL_AMOUNT(level)` | units | Materials per drop, by monster level |
-| `BUILD_COST(kind, level)` | resources and gold | The cost to build and to upgrade |
+| `MATERIAL_CAP` | units, or none | Whether the monster material has a storage cap |
+| `BUILD_COST(kind, level)` | resources and gold | The cost to build and to upgrade (K-D14) |
+| `BUILD_TIME(kind, level)` | seconds | How long each construction takes (K-D19, decided: timed) |
 | `OUTPUT(kind, level)` | units per hour | Production |
-| `STORAGE_CAP(resource, storehouse level)` | units | The offline limit, and the stock limit |
+| `STORAGE_CAP(resource, storehouse level)` | units | The offline limit, and the stock limit (K-D20) |
 | `MAX_BUILDING_LEVEL` | level, or none | Whether levels end |
-| `BUILD_TIME(kind, level)` | seconds | Only if construction is timed (K-D19) |
-| `materials` multiplier | factor | The admin and event multiplier (K-D16) |
+| `materials` multiplier | factor | The admin and event multiplier (K-D16); 1 by default |
 
 ## 8. Phasing (proposed; each phase needs its own authorization)
 
 1. **K-0: this scope.**
-   - Independent review, then the owner's decisions in section 6, then acceptance.
+   - The owner's decisions are made (section 6, 2026-11-23).
+   - Next: independent review, then acceptance.
 2. **K-1: ownership and the interface (#83).**
    - **Included:**
      - the `kingdom_plots` table and `kingdom_claim()`;
      - the Kingdom Zone's entry;
      - the plot map;
      - claim and release;
-     - an empty management view;
+     - the Hero tab's Kingdom section (the summary elsewhere, "Manage my Kingdom" in the Kingdom Zone) and an empty management view;
      - the admin section's search, revoke and reserve.
    - **No resources yet.**
 3. **K-2: resources, buildings and production (#84).**
-   - the material drops (the game-rule change, with its deploy order);
-   - the buildings and upgrades;
-   - lazy production;
+   - the material drops (the game-rule change, with its deploy order) and the `materials` multiplier;
+   - the four buildings, with timed construction: one at a time, cancel with a full refund, finishing on server time;
+   - lazy production, including across a construction's finish;
    - the resource ledger.
    - **The values are placeholders behind the named parameters,** marked as such, until K-3.
 4. **K-3: the numbers,** from #86's simulations, in their own reviewed PR.
@@ -362,13 +396,17 @@ Today a kill drops gold and at most one bonus drop, a gem or a relic (3.4). Mate
 - The plot map never renders more than the window. It works fully by keyboard, and gives screen readers the coordinates and status of each plot.
 - Deleting a hero frees their plot, and the confirmation says so.
 - An admin revocation frees the plot and writes one audit entry.
+- Management and claiming are refused by the server outside the Kingdom Zone. Elsewhere, the Hero tab shows the read-only summary.
 
 **K-2:**
 - Production depends only on server time. Changing the device's clock changes nothing.
 - Production stops at the storage cap, and resumes from there.
-- A retried, or doubled, upgrade upgrades once and charges once.
-- Heroes without a plot see no change in their loot. Gem and relic rates are unchanged if K-D16 (a) is chosen.
-- Every resource change is in the resource ledger.
+- **A retried or doubled start** starts one construction and charges once. A second start while one is under way is refused.
+- **A doubled cancel** refunds once, and the refund is exactly what was paid.
+- **A construction finishes at its server time** whether or not the player is signed in, and only once. Changing the device's clock changes nothing.
+- **Production across a construction's finish:** the old level's output up to the finish time, and the new level's after it, whenever the next request comes.
+- **Heroes without a plot see no change in their loot.** For plot owners, gem and relic chances are unchanged, and the material drops by its own chance.
+- **Every resource change is in the resource ledger.** Gold spent and refunded is in the gold ledger.
 
 ## 10. Out of scope
 
@@ -396,3 +434,7 @@ Today a kill drops gold and at most one bonus drop, a gem or a relic (3.4). Mate
 2. Is the windowed plot map an acceptable accessibility pattern, against a list-and-search interface only?
 3. Should the material roll apply to world-boss hunts, which pay out through `pending_rewards`?
 4. Does putting the interface in the Hero tab (K-D11) conflict with any Phase 2 layout rule for the side column on desktop?
+5. **The assumption that cancelling is management,** and so only possible in the Kingdom Zone (K-D12, K-D19; 5.8). Or should cancelling be allowed anywhere, as a safety valve?
+6. **Entering the Kingdom Zone:** a portal from the Crossroads only, or from every town? With management only in the Kingdom Zone (K-D12), the route affects how often players travel.
+7. **Claiming as tier 2** (a dialog with focus on Cancel) rather than tier 4 (5.2).
+8. **Whether elites, variants and world-boss hunts** affect the material drop (5.7).
