@@ -229,7 +229,7 @@ Every change that could break I-1 is listed here, with its single transaction. N
 |---|---|---|---|
 | **Claim** | `game`: `kingdom_claim(p_char, p_version, p_data, p_public, p_x, p_y)` | **Insert the plot** (status `claimed`); **update the hero** with `p_data` and the public columns, `version = p_version + 1`, where `id = p_char` and `version = p_version`; if no row is updated, raise | Everything rolls back. A plot that is taken, or a hero that already has a plot, fails on the unique key. A stale version fails as "busy" (409). Nothing is written |
 | **Release** | `game`: `kingdom_release(p_char, p_version, p_data, p_public)` | **Delete the hero's `claimed` plot;** if there's none, raise. **Update the hero** with the version check, as above. `p_data` has no `kingdom` | Everything rolls back |
-| **Admin revoke** | `admin`: `kingdom_revoke(p_x, p_y, p_staff, p_staff_name, p_reason)` | **Lock and delete the plot;** if there's none, raise. **Lock its hero's row.** **Update the hero:** `version = version + 1`, unconditionally; `data = data - 'kingdom'`; and, if `data.kingdom.construction` exists, add exactly its `paid` gold to the hero's `gold` (question 9). **Insert the audit entry,** recording the gold refunded | Everything rolls back: plot, Kingdom, gold, construction and audit entry are all unchanged |
+| **Admin revoke** | `admin`: `kingdom_revoke(p_x, p_y, p_staff, p_staff_name, p_reason)` | **Lock and delete the plot;** if there's none, raise. **Lock its hero's row.** **Update the hero:** `version = version + 1`, unconditionally; `data = data - 'kingdom'`; and, **only if the construction is still under way,** add exactly its `paid` gold to the hero's `gold` (question 9). "Under way" means `data.kingdom.construction` exists **and** its `finishAt` is later than the transaction's time: `floor(extract(epoch from now()) * 1000)`, the same `finishAt <= time` rule as settlement (5.9). A stored construction whose `finishAt` has passed has finished, even if lazy settlement hasn't yet cleared it, so nothing is refunded. **Insert the audit entry,** recording the gold refunded, which may be 0, and the time used | Everything rolls back: plot, Kingdom, gold, construction and audit entry are all unchanged |
 | **Admin reserve** | `admin`: `kingdom_reserve(p_x, p_y, …)` | **Insert a `reserved` plot,** which fails if the plot isn't free. **Insert the audit entry** | Everything rolls back |
 | **Admin unreserve** | `admin`: `kingdom_unreserve(p_x, p_y, …)` | **Delete the plot where it is `reserved`;** if there's none, raise. **Insert the audit entry** | Everything rolls back |
 | **Deleting a hero** | `game`: the existing `delete` (`index.ts:430`) | **Deleting the hero's row cascades** to its plot, in the same statement. `data.kingdom` goes with the row | No partial state is possible |
@@ -298,7 +298,9 @@ Every change that could break I-1 is listed here, with its single transaction. N
   - any later policy is told to players before it applies (security notes, section 8).
 - **Sanctions:** a banned or jailed hero keeps their plot. Only an admin can revoke it, with a guaranteed audit entry (5.3.1, 5.11).
 - **A revoke while a construction is under way** (question 9, decided by the owner on 2026-11-23):
-  - **The gold refund:** the construction's **gold is refunded to the hero, exactly as paid** (`construction.paid`), in the same transaction as the revoke (5.3.1).
+  - **The gold refund:** for a construction **still under way at the revoke's time,** its **gold is refunded to the hero, exactly as paid** (`construction.paid`), in the same transaction as the revoke (5.3.1).
+  - **A construction that has already finished gets no refund,** even if the player hasn't acted since and the stored record is still there. Completion is lazy (5.9), so the revoke decides by `finishAt`, not by whether the record exists. `finishAt` at or before the revoke's time means finished, the same boundary as settlement and cancelling (5.8).
+    - **For example:** a mine upgrade costing 500 gold finishes at 12:00, and the player is away until 15:00. A revoke at 15:00 refunds nothing: the upgrade finished at 12:00.
   - **What's forfeited:** the resources it cost, along with the Kingdom's stock and buildings.
   - **How it differs from cancelling:** this is not K-D19's cancellation, which refunds everything. A revoke refunds only the gold.
   - **Exactly once:** the refund happens once, because the plot and `data.kingdom` are deleted in the same transaction. A retried revoke finds no plot and refunds nothing.
@@ -653,6 +655,12 @@ The owner answered all 20, one at a time, on 2026-11-23. "As recommended" means 
 - **An admin revoke during a construction** (question 9):
   - **Success:** one transaction frees the plot, removes the Kingdom (stock, buildings and construction), adds exactly the construction's paid gold to the hero, raises the hero's version, and writes one audit entry recording the refund. The construction's resources aren't refunded.
   - **A revoke without a construction** refunds nothing.
+  - **The finish boundary, with no player activity since the construction started** (pgTAP, with the transaction's time controlled):
+    - **revoked before `finishAt`:** the paid gold is refunded;
+    - **revoked exactly at `finishAt`:** the construction has finished, so nothing is refunded;
+    - **revoked after `finishAt`,** with the stored record not yet cleared by settlement: nothing is refunded.
+
+    In each case the plot, Kingdom, version and audit entry change together, and the audit entry records the amount refunded, 0 included.
   - **Transaction failure:** if any step fails (for example the audit insert, forced in a pgTAP test), nothing changes. The plot, the Kingdom, the hero's gold, the construction and the version are all as before.
   - **Concurrent actions:** a `game` request for that hero that read before the revoke fails its save with 409. It can't write back the Kingdom or the construction, so it can't trigger a cancel's full refund on top of the revoke's gold refund.
   - **A cancel racing a revoke:** tested on the local stack. The gold is refunded once: by the cancel (everything) if its save commits first, or by the revoke (gold only) if the revoke commits first.
@@ -688,6 +696,7 @@ The owner answered all 20, one at a time, on 2026-11-23. "As recommended" means 
   - All are expected to be small. None was measured.
 - **Supabase plan limits** for Postgres functions or row counts.
 - **The deploy order for material drops** (5.7): proposed, to be confirmed in K-2.
+- **Two server clocks:** the revoke's finish check uses the database's time (`now()`, 5.3.1), while settlement uses the `game` function's `Date.now()` (5.9). Both use the same `finishAt <= time` rule. Any difference between the two clocks wasn't measured. It could matter only for a revoke within that difference of a construction's finish.
 
 ## 12. Questions for the scope review
 
