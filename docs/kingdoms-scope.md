@@ -19,6 +19,10 @@
     - the Kingdom Zone's place in the world (5.1.1).
   - **Rules added by this revision** are marked "proposed (review)" where they are implementation clarifications, and listed in section 12 where they need an owner decision.
 - **The owner answered section 12's eight owner-decision questions on 2026-11-23:** questions 3, 5, 6, 7, 8, 9, 10 and 15. The design is updated to them, and the pending-rewards defect is tracked as [#102](https://github.com/Aeturnia/clickmonster/issues/102).
+- **Amendment 1 (2026-11-23), after K-0's acceptance (PR #101):** `kingdom_claim()` and `kingdom_release()` claim the request's staged pending rewards in their own transaction (5.3.1, rule 2).
+  - **Why:** the owner decided this on question 6 of [#102's scope](pending-rewards-scope.md) (PR #104), to keep its rule R-1: any write that commits a hero's `data` claims that request's staged reward ids in the same transaction.
+  - **Without it,** a claim or release would save delivered rewards without claiming them, and they would be delivered again.
+  - **Nothing else in the accepted scope changes.**
 
 ## 1. Method and limits
 
@@ -227,8 +231,8 @@ Every change that could break I-1 is listed here, with its single transaction. N
 
 | Change | Where it runs | One transaction, in this order | On failure |
 |---|---|---|---|
-| **Claim** | `game`: `kingdom_claim(p_char, p_version, p_data, p_public, p_x, p_y)` | **Insert the plot** (status `claimed`); **update the hero** with `p_data` and the public columns, `version = p_version + 1`, where `id = p_char` and `version = p_version`; if no row is updated, raise | Everything rolls back. A plot that is taken, or a hero that already has a plot, fails on the unique key. A stale version fails as "busy" (409). Nothing is written |
-| **Release** | `game`: `kingdom_release(p_char, p_version, p_data, p_public)` | **Delete the hero's `claimed` plot;** if there's none, raise. **Update the hero** with the version check, as above. `p_data` has no `kingdom` | Everything rolls back |
+| **Claim** | `game`: `kingdom_claim(p_char, p_version, p_data, p_public, p_x, p_y, p_reward_ids)` | **Insert the plot** (status `claimed`). **Claim the staged rewards** in `p_reward_ids`, if any, with #102's checks: each owned by `p_char`, unclaimed, no duplicates, and the count matching, or raise (amendment 1). **Update the hero** with `p_data` and the public columns, `version = p_version + 1`, where `id = p_char` and `version = p_version`; if no row is updated, raise | Everything rolls back, the reward claims included. A plot that is taken, or a hero that already has a plot, fails on the unique key. A stale version fails as "busy" (409). A reward conflict fails the same way. Nothing is written, and the staged rewards stay pending |
+| **Release** | `game`: `kingdom_release(p_char, p_version, p_data, p_public, p_reward_ids)` | **Delete the hero's `claimed` plot;** if there's none, raise. **Claim the staged rewards,** as for the claim (amendment 1). **Update the hero** with the version check, as above. `p_data` has no `kingdom` | Everything rolls back, the reward claims included. The staged rewards stay pending |
 | **Admin revoke** | `admin`: `kingdom_revoke(p_x, p_y, p_staff, p_staff_name, p_reason)` | **Lock and delete the plot;** if there's none, raise. **Lock its hero's row.** **Update the hero:** `version = version + 1`, unconditionally; `data = data - 'kingdom'`; and, **only if the construction is still under way,** add exactly its `paid` gold to the hero's `gold` (question 9). "Under way" means `data.kingdom.construction` exists **and** its `finishAt` is later than the transaction's time: `floor(extract(epoch from now()) * 1000)`, the same `finishAt <= time` rule as settlement (5.9). A stored construction whose `finishAt` has passed has finished, even if lazy settlement hasn't yet cleared it, so nothing is refunded. **Insert the audit entry,** recording the gold refunded, which may be 0, and the time used | Everything rolls back: plot, Kingdom, gold, construction and audit entry are all unchanged |
 | **Admin reserve** | `admin`: `kingdom_reserve(p_x, p_y, …)` | **Insert a `reserved` plot,** which fails if the plot isn't free. **Insert the audit entry** | Everything rolls back |
 | **Admin unreserve** | `admin`: `kingdom_unreserve(p_x, p_y, …)` | **Delete the plot where it is `reserved`;** if there's none, raise. **Insert the audit entry** | Everything rolls back |
@@ -239,7 +243,11 @@ Every change that could break I-1 is listed here, with its single transaction. N
 
 **How the functions fit the `game` function's versioned saves** (`saveRow()`, `index.ts:60`):
 1. **One request, one commit.** The claim and release actions commit the hero only through their function. No `saveRow()` runs before or after it in that request. The function's version becomes the row's version.
-2. **Everything else is in `p_data`.** That includes everything the request had already changed: regeneration, settlement (5.9), and pending rewards claimed. One commit therefore carries the whole request.
+2. **Everything else is in `p_data`,** and the staged rewards are claimed with it (amendment 1).
+   - `p_data` carries everything the request had already changed: regeneration, settlement (5.9), and any pending rewards staged in memory.
+   - **The ids of those staged rewards are passed as `p_reward_ids`, and claimed in the same transaction** (R-1 of [#102's scope](pending-rewards-scope.md), 5.3.1; its 5.2 for the checks). One commit therefore carries the whole request, the reward claims included.
+   - **If the function fails,** nothing is written, and the rewards stay pending for the next request.
+   - **The admin functions** (revoke, reserve, unreserve) change the hero with SQL, not from a staged `p_data`, so they stage and claim nothing.
 3. **A revoke makes in-flight saves fail.** The revoke raises the hero's `version` without knowing the game's version. So any `game` request for that hero that read the row before the revoke fails its save with 409, and can't write the Kingdom back.
    - A request after the revoke reads the hero without a Kingdom.
    - The cost: an unrelated action of that hero in flight at that moment (a fight, for example) also fails with 409, and is retried by the player. This is rare, and it is the same answer a busy hero gets today.
@@ -271,7 +279,7 @@ Every change that could break I-1 is listed here, with its single transaction. N
   - any `GameError`;
   - a failed or conflicting save (409).
 - **The deployed function wasn't checked.** This was read in the repository at `2a43a12`, not in `game` version 14's deployed source.
-- **It matters more for Kingdoms.** A refused claim (the plot was just taken, or the hero already has one) is a routine outcome, and it lands in that window. Under rule 2 the rewards ride in `p_data`, but when the function fails, `p_data` is discarded with them.
+- **It matters more for Kingdoms.** A refused claim (the plot was just taken, or the hero already has one) is a routine outcome, and it lands in that window. With #102's fix and amendment 1, a refused claim leaves the staged rewards pending: their claim is rolled back with the rest of the function.
 - **It affects every action today,** not only Kingdoms.
 - **Fixing it is not part of this scope.** It is #102's own workstream, recommended for priority review before K-1 reaches production. Until it is fixed, K-1 inherits it.
 
@@ -633,6 +641,11 @@ The owner answered all 20, one at a time, on 2026-11-23. "As recommended" means 
 - **A revoke between a `game` read and its save:** the save fails with 409, and the Kingdom isn't written back.
 - **Claim, release, revoke, reserve and unreserve each leave I-1 true,** or change nothing. The I-1 check finds no exceptions after the test suite.
 - **A retried claim or release** after success changes nothing more.
+- **Staged rewards and claims** (amendment 1):
+  - a claim or release with staged rewards claims them in the same transaction as the hero's save;
+  - a claim that fails (plot taken, stale version, or a reward conflict) leaves them pending and unclaimed;
+  - they are never delivered twice.
+  - This is #102's case 7.
 - **The claim dialog** (question 7) is tier 2. It opens with focus on Cancel, and names the plot, the cost and that the Kingdom can't be moved. Cancelling it sends nothing.
 - **The only way in** is the Crossroads portal (question 6).
 - Management and claiming are refused by the server outside the Kingdom Zone. Elsewhere, the Hero tab shows the read-only summary.
