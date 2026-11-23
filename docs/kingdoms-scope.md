@@ -18,6 +18,7 @@
     - production settlement (5.9);
     - the Kingdom Zone's place in the world (5.1.1).
   - **Rules added by this revision** are marked "proposed (review)" where they are implementation clarifications, and listed in section 12 where they need an owner decision.
+- **The owner answered section 12's eight owner-decision questions on 2026-11-23:** questions 3, 5, 6, 7, 8, 9, 10 and 15. The design is updated to them, and the pending-rewards defect is tracked as [#102](https://github.com/Aeturnia/clickmonster/issues/102).
 
 ## 1. Method and limits
 
@@ -124,7 +125,7 @@ From the world notes, 1.2, 1.3 and 6, kept apart from everything proposed below:
 
 **Decided: C** (the owner, 2026-11-23).
 - Its size, 100, is a fixed constant of the Kingdom code, not an editable zone field.
-- **Entry:** a portal from the Overworld's Crossroads, as proposed. Portals from every town would be an alternative (section 12, question 6).
+- **Entry** (question 6, decided by the owner on 2026-11-23): **one portal, on the Overworld at the Crossroads.** No other town has a path to the Kingdom Lands.
 - **The level requirement for entry** is the same as for claiming (K-D2) unless the review says otherwise.
 
 #### 5.1.1 The Kingdom Zone in the world (proposed; review)
@@ -152,7 +153,7 @@ From the world notes, 1.2, 1.3 and 6, kept apart from everything proposed below:
 - **The server checks** that the hero is in the Kingdom Zone (K-D12), not that the hero stands on that plot.
 
 **Entering and leaving:**
-- **Entering:** a portal on the Overworld leads to the gate. Its cell is a code constant, the Crossroads by default (question 6). Its level is the claim level (5.1).
+- **Entering:** a portal on the Overworld leads to the gate. Its cell is a code constant, the Crossroads (question 6, decided). Its level is the claim level (5.1).
   - `compileZone()` adds it to the Overworld, as it already adds the Overworld's paths into other zones (`zones.js:244`).
   - `validateZone()` refuses a zone whose Overworld position is that cell, so two portals never share it.
 - **Leaving:** the gate carries a portal back to the Overworld's gate cell, with level 0. The plot map shows it as "Leave the Kingdom Lands", using the existing portal action (`usePortal()`, `world.js:63`).
@@ -185,7 +186,10 @@ From the world notes, 1.2, 1.3 and 6, kept apart from everything proposed below:
 - **Each plot's label:** its coordinates, then "Free", "Reserved", or "Claimed by" and the owner's hero name (K-D4, decided). The Kingdom's name is the hero's name (K-D8).
 - **Claiming:** select a free plot, then "Claim this plot". It needs the minimum level and costs the claim price (K-D2, decided), and the price is on the button.
   - **A priced button would normally be tier 4,** with no dialog.
-  - **Proposed: tier 2 instead (a dialog with focus on Cancel),** because a claim lasts until it's released (K-D5). This isn't one of the 20 decisions: for the review (section 12).
+  - **Decided (question 7, the owner, 2026-11-23): tier 2,** a `confirm.js` dialog with focus on Cancel, because a claim lasts until it's released and can't be moved (K-D5). The dialog:
+    - names the plot, by its coordinates;
+    - gives the cost;
+    - says the Kingdom can't be moved later.
 
 ### 5.3 Ownership: where it is stored (K-D6: decided, S1)
 
@@ -225,7 +229,7 @@ Every change that could break I-1 is listed here, with its single transaction. N
 |---|---|---|---|
 | **Claim** | `game`: `kingdom_claim(p_char, p_version, p_data, p_public, p_x, p_y)` | **Insert the plot** (status `claimed`); **update the hero** with `p_data` and the public columns, `version = p_version + 1`, where `id = p_char` and `version = p_version`; if no row is updated, raise | Everything rolls back. A plot that is taken, or a hero that already has a plot, fails on the unique key. A stale version fails as "busy" (409). Nothing is written |
 | **Release** | `game`: `kingdom_release(p_char, p_version, p_data, p_public)` | **Delete the hero's `claimed` plot;** if there's none, raise. **Update the hero** with the version check, as above. `p_data` has no `kingdom` | Everything rolls back |
-| **Admin revoke** | `admin`: `kingdom_revoke(p_x, p_y, p_staff, p_staff_name, p_reason)` | **Lock and delete the plot;** if there's none, raise. **Update its hero:** `data = data - 'kingdom'`, `version = version + 1`, unconditionally. **Insert the audit entry** | Everything rolls back, the audit entry included |
+| **Admin revoke** | `admin`: `kingdom_revoke(p_x, p_y, p_staff, p_staff_name, p_reason)` | **Lock and delete the plot;** if there's none, raise. **Lock its hero's row.** **Update the hero:** `version = version + 1`, unconditionally; `data = data - 'kingdom'`; and, if `data.kingdom.construction` exists, add exactly its `paid` gold to the hero's `gold` (question 9). **Insert the audit entry,** recording the gold refunded | Everything rolls back: plot, Kingdom, gold, construction and audit entry are all unchanged |
 | **Admin reserve** | `admin`: `kingdom_reserve(p_x, p_y, …)` | **Insert a `reserved` plot,** which fails if the plot isn't free. **Insert the audit entry** | Everything rolls back |
 | **Admin unreserve** | `admin`: `kingdom_unreserve(p_x, p_y, …)` | **Delete the plot where it is `reserved`;** if there's none, raise. **Insert the audit entry** | Everything rolls back |
 | **Deleting a hero** | `game`: the existing `delete` (`index.ts:430`) | **Deleting the hero's row cascades** to its plot, in the same statement. `data.kingdom` goes with the row | No partial state is possible |
@@ -260,7 +264,8 @@ Every change that could break I-1 is listed here, with its single transaction. N
 - **An engine test** shows that no ordinary action changes whether `data.kingdom` exists.
 
 **A related defect, in the `game` function at `2a43a12`, outside this scope:**
-- **What happens:** `claimRewards()` (`index.ts:108`, called at `index.ts:449`) marks pending rewards claimed **before** the rest of the request runs, and only adds them to the hero in memory. **Any refusal or failure later in the same request** loses them: they are marked claimed but never delivered. That includes:
+- **Tracked as [#102](https://github.com/Aeturnia/clickmonster/issues/102)** (question 15, decided: a separate issue, not authorized).
+- **What happens:** `claimRewards()` (`index.ts:108`, called at `index.ts:450`, and on reads at `index.ts:413`) marks pending rewards claimed **before** the rest of the request runs, and only adds them to the hero in memory. **Any refusal or failure later in the same request** loses them: they are marked claimed but never delivered. That includes:
   - the 150 ms "Slow down!" (429) on the next line;
   - any engine error ("Not enough gold.");
   - any `GameError`;
@@ -268,7 +273,7 @@ Every change that could break I-1 is listed here, with its single transaction. N
 - **The deployed function wasn't checked.** This was read in the repository at `2a43a12`, not in `game` version 14's deployed source.
 - **It matters more for Kingdoms.** A refused claim (the plot was just taken, or the hero already has one) is a routine outcome, and it lands in that window. Under rule 2 the rewards ride in `p_data`, but when the function fails, `p_data` is discarded with them.
 - **It affects every action today,** not only Kingdoms.
-- **Fixing it is not part of this scope.** It needs its own issue, if the owner agrees (section 12, question 15). Until then, K-1 inherits it.
+- **Fixing it is not part of this scope.** It is #102's own workstream, recommended for priority review before K-1 reaches production. Until it is fixed, K-1 inherits it.
 
 ### 5.4 Claim rules (K-D2, K-D5, K-D7, K-D9, K-D10: decided)
 
@@ -292,7 +297,11 @@ Every change that could break I-1 is listed here, with its single transaction. N
   - each owner's last activity is recorded, so a policy can be set later. `characters.updated_at` already exists. The implementation phase checks whether it is enough, or whether a separate Kingdom activity time is needed;
   - any later policy is told to players before it applies (security notes, section 8).
 - **Sanctions:** a banned or jailed hero keeps their plot. Only an admin can revoke it, with a guaranteed audit entry (5.3.1, 5.11).
-- **A revoke while a construction is under way:** whether the construction's gold is refunded to the hero is **an owner decision** (section 12, question 9). The Kingdom's stock and buildings go with the revoke.
+- **A revoke while a construction is under way** (question 9, decided by the owner on 2026-11-23):
+  - **The gold refund:** the construction's **gold is refunded to the hero, exactly as paid** (`construction.paid`), in the same transaction as the revoke (5.3.1).
+  - **What's forfeited:** the resources it cost, along with the Kingdom's stock and buildings.
+  - **How it differs from cancelling:** this is not K-D19's cancellation, which refunds everything. A revoke refunds only the gold.
+  - **Exactly once:** the refund happens once, because the plot and `data.kingdom` are deleted in the same transaction. A retried revoke finds no plot and refunds nothing.
 
 ### 5.5 The management interface (K-D11, K-D12: decided)
 
@@ -347,10 +356,15 @@ Today a kill drops gold and at most one bonus drop, a gem or a relic (3.4). Mate
 - **Plot owners only:** only a hero who has claimed a plot rolls for the material. Every other hero's loot is exactly as today.
 - **A new `materials` multiplier** joins `MULT_KEYS` (`world-config.js`), so admins and timed events can tune it without touching gems and relics.
 
-**Still open, for the review or #86:**
-- **Elites, variants and world-boss hunts:**
-  - whether elites and variants raise the material chance, as they raise gold;
-  - whether world-boss hunts, which pay out through `pending_rewards`, give materials. That is question 3 in section 12.
+**Decided (the owner, 2026-11-23):**
+- **Only ordinary kills, not world-boss hunts** (question 3).
+  - Materials come only from the ordinary kill rewards (`rollLoot()`, `battle.js:59`).
+  - World-boss hunts, which pay out through `pending_rewards`, keep their current rewards exactly, and give no materials in the foundation.
+- **Elites and variants raise the material chance** (question 8), the same way they raise other drops.
+  - A variant's drop factor (`v.drop` in `rollLoot()`, `battle.js:64`, for example Fortunate and Hoarding) applies to the material roll as well.
+  - **The size of that effect** is a #86 parameter (section 7).
+
+**Still open, for #86:**
 - **Whether the chance or amount varies** by monster level. Both are parameters (section 7).
 - **The deploy order:** as for F2 (3.4).
   - The `game` function first, so the server's rule leads.
@@ -377,7 +391,7 @@ Today a kill drops gold and at most one bonus drop, a gem or a relic (3.4). Mate
 - **It finishes whether or not the player is signed in.** Like production (5.9), it is worked out lazily on the next request, on server time only. It isn't a job that runs on its own.
 - **Starting and cancelling are management, so they happen only in the Kingdom Zone** (K-D12).
   - Applying a finished construction, and accruing production, happen on any request, wherever the hero is.
-  - **Cancelling counts as management:** that's an assumption, for the review to confirm (section 12).
+  - **Cancelling counts as management** (question 5, decided by the owner on 2026-11-23): **a construction can only be cancelled in the Kingdom Zone.** Elsewhere, the Hero tab's summary shows it without a Cancel control.
 
 **How finishing interacts with production:** a construction's finish is a step of the one settlement sequence (5.9).
 - Production is settled up to the finish time at the old level, and from the finish time at the new level.
@@ -490,7 +504,8 @@ Today a kill drops gold and at most one bonus drop, a gem or a relic (3.4). Mate
 
 **The alternative, not proposed:** an authoritative ledger.
 - It would need the state and its ledger entries to commit together. In practice, every resource-changing save would become a Postgres function, and that would change the save path of every action.
-- It isn't needed for the foundation. If the owner wants exact accounting, it is a separate decision (section 12, question 10).
+- **Decided (question 10, the owner, 2026-11-23): the resource ledger stays best-effort statistics.** The hero's state remains authoritative, and there's no authoritative ledger.
+- **A revoke's gold refund** (question 9) goes to the gold ledger under `kingdom`, after the revoke's transaction commits, with the same best-effort contract.
 
 **Audit entries:**
 
@@ -542,6 +557,7 @@ The owner answered all 20, one at a time, on 2026-11-23. "As recommended" means 
 | `CLAIM_MIN_LEVEL` | hero level | Who can claim and enter (K-D2, 5.1) | K-1 activation |
 | `CLAIM_COST` | gold | The claim's price (K-D2; gold only, above) | K-1 activation |
 | `MATERIAL_CHANCE(level?)` | probability per kill | The material's own drop chance, for plot owners (K-D13, K-D16). Whether it varies by monster level is undecided | K-2 activation |
+| `MATERIAL_VARIANT_EFFECT` | factor, per variant | How much a variant's drop factor raises the material chance (question 8). It may be the variant's existing `drop` factor | K-2 activation |
 | `MATERIAL_AMOUNT(level)` | whole units | Materials per drop, by monster level | K-2 activation |
 | `MATERIAL_CAP` | whole units, or none | Whether the material has a storage cap (5.7) | K-2 activation |
 | `BUILD_COST(kind, level)` | whole units of resources, and gold | The cost to build and to upgrade (K-D14) | K-2 activation |
@@ -615,6 +631,8 @@ The owner answered all 20, one at a time, on 2026-11-23. "As recommended" means 
 - **A revoke between a `game` read and its save:** the save fails with 409, and the Kingdom isn't written back.
 - **Claim, release, revoke, reserve and unreserve each leave I-1 true,** or change nothing. The I-1 check finds no exceptions after the test suite.
 - **A retried claim or release** after success changes nothing more.
+- **The claim dialog** (question 7) is tier 2. It opens with focus on Cancel, and names the plot, the cost and that the Kingdom can't be moved. Cancelling it sends nothing.
+- **The only way in** is the Crossroads portal (question 6).
 - Management and claiming are refused by the server outside the Kingdom Zone. Elsewhere, the Hero tab shows the read-only summary.
 - **In the Kingdom Zone:**
   - the hero stays at the gate, and moving and walking are refused;
@@ -630,6 +648,15 @@ The owner answered all 20, one at a time, on 2026-11-23. "As recommended" means 
   - spending then never releases the rest.
 - **Settlement is path-independent** (an engine property test), so a read that doesn't save changes no later result.
 - **A cancel at or after the finish time** is refused. The construction has finished.
+- **A cancel from outside the Kingdom Zone** is refused by the server (question 5).
+- **World-boss hunts give no materials** (question 3). On ordinary kills, a variant's drop factor raises the material chance (question 8). This is tested with explicit test values.
+- **An admin revoke during a construction** (question 9):
+  - **Success:** one transaction frees the plot, removes the Kingdom (stock, buildings and construction), adds exactly the construction's paid gold to the hero, raises the hero's version, and writes one audit entry recording the refund. The construction's resources aren't refunded.
+  - **A revoke without a construction** refunds nothing.
+  - **Transaction failure:** if any step fails (for example the audit insert, forced in a pgTAP test), nothing changes. The plot, the Kingdom, the hero's gold, the construction and the version are all as before.
+  - **Concurrent actions:** a `game` request for that hero that read before the revoke fails its save with 409. It can't write back the Kingdom or the construction, so it can't trigger a cancel's full refund on top of the revoke's gold refund.
+  - **A cancel racing a revoke:** tested on the local stack. The gold is refunded once: by the cancel (everything) if its save commits first, or by the revoke (gold only) if the revoke commits first.
+  - **A retried revoke** finds no plot and refunds nothing.
 - **A refund above the cap** is kept in full, and that resource doesn't accrue until the stock is below the cap.
 - **With `KINGDOM_ECONOMY` off,** there are no material drops, no production and no construction.
 - **A retried or doubled start** starts one construction and charges once. A second start while one is under way is refused.
@@ -672,16 +699,16 @@ Each is marked:
 |---|---|---|
 | 1 | Is a Postgres function the right boundary for the changes that cross the plot and the hero (5.3.1), with everything else on the ordinary versioned save under S1? K-D6 itself is settled | Implementation clarification. **Answered by 5.3.1;** for the review to confirm |
 | 2 | Is the windowed plot map an acceptable accessibility pattern, against a list-and-search interface only? | Implementation clarification |
-| 3 | Should the material roll apply to world-boss hunts, which pay out through `pending_rewards`? | **Owner decision** |
+| 3 | Should the material roll apply to world-boss hunts, which pay out through `pending_rewards`? | **Owner decision. Answered (2026-11-23): no.** Ordinary kills only; hunt rewards unchanged (5.7) |
 | 4 | Does putting the interface in the Hero tab (K-D11) conflict with any Phase 2 layout rule for the side column on desktop? | Implementation clarification |
-| 5 | **The assumption that cancelling is management,** and so only possible in the Kingdom Zone (K-D12, K-D19; 5.8). Or should cancelling be allowed anywhere, as a safety valve? | **Owner decision** |
-| 6 | **Entering the Kingdom Zone:** a portal from the Crossroads only, or from every town? With management only in the Kingdom Zone (K-D12), the route affects how often players travel | **Owner decision** |
-| 7 | **Claiming as tier 2** (a dialog with focus on Cancel) rather than tier 4 (5.2) | **Owner decision** |
-| 8 | **Whether elites and variants** affect the material drop (5.7). Hunts are question 3 | **Owner decision** (values in #86) |
-| 9 | **A revoke while a construction is under way:** is its gold refunded to the hero? The stock and buildings go with the Kingdom (5.4) | **Owner decision** |
-| 10 | **The ledger contract:** best-effort analytics that can undercount but never overcounts (5.11), or authoritative accounting? Authoritative would make every resource-changing save a Postgres function | **Owner decision** (5.11 proposes best effort) |
+| 5 | **The assumption that cancelling is management,** and so only possible in the Kingdom Zone (K-D12, K-D19; 5.8). Or should cancelling be allowed anywhere, as a safety valve? | **Owner decision. Answered (2026-11-23): only in the Kingdom Zone** (5.8) |
+| 6 | **Entering the Kingdom Zone:** a portal from the Crossroads only, or from every town? With management only in the Kingdom Zone (K-D12), the route affects how often players travel | **Owner decision. Answered (2026-11-23): the Crossroads only** (5.1, 5.1.1) |
+| 7 | **Claiming as tier 2** (a dialog with focus on Cancel) rather than tier 4 (5.2) | **Owner decision. Answered (2026-11-23): tier 2.** The dialog names the plot and the cost, and says the Kingdom can't be moved; focus starts on Cancel (5.2) |
+| 8 | **Whether elites and variants** affect the material drop (5.7). Hunts are question 3 | **Owner decision. Answered (2026-11-23): yes,** as for other drops; the size is a #86 parameter (5.7, section 7) |
+| 9 | **A revoke while a construction is under way:** is its gold refunded to the hero? The stock and buildings go with the Kingdom (5.4) | **Owner decision. Answered (2026-11-23): yes,** exactly the gold paid, in the revoke's transaction; the resources are forfeited (5.3.1, 5.4) |
+| 10 | **The ledger contract:** best-effort analytics that can undercount but never overcounts (5.11), or authoritative accounting? Authoritative would make every resource-changing save a Postgres function | **Owner decision. Answered (2026-11-23): best-effort statistics** (5.11) |
 | 11 | **Release refused while a construction is under way** (5.4), so the player cancels first for the full refund | Implementation clarification |
 | 12 | **Stock above a cap is kept, and accrual pauses** (5.8, 5.9), and **a material drop at its cap adds up to the cap** (5.7) | Implementation clarification |
 | 13 | **The two release switches,** `KINGDOMS_OPEN` and `KINGDOM_ECONOMY`, and the activation gates (section 8) | Implementation clarification. Turning each on is the owner's authorization |
 | 14 | **The Kingdom Zone's details** (5.1.1): the hero stays at the gate; no players list there; the Map tab shows the plot map | Implementation clarification |
-| 15 | **The pending-rewards defect** in 5.3.1: should it get its own issue? | **Owner decision** (tracking only) |
+| 15 | **The pending-rewards defect** in 5.3.1: should it get its own issue? | **Owner decision. Answered (2026-11-23): yes,** tracked as [#102](https://github.com/Aeturnia/clickmonster/issues/102), not authorized (5.3.1) |
