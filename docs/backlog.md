@@ -303,6 +303,12 @@ A separate staging Supabase project is dropped. The live sign-in session above c
   - Fix by checking `live(g)` in the callbacks, or clearing the timers in `stop()`.
   - Add a test that signs out while effects are queued.
 
+- **Pending rewards can be marked claimed but never delivered** (found while writing the Kingdoms scope, 2026-11-23). **Tracked in #102.**
+  - **What happens:** in `supabase/functions/game/index.ts`, `claimRewards()` marks pending rewards claimed before the rest of the request runs. A request that is then refused, or whose save fails, loses them.
+  - **What's verified:** the code was read in the repository at `2a43a12`. The deployed `game` function wasn't examined, so no actual loss is claimed.
+  - **Why it matters for Kingdoms:** it falls in the same window as a refused Kingdom claim (`docs/kingdoms-scope.md`, 5.3.1, on PR #101). Recommended for priority review before K-1 reaches production.
+  - **Not authorized.** The failure modes and regression cases are in the issue.
+
 ## Desktop layout (done)
 
 Built in phases D-1 to D-3 and merged on 2026-11-13. See `docs/desktop-scope.md` and the three D reports. The layout picker from that scope was built as landing phase L-2. Still not approved: wider desktop sheets, and the possible rename to "Monstra Regna".
