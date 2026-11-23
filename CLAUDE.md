@@ -289,7 +289,7 @@ Read these first:
 ```
 npm test                 # engine, entrance file checks, the first-paint tripwire, the public pages, news rules, the news page handler, the town rule, the log rules and the session rule (77)
 npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (313)
-npm run test:db          # database (pgTAP, 42) and API/function/recovery/session tests (17, plus 1 opt-in) on the LOCAL Supabase stack, with Mailpit
+npm run test:db          # database (pgTAP, 82: news 42, pending rewards 40) and API/function/recovery/session tests (17, plus 1 opt-in) on the LOCAL Supabase stack, with Mailpit
 npx playwright install chromium   # once
 ```
 
