@@ -2,6 +2,11 @@
 
 **Status: a draft for independent review.**
 - **Documentation only.** No code, migration or deploy is authorized.
+- **The review of `8ce806c`** (2026-11-23) accepted the design. All six questions in section 11 are now answered:
+  - the review settled questions 1, 4 and 5;
+  - the owner decided questions 2, 3 and 6.
+
+  The quest-completion defect the review noticed is tracked separately, as [#105](https://github.com/Aeturnia/clickmonster/issues/105).
 - **Authorized:** the owner authorized writing this scope on 2026-11-23, after reviewing the proposal for [#102](https://github.com/Aeturnia/clickmonster/issues/102).
   - **The atomic delivery design** was accepted as the design to investigate.
   - **The owner decided** that the full-pack case belongs in #102 (section 3).
@@ -86,7 +91,7 @@ All of this is in `supabase/functions/game/index.ts`.
   - **if its items fit in the pack's free slots** (40 minus the pack as it is in memory, which includes items staged earlier in the request), it is **applied in memory**: the gold to the bank, the XP, the gems, the items and a notice. Its id joins the request's staged set;
   - **otherwise it is blocked,** and nothing of it is applied. Later rewards are still considered.
 - **A reward already in the staged set is skipped.** So staging twice in one request can't apply a reward twice.
-- **The rule is a pure function in the shared engine** (proposed: `public/js/engine/rewards.js`). It takes the hero and the rewards and returns the staged ids, the blocked ids and the changes, so it is tested in Node. `tools/deploy-functions.mjs` already uploads `js/engine`.
+- **The rule is a pure function in the shared engine** (accepted in review, question 5: `public/js/engine/rewards.js`). It takes the hero and the rewards and returns the staged ids, the blocked ids and the changes, so it is tested in Node. `tools/deploy-functions.mjs` already uploads `js/engine`.
 
 ### 5.2 The atomic commit: `save_hero_with_rewards()`
 
@@ -114,7 +119,7 @@ All of this is in `supabase/functions/game/index.ts`.
 - **if the request has staged rewards,** it calls `save_hero_with_rewards()`;
 - **otherwise,** the existing versioned update.
 
-**Before committing, a second staging pass runs** (proposed, question 4). It runs only when the first pass blocked a reward, or when the request created rewards. It considers open rewards not yet staged, so it covers two cases:
+**Before committing, a second staging pass runs** (accepted in review, question 4). It runs only when the first pass blocked a reward, or when the request created rewards. It considers open rewards not yet staged, so it covers two cases:
 - **space freed during the request,** for example by selling an item. The waiting reward is then delivered in the same request, not the next one;
 - **rewards created during the request:** the killing blow (5.5).
 
@@ -140,7 +145,8 @@ All of this is in `supabase/functions/game/index.ts`.
 - **The Kingdoms baseline needs an amendment before K-1.**
   - **The conflict:** `docs/kingdoms-scope.md` (accepted, PR #101), 5.3.1 rule 2, says pending rewards ride in `kingdom_claim()`'s and `kingdom_release()`'s `p_data`. With this fix, those functions would commit staged rewards without claiming them.
   - **The fix:** they must also take the staged ids and claim them in their transaction, with the same checks as 5.2. Or the claim and release actions must not stage.
-  - **Not done here:** this scope doesn't edit the Kingdoms baseline. The amendment is a dependency of K-1 (question 6).
+  - **Not done here:** this scope doesn't edit the Kingdoms baseline.
+  - **Decided (question 6, the owner, 2026-11-23):** a separate, small documentation-only PR amends `docs/kingdoms-scope.md` 5.3.1, before K-1 is authorized. `kingdom_claim()` and `kingdom_release()` take the request's staged reward ids and claim them in their own transaction, with the checks in 5.2.
 
 ### 5.4 `state` reads
 
@@ -150,7 +156,7 @@ All of this is in `supabase/functions/game/index.ts`.
   - the full-pack notice state changed (5.6).
 - **Its condition** becomes "notices or a hunt changed, **or rewards were staged, or the waiting set changed**". Delivery no longer depends on notice text.
 - **A read that fails to commit** returns no hero state as delivered (5.3).
-  - **Question 1:** should the read reload and try once more before answering 409, so that the first load of the game doesn't fail on a rare race?
+  - **Decided in review (question 1):** **no automatic retry.** A read whose commit conflicts answers 409, as a conflicting save does today. A retry may be considered separately later.
 
 ### 5.5 The killing blow
 
@@ -174,15 +180,28 @@ All of this is in `supabase/functions/game/index.ts`.
 - **When a waiting reward is delivered, or is no longer open,** its id is removed. The usual delivery notice appears.
 - **Notices** use the existing list (`char.notices`, the last 10, dismissed by the player).
 - **The waiting set is pruned** to ids that are still open, so it can't grow without limit.
-- **Question 3:** should the Gear tab also show a lasting line while rewards are waiting? That is a small client change.
+- **Decided (question 3, the owner, 2026-11-23): a lasting reminder in the Gear tab** while any reward is waiting, as well as the one-time notice. For example: "40 / 40 slots. 1 reward waiting. Free 1 inventory slot to receive your pending reward."
+  - **It is informational only:** no button, and no new inventory mechanics.
+  - **It is drawn from `rewardsWaiting`,** and disappears once the reward is delivered.
+  - **It follows the existing Gear tab patterns:** plain text, no icons, polite announcements, and axe with 0 violations.
 
 ### 5.7 Ledger entries
 
 - **Reward ledger entries are written only after a successful commit,** one `ledger(source, gold)` for each delivered reward, under the existing best-effort contract.
   - A delivery can succeed without its ledger entry, if the ledger write fails.
   - A ledger entry is never written for a reward that wasn't delivered.
-- **Question 2:** the action's own ledger entry (`monsters`, `hunt`, `death`, `shop` and the rest, lines 495 and 504) is also written before the save today, so it too can overcount on a failed save. Should it move after the commit as well?
-  - It is outside #102's requirements, and moving it changes every action's accounting order.
+- **Decided (question 2, the owner, 2026-11-23): every ledger entry that depends on the hero's save is written only after that save commits.** Today the `game` function writes four kinds before the save:
+  - pending-reward delivery (line 122);
+  - quest rewards (`ledger('quests', …)`, line 354);
+  - world-boss hunt actions (line 495);
+  - ordinary actions: fighting, buying, selling, healing and the rest (line 504).
+
+  **All four move after a successful commit.** The request collects its ledger entries, and writes them once the hero's save (or `save_hero_with_rewards()`) has succeeded.
+  - **A failed save writes no ledger entry,** so the ledger never records gold a hero didn't receive.
+  - **A ledger write that fails after the commit** still loses that entry. That's the accepted best-effort undercount.
+  - **No amount, source or calculation changes:** only the moment of writing does.
+  - **The admin hero editor** already writes its ledger entry after its save (`supabase/functions/admin/index.ts:196`), so it is unchanged.
+  - **The quest-completion transaction itself** (the quest is marked completed before the save) is not fixed here: it is [#105](https://github.com/Aeturnia/clickmonster/issues/105).
 
 ## 6. Tests
 
@@ -226,11 +245,19 @@ All of this is in `supabase/functions/game/index.ts`.
 - **a full pack:** the reward stays pending, with one notice;
 - **mixed eligible and blocked rewards:** only the eligible ones are delivered;
 - **a reward needing several free slots;**
-- **delivery after freeing space:** sell an item, and the reward is delivered in that request (or the next one, if question 4 is answered no);
+- **delivery after freeing space:** sell an item, and the reward is delivered in that request (question 4, accepted);
 - **repeated `state` reads:** the reward is delivered once; the notice isn't repeated; and a read with nothing to deliver doesn't save;
 - **a `state` read with a reward and no other change** saves and delivers it.
 
-**The fake backend** (`tests/ui/harness.mjs`) has no pending rewards today. If the implementation adds client text (question 3), the harness gains the minimum to show it.
+**Ledger timing** (question 2), on the local stack:
+- **an action whose save fails** (with the test trigger) writes no ledger entry: fighting, buying, a hunt action, and a quest-completing fight;
+- **the same actions, saved successfully,** write the same entries as today.
+
+**The browser, for the Gear reminder** (question 3):
+- the reminder shows while a reward is waiting, with the number of slots to free;
+- it disappears once the reward is delivered;
+- it works by keyboard, with axe at 0 violations, at 320 px and on desktop.
+- **The fake backend** (`tests/ui/harness.mjs`) has no pending rewards today. It gains the minimum: a hero state with `rewardsWaiting`.
 
 ## 7. Deployment and rollback
 
@@ -262,15 +289,18 @@ Each step needs the owner's authorization.
 - **A full pack keeps the whole reward pending.** One notice says so, and the reward is delivered once space exists.
 - **Rewards behind a blocked one** are still delivered.
 - **R-1 holds** (5.3.1): no hero write commits staged rewards without claiming them. A duel's target save carries no staged ids, and the target's own pending rewards are untouched.
-- **No reward ledger entry** without a committed delivery.
-- **Unchanged:** a request with no pending rewards behaves exactly as today, and saves through `saveRow()`.
+- **No ledger entry without a committed save,** for pending rewards, quest rewards, hunt actions and ordinary actions (question 2).
+- **The Gear tab's reminder** shows exactly while a reward is waiting (question 3).
+- **Unchanged:** a request with no pending rewards behaves exactly as today, and saves through `saveRow()`. The one exception is that its ledger entry is written after the save (question 2).
 - **Unchanged amounts:** reward amounts, hunt payouts and the pack limit (by test and by review of the diff).
 
 ## 9. Out of scope
 
 - **Reward amounts and sources,** the hunt payout calculation, and eligibility.
 - **The pack limit,** and inventory rules outside pending rewards.
-- **Other changes to how saves work,** beyond the reward path. The action ledger order is question 2.
+- **Other changes to how saves work,** beyond the reward path and the ledger order (question 2).
+- **Quest completion:** marking a quest completed before the hero's save is [#105](https://github.com/Aeturnia/clickmonster/issues/105), its own issue, not authorized.
+- **The Kingdoms amendment** (question 6) is its own PR.
 - **Kingdoms:** K-1 will use the same staged ids (case 7). The amendment to the Kingdoms baseline (5.3.1, R-1) is a separate change, before K-1.
 - **Recording which rewards were delivered,** beyond `claimed_at`.
 
@@ -284,9 +314,9 @@ Each step needs the owner's authorization.
 
 | # | Question | Kind |
 |---|---|---|
-| 1 | **A `state` read that hits a conflict:** reload and try once more before answering 409 (proposed), or answer 409 as today? | Implementation clarification |
-| 2 | **The action's own ledger entry,** written before the save today: move it after the commit too, or leave it? | **Owner decision** (it changes every action's accounting order) |
-| 3 | **A lasting "reward waiting" line** in the Gear tab, as well as the one-time notice? | **Owner decision** (a small client change) |
-| 4 | **The second staging pass at commit** (5.3): deliver a waiting reward in the same request once space is freed, and stage the killing blow's rewards there. Or deliver on the next request? | Implementation clarification (the proposal) |
-| 5 | **The staging rule in the shared engine** (`public/js/engine/rewards.js`), tested in Node? | Implementation clarification |
-| 6 | **The Kingdoms baseline:** the accepted `docs/kingdoms-scope.md` (5.3.1, rule 2) puts staged rewards in `kingdom_claim()`'s and `kingdom_release()`'s `p_data` without claiming them. Amend it before K-1, so that those functions claim the staged ids too (R-1, 5.3.1 here)? | **Owner decision** (it amends an accepted scope) |
+| 1 | **A `state` read that hits a conflict:** reload and try once more before answering 409, or answer 409 as today? | Implementation clarification. **Decided in review: 409 as today,** no automatic retry (5.4) |
+| 2 | **The action's own ledger entry,** written before the save today: move it after the commit too, or leave it? | **Owner decision. Decided (2026-11-23): move every save-dependent ledger entry after the commit:** pending rewards, quests, hunts and ordinary actions (5.7) |
+| 3 | **A lasting "reward waiting" line** in the Gear tab, as well as the one-time notice? | **Owner decision. Decided (2026-11-23): yes,** informational, gone on delivery (5.6) |
+| 4 | **The second staging pass at commit** (5.3): deliver a waiting reward in the same request once space is freed, and stage the killing blow's rewards there. Or deliver on the next request? | Implementation clarification. **Accepted in review** |
+| 5 | **The staging rule in the shared engine** (`public/js/engine/rewards.js`), tested in Node? | Implementation clarification. **Accepted in review** |
+| 6 | **The Kingdoms baseline:** the accepted `docs/kingdoms-scope.md` (5.3.1, rule 2) puts staged rewards in `kingdom_claim()`'s and `kingdom_release()`'s `p_data` without claiming them. Amend it before K-1, so that those functions claim the staged ids too (R-1, 5.3.1 here)? | **Owner decision. Decided (2026-11-23): a separate small amendment PR, before K-1** (5.3.1) |
