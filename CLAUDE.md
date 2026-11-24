@@ -30,12 +30,25 @@ Read these first:
   - World & Zone Expansion Research;
   - Monstra Regna — Identity & Homepage;
   - Public Launch Readiness.
-- **Issues #76 to #99** mirror the open work. Each entry in `docs/backlog.md` names its issue.
+- **Issues #76 to #99, plus #102 and #105,** mirror the open work. Each entry in `docs/backlog.md` names its issue. The backlog lists the issues whose source is a design note or scope instead.
+- **Milestones:** 21 of the 26 open issues have one.
+  - **#102 and #105** are in Public Launch Readiness. That doesn't make #105 a launch blocker or set its priority.
+  - **#85 and #96 to #99** are deliberately unassigned.
+- **Dependencies** use GitHub's native "blocked by". There is one: **#83 (Kingdoms K-1) is blocked by #102.** It's a K-1 implementation prerequisite; K-0, the design, stays accepted. Add one only when it's established, not for sequencing that is still conceptual.
+- **The Project is issue-only:** PRs aren't added. While a PR is in review, its issue keeps its real status.
 - **The rules:**
   - **The Markdown documents stay authoritative** (the backlog, the scopes and the reports). Issues link to them, not the reverse.
   - **A Status, milestone or assignment is a tracking signal, never authorization.** Only the owner's explicit instructions and accepted scopes authorize work, merges or deployment.
   - **Keep both in step:** when work is authorized, starts, reaches a review gate or completes, update the issue's Status. Cite the issue number in the PR and the report. Add new backlog entries as issues, linked both ways.
   - **Closed work stays closed.** Don't reopen it, or assign old PRs to milestones afterwards.
+  - **Reconcile at every milestone acceptance and operational gate** (owner, 2026-11-24). When recording a significant transition, check that these don't contradict the current state:
+    - the authoritative scope or report;
+    - the backlog entry;
+    - the issue's description;
+    - its Project status;
+    - its milestone and dependencies.
+
+    Don't rewrite history: add a dated "Current status" section, and keep the original text below it. A tracking update is never authorization.
   - **Exploitable security findings** go in a private security advisory, not a public issue. The repository is public.
   - **No secrets or personal details** in issues, as elsewhere.
 - **How to edit it:**
@@ -43,7 +56,18 @@ Read these first:
   - **The Status options and views:** GitHub's GraphQL API (`updateProjectV2Field`, `createProjectV2View`, `updateProjectV2View`).
   - **Web UI only:** view grouping and the built-in workflows.
 
-## Where things stand (2026-11-14)
+## Where things stand (2026-11-24; earlier entries keep their own dates)
+
+- **Kingdoms K-0, the design scope, is accepted** (#83, #84):
+  - `docs/kingdoms-scope.md`, PR #101 (`707eabc`), with amendment 1 in PR #106 (`3bd6116`);
+  - the owner's decisions K-D1 to K-D20 and eight follow-ups;
+  - **K-1 and K-2 implementation are not authorized.** K-1 is blocked by #102.
+- **#102, pending rewards delivered exactly once: fixed and deployed** (2026-11-24). **The owner's live checks are pending, so #102 stays open.**
+  - **The scope and reports:** `docs/pending-rewards-scope.md` and `docs/pending-rewards-report.md`.
+  - **The implementation:** stage 1, PR #107; stage 2, PR #108. The rollout procedure is PR #109.
+  - **Production:** migration `20261123120000` applied (Gate B), and `game` **v15** deployed (Gate C). The Gate C record is PR #111.
+  - **Remaining:** the smoke check, a hunt reward delivered once, and a pending reward surviving a refused action.
+- **#105, quest completion before the hero's save:** tracked, not authorized.
 
 - **UI modernization Phases 1–4 are complete and merged into `main`.** Phase 4 (the admin console) was approved in its final independent review at `a8d9dc6` and merged as PR #13 (`baa75d9`). All four review findings, P4-01 to P4-04, are closed.
 - **The desktop layout milestone is complete and merged into `main`** (2026-11-13). It was scoped in `docs/desktop-scope.md` (PR #17), with the owner's decisions in its section 4.

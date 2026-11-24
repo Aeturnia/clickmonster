@@ -4,6 +4,13 @@ Planned work that is not yet scheduled into a phase. Each item names what it bui
 
 **Tracking (2026-11-22):** open items are mirrored as GitHub issues on the Project [Monstra Regna — Development & Release](https://github.com/users/Aeturnia/projects/1), and each entry below names its issue. **This file stays authoritative:** an issue links here, and its Status or milestone is a tracking signal, not authorization.
 
+**Issues whose authoritative source isn't this file** (reconciliation of 2026-11-24): those issues link to their own source instead of to an entry here.
+- **#76 to #79:** `docs/monstra-regna-security-hardening-design-notes.md`.
+- **#83 to #87:**
+  - `docs/monstra-regna-world-zones-kingdoms-design-notes.md`;
+  - for #83 and #84, the accepted design baseline `docs/kingdoms-scope.md` (K-0).
+- **#88 to #90:** `docs/monstra-regna-scope.md`, with the MR-B1 and MR-B2 reports.
+
 ## Release verification
 
 The UI modernization (Phases 1–4), the desktop layout and the landing page were tested in Chromium only, against a fake backend. These checks are verification, not new features. Each comes from a phase report's "Not verified" section.
@@ -304,10 +311,22 @@ A separate staging Supabase project is dropped. The live sign-in session above c
   - Add a test that signs out while effects are queued.
 
 - **Pending rewards can be marked claimed but never delivered** (found while writing the Kingdoms scope, 2026-11-23). **Tracked in #102.**
-  - **What happens:** in `supabase/functions/game/index.ts`, `claimRewards()` marks pending rewards claimed before the rest of the request runs. A request that is then refused, or whose save fails, loses them.
-  - **What's verified:** the code was read in the repository at `2a43a12`. The deployed `game` function wasn't examined, so no actual loss is claimed.
-  - **Why it matters for Kingdoms:** it falls in the same window as a refused Kingdom claim (`docs/kingdoms-scope.md`, 5.3.1, on PR #101). Recommended for priority review before K-1 reaches production.
-  - **Not authorized.** The failure modes and regression cases are in the issue.
+  - **Status (2026-11-24): fixed and deployed. The owner's live checks are pending, and the issue stays open.**
+    - **The scope:** `docs/pending-rewards-scope.md` (PR #104).
+    - **The implementation:** stage 1, PR #107; stage 2, PR #108.
+    - **The production rollout:** migration `20261123120000` applied and verified, and `game` **v15** deployed. See `docs/pending-rewards-report.md`, sections 3 and 4.
+    - **Remaining:** the owner's smoke check, a hunt reward delivered exactly once, and a pending reward surviving a refused action.
+    - **Tracking:** milestone Public Launch Readiness. It blocks #83 (a K-1 implementation prerequisite).
+  - **As found:**
+    - in `supabase/functions/game/index.ts` (read at `2a43a12`), `claimRewards()` marked pending rewards claimed before the rest of the request ran, so a request that was then refused, or whose save failed, lost them;
+    - an item that didn't fit in a full pack was discarded.
+
+- **A quest can be marked completed when the finisher's reward is never saved** (noticed in the review of the #102 scope, 2026-11-23). **Tracked in #105.**
+  - **What happens:** `tryCompleteQuest()` marks the shared quest completed (the first finisher wins) before the hero's save. If that save then fails, the quest is closed for everyone, and its reward is never saved.
+  - **What's verified:** read in the repository. The deployed function wasn't examined, so no actual loss is claimed.
+  - **#102 is separate:** #102 moved the quest's ledger entry after the save, but not the completion itself.
+  - **Tracking:** milestone Public Launch Readiness. The milestone doesn't make it a launch blocker or set its priority; those are the owner's decisions.
+  - **Not authorized.** The details are in the issue.
 
 ## Desktop layout (done)
 
