@@ -654,7 +654,8 @@ Each gate was authorized by the owner on its own, and run by the procedure in se
 
 **How the test hunt came to exist isn't recorded.** The world events showed "A hunt begins! Iron Hulk 2 (level 20) has appeared in Ashford Vale." The record doesn't say whether it was started from the admin console or by the game.
 - **Where 4.3 stands:** its "no production test data has been created" was true when it was written, before the play test.
-- **Since then,** the play test wrote its own records to production: the hunt, its rewards, its event and its ledger entries.
+- **Observed since then:** the owner saw the reward arrive once, with its two notices, and the world events showed the hunt beginning and the killing blow.
+- **Inferred, not inspected:** the database side effects the accepted implementation would write. These are the hunt's row, its two reward rows (claimed), and the `hunt` ledger entries. None of these rows was inspected, and ledger writes are best effort, so the ledger entries in particular aren't confirmed.
 
 **I made no production read or write after Gate C, and no reward was compensated.** I can't vouch for anything else in production after Gate C.
 
@@ -663,16 +664,19 @@ Each gate was authorized by the owner on its own, and run by the procedure in se
 - **Another hunter's share** arrives with that hero's next request that saves, normally the page's own state read.
 - **The screens offer no refused action.** For example, there's no heal button at full health.
 
-**The substitute: integration tests on the local stack.** They run through the real `game` function against the local database, not the browser suite's fake backend. Each one leaves the reward pending, then delivers it exactly once:
+**The substitute: integration tests on the local stack.** They run through the real `game` function against the local database, not the browser suite's fake backend.
+- **Together** they establish the required behaviour: a refused or failed request leaves the reward pending, and it is then delivered exactly once.
+- **Each test** establishes a different part of that, as the table says.
+- **NB-02** is a positive check of a killing blow that saves, not of a refused request.
 
-| Test | What it shows | On the old code (2.2, 2.6) |
+| Test | What it directly establishes | On the old code (2.2, 2.6) |
 |---|---|---|
-| PR-1 | An action refused with 429 | Fails |
-| PR-2 | An action refused by a rule (healing at full health), 400 | Fails |
-| PR-3 | An action whose save conflicts, 409 | Fails |
-| PR-4 | A `state` read whose save conflicts, 409 | Fails |
-| PR-4b | A `state` read whose save fails outright, 500 | Fails |
-| PR-6 | The killing blow, then a failed save: the share and the killing-blow reward stay pending, then each is delivered once | Fails |
+| PR-1 | Refused with 429: the reward stays pending; the next request delivers its exact gold, and a further request doesn't deliver it again | Fails |
+| PR-2 | Refused by a rule (healing at full health), 400: the reward stays pending; the next request claims it and shows its notice | Fails |
+| PR-3 | An action whose save conflicts, 409: the reward stays pending; the next request claims it | Fails |
+| PR-4 | A `state` read whose save conflicts, 409: the reward stays pending; the next request claims it | Fails |
+| PR-4b | A `state` read whose save fails outright, 500: the reward stays pending; the next request claims it | Fails |
+| PR-6 | The killing blow, then a failed save: both hunt rewards stay pending; the next request delivers their exact gold, and a further request doesn't deliver them again | Fails |
 | NB-02 | A killing blow that saves delivers both rewards in the same request, with exactly 2 `hunt` ledger entries (+1,250), and nothing more on the next request | Passes. It's a positive check, and fails on a mutation that removes the second pass |
 
 **They passed in three CI runs:**
