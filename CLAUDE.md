@@ -111,11 +111,14 @@ Read these first:
   - **Step 3: the applicable checks passed** under the current production authentication configuration (owner-reported, 2026-11-18): session kept and the reset link worked end to end on `monstraregna.com`. **Sign-up confirmation was not performed:** email confirmation is off in production (since the first setup). It is deferred until email confirmation and delivery are separately authorized and configured; don't enable it as part of other work.
   - **Step 4 passed** (2026-11-18): titles, manifest, and news canonical and `og:url` on `monstraregna.com`, checked by the owner and independently by authorized read-only requests.
   - **The announcement (QB-2) was waived** by the owner on 2026-11-21, as there are no players yet.
-  - **Step 5, the redirect, is live:** PR #70 merged as `a468ee0` (2026-11-21).
-    - **B1-4b found one deviation:** `/news` and `/news/*` on the old host are served by the news edge function, not redirected. The function's fix is its own PR (report sections 6 and 7).
-    - **B1-4c wasn't performed.**
+  - **Step 5, the redirect, is complete:** the host rule (PR #70, `a468ee0`, 2026-11-21) and the news edge function's fallback for the old host (PR #72, `543a844`, 2026-11-22).
+    - **B1-4b passed, with a documented encoding exception** (report section 8): on the news routes, Netlify turns a query's `%20` into `+` before the function runs.
+      - **Query preservation is semantic, not byte-exact.** Any feature that relies on raw query bytes or signed queries on these routes needs a new review.
+    - **B1-4c is not performed:** no sign-in link from before the move was available. Don't mark it passed.
     - **The old host name** is allowed only as `LEGACY_HOST` in `netlify/edge-functions/news.js` (`tests/identity.test.mjs`).
-  - **Don't touch** the Supabase allow-list (step 7) without authorization.
+  - **MR-B1 stays open:**
+    - step 6 is partly complete (B1-4c outstanding);
+    - **step 7, the Supabase allow-list, is not authorized.** Don't touch it.
   - **MR-B2, the homepage and navigation,** was authorized on 2026-11-19. See `docs/monstra-regna-b2-report.md`.
     - **The milestone** merged as PR #56 (`1679855`).
     - **Its routing correction** merged as PR #57 (`577a253`) and is live.
