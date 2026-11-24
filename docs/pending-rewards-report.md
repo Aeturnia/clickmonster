@@ -652,7 +652,11 @@ Each gate was authorized by the owner on its own, and run by the procedure in se
 - **Nothing was read in production for the play test.** The hunt's row, its reward rows' `claimed_at`, and the `hunt` ledger entries weren't queried, because no read was authorized.
 - **The final state rests on** the owner's observation and the event's text.
 
-**Production records are as the play test left them.** The test hunt, its rewards, its event and its ledger entries were not changed or removed after Gate C, and no reward was compensated.
+**How the test hunt came to exist isn't recorded.** The world events showed "A hunt begins! Iron Hulk 2 (level 20) has appeared in Ashford Vale." The record doesn't say whether it was started from the admin console or by the game.
+- **Where 4.3 stands:** its "no production test data has been created" was true when it was written, before the play test.
+- **Since then,** the play test wrote its own records to production: the hunt, its rewards, its event and its ledger entries.
+
+**I made no production read or write after Gate C, and no reward was compensated.** I can't vouch for anything else in production after Gate C.
 
 **Why the refused action couldn't be reproduced live:**
 - **The killing request delivers the reward.** With the fix, a hunter's rewards arrive in the same request as the killing blow, so nothing stays pending for the owner's own hero.
