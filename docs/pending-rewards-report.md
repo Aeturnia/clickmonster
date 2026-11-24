@@ -285,3 +285,236 @@ Both fail on `main`'s `main.js`, and pass with the change.
 **Deviations:** none from the scope.
 - **The page size, 500,** is below `max_rows` (1,000), and pagination doesn't depend on it: it stops only at an empty page.
 - **The cost:** one more read when a hero has open rewards (the empty last page).
+
+## 3. The production rollout procedure (proposed, for review; nothing in it has been done)
+
+**Status: revised after the independent review of `a42f2ff` (2026-11-24, changes requested).** The first version was written after stage 2 merged as `fc189b4`.
+- **Not done:** no production read, apply, history change, deploy or rollback.
+- **Authorization:** every gate needs the owner's explicit authorization, separately from approving this procedure, including the read-only gate.
+- **Nothing moves automatically from one gate to the next.** Each gate ends with its evidence returned for independent review.
+- **The basis:** the scope's section 7, and L-3's procedure and record (`docs/landing-l3-report.md`, sections 4 and 12).
+- **Corrections:** the review's are listed in 3.8.
+
+### 3.1 The baseline, and what is reviewed
+
+**What production is expected to show,** from the L-3 record and the sign-out record. **This was not re-read: Gate A confirms it or stops.**
+- **The migration history table** records **exactly `20261115090000`**. The six earlier versions are deliberately unrecorded, although their objects exist.
+- **Postgres** 17.11.
+- **The `game` function:** version 14, updated 2026-11-19T15:53:01Z, from `e1ffa43`.
+- **The `admin` function:** version 8.
+
+**The migration:** `supabase/migrations/20261123120000_save_hero_with_rewards.sql`, unchanged from stage 1's merge (`832199f`) through stage 2's (`fc189b4`).
+- **Its exact bytes,** as git and GitHub store them (LF): **SHA-256 `12a5d73ee4884f77177bc20d13065fa6fd61a5e3f1fb7da46c113cc59c7915fe`.**
+- **A Windows checkout with `core.autocrlf=true` makes it CRLF** (`3be3856a…`). Applied from that copy, the body would carry 30 carriage returns. So the file is always taken with `git show fc189b4:<path>`, and its hash is checked.
+
+**The expected installed function** (`supabase/checks/pending_rewards_state.sql`, new and read-only; local stack, Postgres 17.11, from the LF bytes):
+- **the definition:** md5 **`46cea39f9a83b467c847dc4916815ca2`**, length **1,329**;
+- **the owner:** **`postgres`**. It is `SECURITY DEFINER`, so it runs as its owner (NB-03).
+
+**The `game` payload:** what `tools/deploy-functions.mjs game` uploads, pinned to **`fc189b4`**: `index.ts` and every `.js` file in `public/js/engine` and `public/js/data`.
+- **The bytes:** 25 files, each byte-identical to `fc189b4`, as checked by `tools/function-payload.mjs` (new and read-only, 3.6).
+- **The payload hash:** **`1ccf3b355dd6b13bf587ef62f6d749ad265f09a94b2b0df40ae9066107f17f5a`.**
+- **The deploy script uploads the checkout's files as they are on disk.** A CRLF checkout is a different payload, so the deploy runs from an LF checkout pinned at that commit.
+
+**The rollback payload:** pinned to **`832199f`**. Its 24 files are byte-identical to `e1ffa43`'s (v14's commit), payload hash **`e49abd5259aa499147800a38941f14f4434dc7962e448a0b4742f4ddf4442a0f`**, by the same tool.
+
+### 3.2 How production is read
+
+**Gate A uses only the Supabase Management API, with the owner's access token:**
+- `GET /v1/projects/janiqspmhkbsyemkknpv/functions` for the functions;
+- the SQL query endpoint (`POST /v1/projects/janiqspmhkbsyemkknpv/database/query`) for the database. That is the service the SQL editor uses, and the one L-3 used.
+
+**No CLI in Gate A** (B-01). L-3's record shows that `supabase link`, used to read the history, created the CLI's usual short-lived login role in production. So Gate A doesn't link the CLI, and reads the history from `supabase_migrations.schema_migrations` with SQL.
+
+**Every SQL read is sent as one request of the form `set transaction read only;` followed by one check file.**
+- **The check files** (`pending_rewards_precheck.sql`, `pending_rewards_verify.sql` and `pending_rewards_state.sql`) are each a single `SELECT`. The prefix makes the request's transaction read-only.
+- **On the local stack,** this form returned the check's result, and refused a write (`cannot execute CREATE TABLE in a read-only transaction`).
+- **Not rehearsed:** how the production endpoint handles the two statements. If it doesn't return the `SELECT`'s rows, the check alone is sent. A single `SELECT` can't write, and the report says which form was used.
+
+### 3.3 Gate A: the read-only inspection (the owner's authorization)
+
+1. **The functions,** with `GET …/functions`. Record `game`'s and `admin`'s version, status, update time and `verify_jwt`.
+   - **Expected:** `game` version 14, from 2026-11-19T15:53:01Z, ACTIVE, `verify_jwt` false; `admin` version 8.
+2. **The state,** with `pending_rewards_state.sql`. Expected:
+   - `function_present` false;
+   - `history_recorded` false;
+   - `history_versions` exactly `20261115090000`.
+3. **The precheck,** with `pending_rewards_precheck.sql`. Expected:
+   - row 1, 17.11;
+   - row 2, `none`;
+   - rows 3 and 4, true;
+   - row 5, exactly the expected column types;
+   - row 6, true;
+   - row 7, `20261115090000`.
+4. **Optional, with the owner's authorization:** download `game`'s deployed source (`GET …/functions/game/body`), and compare it with `e1ffa43`.
+   - **Not rehearsed:** the format of what that endpoint returns, and whether it can be compared file by file. If it can't, the report says so.
+
+**Stop conditions:** anything other than every "expected" above. That includes another function version, any other history entry (for example the six earlier versions now recorded), the function already present, or any column type difference.
+- **The response is the same in every case:** stop, record the evidence, and return it for review.
+- **There is no alternative route** (B-02). No `db push`, no `--include-all`, and no reconciling of the earlier history entries in this rollout.
+
+**At the end of Gate A:** independent review of the evidence, then the owner's authorization for Gate B.
+
+### 3.4 Gate B: the migration (the owner's authorization, after Gate A's review)
+
+**Applying and verifying:**
+1. **Re-read the state** (`pending_rewards_state.sql`), and confirm it is unchanged from Gate A.
+2. **Take the file:** `git show fc189b4:supabase/migrations/20261123120000_save_hero_with_rewards.sql`. Check its SHA-256 is `12a5d73e…7915fe`.
+3. **Apply it** through the query endpoint as one request: `begin;`, the file's exact bytes, `commit;`. Record the endpoint's answer. Nothing else is applied.
+4. **Record only this version in the history:** `npx supabase migration repair 20261123120000 --status applied --linked`, after `npx supabase link --project-ref janiqspmhkbsyemkknpv`.
+   - **Disclosed:** as L-3 found, the CLI may create its short-lived login role in production for this. That is a transient change, and the owner's authorization of Gate B includes it.
+   - **Then unlink.** Record the outputs.
+5. **Verify,** each read-only:
+   - **`pending_rewards_verify.sql`:** all 10 rows `ok`;
+   - **`pending_rewards_state.sql`:**
+     - `function_present` true;
+     - `definition_md5` `46cea39f9a83b467c847dc4916815ca2`;
+     - `definition_length` 1,329;
+     - `owner` `postgres`;
+     - `history_recorded` true;
+     - `history_versions` exactly `20261115090000, 20261123120000`, with the six earlier versions still unrecorded;
+   - **one refused call with the publishable key** (NB-01): `POST /rest/v1/rpc/save_hero_with_rewards`, with the body `{"p_char":"00000000-0000-4000-8000-000000000000","p_version":0,"p_data":{},"p_name":"probe","p_level":1,"p_zone":"probe","p_x":1,"p_y":1,"p_reward_ids":[]}`.
+     - **It must answer HTTP 401 with SQLSTATE `42501`.**
+     - **The empty id array** means that even if execute were wrongly granted, the function would refuse with `MRARG` (400) before writing anything. That would itself be a stop.
+6. **Record every result** (section 4, "Production record").
+
+**If a step fails, times out, or its answer is unclear** (B-03):
+- **Read the actual state** with `pending_rewards_state.sql`, read-only.
+- **Act only by this table.**
+- **No step is retried, re-applied, repaired or rolled back automatically.** Every corrective change is a new authorization.
+
+| `function_present` and the definition | `history_recorded` | Meaning | What happens |
+|---|---|---|---|
+| false | false | The migration wasn't applied | **Stop.** Record the apply's answer. A new apply needs a new authorization |
+| true, md5 and owner as expected | false | The migration was applied; the history repair is incomplete | **Stop.** Repeating the repair (step 4) needs the owner's authorization |
+| false | true | Inconsistent | **Stop.** Investigate before anything else |
+| true, md5 and owner as expected | true | Applied and recorded | **Go on** with the rest of step 5 |
+| true, md5 or owner not as expected | either | Not the reviewed function | **Stop.** Compare the `definition` column line by line with the reviewed migration, and report |
+
+**Rollback, separately authorized:**
+1. **Drop the function:** `supabase/rollback/20261123120000_save_hero_with_rewards_down.sql`, through the query endpoint.
+2. **Then the history:** `npx supabase migration repair 20261123120000 --status reverted --linked` (linked as in step 4, then unlinked).
+3. **Then verify the rollback** (NB-04), read-only:
+   - **the state:** `function_present` false, `history_recorded` false, and `history_versions` exactly `20261115090000`. The earlier entries are untouched: still only that one;
+   - **the precheck:** row 2 `none`.
+
+This is safe at Gate B, because nothing calls the function until Gate C.
+
+**At the end of Gate B:** independent review of the installed database contract, then the owner's authorization for Gate C.
+
+### 3.5 Gate C: the `game` function (the owner's authorization, after Gate B's review)
+
+**Before the deploy:**
+1. **Re-read the functions** (`GET …/functions`). `game` must be at the version recorded in Gate A. Any other version is a stop (NB-05, B-04).
+2. **Make the pinned checkout**, outside the repository: `git -c core.autocrlf=false worktree add --detach ../cm-deploy-fc189b4 fc189b4`. The `-c` makes it LF.
+3. **Check the payload and the target** (B-04): `node tools/function-payload.mjs game --rev fc189b4 --root ../cm-deploy-fc189b4`, with `SUPABASE_PROJECT_REF` unset. It must print:
+   - 25 files, each `matches`;
+   - `target project: janiqspmhkbsyemkknpv (the default)`;
+   - `payload: 1ccf3b35…7f5a`;
+   - the `RESULT` line saying every file is byte-identical and the target is production.
+   - **Anything else is a stop.**
+   - **A later revision of `main`** may be used instead of `fc189b4` only if the tool shows its payload hash equals `1ccf3b35…`, and that is reviewed.
+
+**The deploy and its checks:**
+4. **Deploy `game` only,** from that checkout: `node tools/deploy-functions.mjs game`, run in `../cm-deploy-fc189b4`, with `SUPABASE_ACCESS_TOKEN` set and `SUPABASE_PROJECT_REF` unset.
+   - **The slug argument** keeps `admin` out of the deploy.
+   - **Record** the script's output, then re-read the functions: the new version (read, not assumed) and its update time.
+5. **The boot check** (NB-02): `POST https://janiqspmhkbsyemkknpv.supabase.co/functions/v1/game` with `{"action":"state"}` and no token.
+   - **It must answer HTTP 401 with `{"error":"Please sign in again."}`,** the function's own answer, which shows the new version boots and imports `rewards.js`. Rehearsed locally.
+   - **A 503** ("Can't reach the sign-in service") is not a pass: it doesn't show readiness. The check is repeated later, and Gate C doesn't go on until it passes.
+   - **A 500, or a platform error,** is a stop, with rollback considered (owner's authorization).
+6. **Database verification after the deploy** (B-05, the scope's section 7): `pending_rewards_verify.sql` 10 of 10, and `pending_rewards_state.sql` unchanged from Gate B.
+7. **The owner's live checks:**
+   - **The smoke check:** sign in and play normally (a fight, a move, the Gear tab), with no errors.
+   - **The two behavioural checks the scope requires:**
+     1. **a world-boss hunt reward delivered exactly once,** with its notice;
+     2. **a pending reward surviving a refused action:**
+        - while the owner's hero has a pending reward, an action the game refuses (for example healing at full health in town) answers its error;
+        - a read-only query shows the reward still unclaimed;
+        - the next request delivers it, once.
+   - **If those conditions don't arise naturally:**
+     - **behavioural verification is recorded as pending,** and #102 stays open;
+     - **creating them is the owner's decision,** and isn't assumed: for example, starting a hunt from the admin console, or inserting a pending reward for the owner's own hero. No production test data is created, no criterion is waived, and #102 isn't closed without the owner's explicit decision.
+
+**Rollback, separately authorized:**
+1. **The pinned checkout:** `git -c core.autocrlf=false worktree add --detach ../cm-deploy-832199f 832199f`.
+2. **The payload check:** `node tools/function-payload.mjs game --rev 832199f --root ../cm-deploy-832199f` must print 24 files, all `matches`, the production target, and payload `e49abd52…0a0f`. That is byte-identical to `e1ffa43`, v14's source.
+3. **Deploy `game`** from that checkout.
+4. **The boot check,** as in step 5.
+
+**What the rollback costs:**
+- **It brings back #102's reward loss** on refused or failed requests, and the discarded relic at a full pack, until the fix is redeployed.
+- **The database function stays** (the old code doesn't call it).
+- **The client's Gear reminder** stays harmless without `rewardsWaiting`.
+
+**Afterwards:** remove the pinned checkouts (`git worktree remove`).
+
+**At the end of Gate C:** independent review of the production evidence, then the owner's decision on closing #102.
+
+### 3.6 The tools and checks
+
+| File | What it does | Writes? |
+|---|---|---|
+| `supabase/checks/pending_rewards_precheck.sql` (stage 1) | No such function yet, the column types, the history | No (one `SELECT`) |
+| `supabase/checks/pending_rewards_verify.sql` (stage 1) | The 10 checks of the installed function and its grants | No (one `SELECT`) |
+| `supabase/checks/pending_rewards_state.sql` (new; replaces the first version's `pending_rewards_functiondef.sql`) | One row: present or not, the definition's md5, length and owner, whether the history records the migration, every recorded version, and the definition text | No (one `SELECT`) |
+| `supabase/rollback/20261123120000_save_hero_with_rewards_down.sql` (stage 1) | Drops the function | Yes (rollback only) |
+| `tools/function-payload.mjs` (new) | What `deploy-functions.mjs <slug>` would upload from a given checkout: each file's size and SHA-256 compared byte for byte with a pinned revision, no file missing, the target project, and a payload hash. It exits 1 on any difference, or a target other than production | No (reads files and git; never calls Supabase) |
+
+### 3.7 Rehearsed on the local stack (2026-11-24)
+
+**From the first version, unchanged:**
+- **The setup:** the local database was put in production's expected state, with the function dropped and the history reduced to `20261115090000`.
+- **The precheck** matched.
+- **`db push --dry-run --local`** refused ("Found local migration files to be inserted before the last migration on remote database"), suggesting `--include-all`, which this procedure never uses.
+- **The LF bytes** applied as one transaction.
+- **The history repair** recorded only `20261123120000`.
+- **Verify:** 10 of 10.
+- **The rollback** gave verify 0 of 10 and the history `20261115090000`.
+- **Everything was restored** afterwards.
+
+**For this revision:**
+
+| Rehearsal | Result |
+|---|---|
+| The read form: `set transaction read only;` then a check, in one request (`psql -c`) | The check's row returned. The same form with a write was refused: "cannot execute CREATE TABLE in a read-only transaction". The probe table doesn't exist afterwards |
+| The five states of 3.4's table, each read with `pending_rewards_state.sql` (columns: present, md5, length, owner, recorded, versions) | **Applied and recorded:** `t`, `46cea39f…`, 1,329, `postgres`, `t`, …, `20261115090000`, `20261123120000`. **Applied, not recorded:** the same, but `f`. **Neither:** `f`, none, none, none, `f`. **Recorded, not present:** `f`, none, none, none, `t`. **Present, unexpected** (the CRLF copy): `t`, `f825cc85…`, 1,359, `postgres`, `t`. Each state is distinct |
+| The refusal probe (NB-01), with the exact body | Correct grants: `42501`, HTTP 401. With execute wrongly granted to `anon`: `MRARG`, HTTP 400, and nothing written. Restored: `42501` again |
+| The boot check (NB-02), against the local `game` function | No token: HTTP 401 `{"error":"Please sign in again."}`. The anon key: the same |
+| `tools/function-payload.mjs` | **This Windows checkout** (CRLF) against `fc189b4`: every file `DIFFERS (LF vs disk CRLF)`, exit 1. **An LF checkout at `fc189b4`:** 25 files match, the production target, payload `1ccf3b35…`, exit 0. **The same with `SUPABASE_PROJECT_REF` set to another project:** `NOT PRODUCTION`, exit 1. **The `fc189b4` checkout pinned to `832199f`:** exit 1, since `rewards.js` isn't in that revision. **An LF checkout at `832199f`,** pinned to `832199f` and to `e1ffa43`: both match, 24 files, payload `e49abd52…` |
+
+**Not rehearsed** (they need production):
+- the Management API's query endpoint, and how it treats the two-statement read form;
+- `GET …/functions` and `…/functions/game/body`;
+- `supabase link` and `--linked` repair against production;
+- a deploy;
+- production's function owner: `postgres` is the local value, and a different owner is a stop for review, not a failure assumed in advance.
+
+### 3.8 The review of `a42f2ff`: corrections, and decisions for the owner
+
+| Finding | The correction |
+|---|---|
+| **B-01:** Gate A wasn't strictly read-only (the CLI link can create a login role) | Gate A uses only the Management API, with read-only requests. The CLI is linked only in Gate B, for the history repair, with its transient role disclosed and covered by Gate B's authorization (3.2 to 3.4) |
+| **B-02:** an alternative `db push` route contradicted Gate B's verification | Removed. Only the expected manual route remains. Any other history or state is a stop for review (3.3) |
+| **B-03:** no handling of partial or unclear results | The state check and the five-state table. Read first, then stop or go on, with no automatic retry, re-apply, repair or rollback (3.4) |
+| **B-04:** the deploy wasn't pinned | An LF checkout pinned at `fc189b4`. The payload checker verifies every uploaded file, nothing missing, the target project and the payload hash. The function version is re-read before the deploy, and the same is done for the rollback at `832199f` (3.1, 3.5) |
+| **B-05:** missing live checks | Restored: the verify script after the deploy, a hunt reward delivered exactly once, and a pending reward surviving a refused action. If those conditions don't arise, behavioural verification stays pending and #102 stays open (3.5) |
+| **NB-01** | The probe's exact body, with an empty id array, and the required `42501` |
+| **NB-02** | Only 401 "Please sign in again." passes. 503 doesn't |
+| **NB-03** | The owner is in the state check, expected `postgres` |
+| **NB-04** | Verification after a Gate B rollback |
+| **NB-05** | The functions' metadata is read in Gate A, and again before the deploy |
+
+**Deviations from the scope's section 7:**
+- **None in substance:** the migration first, the precheck and verify, the deploy after, rollback by redeploying the previous version, and the live checks.
+- **Added:**
+  - the state check;
+  - the payload checker;
+  - pinned checkouts;
+  - Gate A's API-only reads;
+  - the stop table.
+
+**Decisions only the owner can make** (at the gates, not now):
+1. **Authorizing the CLI's transient login role in Gate B.** That is the route L-3 used and this one rehearsed. Writing the history entry with SQL instead would avoid it, but it isn't rehearsed and isn't proposed.
+2. **If the live behavioural conditions don't arise:** whether to create them (a hunt started from the admin console, or a pending reward for the owner's own hero), or to leave that verification pending.
+3. **Closing #102.**
