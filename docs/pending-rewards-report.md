@@ -573,3 +573,46 @@ Each gate was authorized by the owner on its own, and run by the procedure in se
 **Result:** Gate B passed. The function is installed exactly as reviewed, and recorded in the history. Nothing calls it yet: `game` is still v14.
 
 **Not done in Gate B:** the `game` deploy (Gate C), any rollback, any test data, and the earlier history entries.
+
+### 4.3 Gate C: the `game` function (2026-11-24, 15:31:46 to 15:32:37 UTC)
+
+- **The authorization:** the owner authorized it after Gate B's independent review, which accepted Gate B and approved Gate C.
+
+1. **The re-confirmation** (OP-03), read-only, at 15:31:46 to 15:31:48:
+   - `pending_rewards_verify.sql` **10 of 10**;
+   - state: md5 `46cea39f9a83b467c847dc4916815ca2`, length 1,329, owner `postgres`, history exactly `20261115090000, 20261123120000`;
+   - the publishable-key probe refused (401, `42501`);
+   - the functions: `game` **v14**, `ezbr_sha256` `af1b47ad…83db`, 2026-11-19T15:53:01.715Z; `admin` **v8**, `572f2b2c…ef64`, 2026-11-14T00:38:35.393Z. Both are unchanged since Gate A.
+2. **The pinned payload** (OP-04):
+   - **the checkout:** `git -c core.autocrlf=false worktree add --detach ../cm-deploy-fc189b4 fc189b4`, at `fc189b45897d451c2fac72d6be641deca5d69475`;
+   - **clean:** `git status --porcelain` was empty;
+   - **the deploy script:** `tools/deploy-functions.mjs`, SHA-256 `697a409a3bd6e38b1fabdf5bd0781edbb01a0bc6d0c5e1cd93e07489fec60b4a`, the same on disk and in `fc189b4`, with no CRs, and unchanged on `main`;
+   - **the checker:** `node tools/function-payload.mjs game --rev fc189b4 --root ../cm-deploy-fc189b4` printed **25 files, each `matches`**, the target `janiqspmhkbsyemkknpv` (the default; `SUPABASE_PROJECT_REF` unset), and **payload `1ccf3b355dd6b13bf587ef62f6d749ad265f09a94b2b0df40ae9066107f17f5a`**, as reviewed. Exit 0.
+3. **The deploy** (15:32:18Z): `node tools/deploy-functions.mjs game`, run in that checkout, with `SUPABASE_PROJECT_REF` unset. Only `game` was deployed.
+   - **The answer:** `game 201`, `"status":"ACTIVE","version":15`.
+   - **The functions afterwards** (15:32:20Z):
+     - `game` **v15**, ACTIVE, `verify_jwt` false, updated 2026-11-24T15:32:18.550Z, `ezbr_sha256` **`30a59b0fc0cacbf97dfcaa1ee875a045fd79924106a32c82cb0c4aa119d61c57`**;
+     - `admin` v8, unchanged (`572f2b2c…`, 2026-11-14T00:38:35.393Z).
+4. **The boot check** (15:32:36Z): an unauthenticated `POST https://janiqspmhkbsyemkknpv.supabase.co/functions/v1/game` with `{"action":"state"}`.
+   - **The answer:** **HTTP 401 `{"error":"Please sign in again."}`**, the function's own.
+   - **What it shows:** v15 boots, and imports `js/engine/rewards.js`.
+5. **Database verification after the deploy** (15:32:36 to 15:32:37):
+   - verify **10 of 10**;
+   - the state identical to Gate B;
+   - the probe refused (401, `42501`);
+   - `game` v15 (`30a59b0f…`) and `admin` v8, unchanged.
+6. **The pinned checkout** was removed (`git worktree remove`).
+
+**Result:** the technical checks passed. The fix is live: `game` v15 delivers pending rewards only through `save_hero_with_rewards()`.
+
+**Pending: the owner's live checks** (section 3.5, step 7). The owner will do them later (2026-11-24).
+- **The smoke check:** sign in, an ordinary fight, a move, the Gear tab.
+- **The two behavioural checks the scope requires:**
+  - a world-boss hunt reward delivered exactly once;
+  - a pending reward surviving a refused action, then delivered once.
+
+**Until they are done:**
+- behavioural verification is **pending**, and #102 stays open;
+- no production test data has been created, and no criterion is waived.
+
+**Rollback**, if it is ever needed, is separately authorized. It is pinned at `832199f` (section 3.5), and it brings back #102's reward loss.
