@@ -191,6 +191,13 @@ Read these first:
   - **Account isolation in `main.js`** (L-1 review, L1-01 and L1-02). Per-account UI state comes from `freshUi()`, and `stop()` replaces it. Every `start()` and `stop()` advances `gameGen`. Anything that awaits (an action in `runRemote()`, `loadBoard`, `refreshPlayers`, `loadHunts` and the other reads) records `gameGen` first and drops its result unless `live(g)`. New async game code must do the same.
   - **The entrance's CSS never reads `data-layout`.** Its colour tokens copy `style.css` `:root`, and `tests/entrance-files.test.mjs` checks they match.
 - **The Supabase client:** `net.js` owns the one client. `client()` loads `vendor/supabase-js@2.45.4/supabase.js` (Supabase's UMD build, byte-identical to the npm package; hashes and update steps in `public/vendor/README.md`) and creates the client once. `sb` is a live binding. Nothing else may call `createClient`. The admin console uses `await client()`.
+- **Pending rewards** (hunt shares, the killing blow; #102, `docs/pending-rewards-scope.md` and `docs/pending-rewards-report.md`):
+  - **How they're delivered:** staged in memory by the `game` function (`stageRewards()`, using `engine/rewards.js`), never claimed on their own. `saveRow()` claims exactly the staged ids in the same transaction as the hero's save, through `save_hero_with_rewards()` (service role only). A failed or refused request delivers nothing, and the rewards stay pending.
+  - **Indivisible:** a reward whose items don't fit in the pack (40, equipped items included) stays pending whole, with one notice and the Gear tab's reminder (`char.rewardsWaiting`). It never holds back later rewards.
+  - **The rule (R-1):** **every write of a hero's `data` goes through `saveRow()`,** or claims the request's staged reward ids in its own transaction (the future `kingdom_claim()` and `kingdom_release()`, Kingdoms amendment 1). Only the acting hero's row is staged. A duel's target save never claims.
+  - **The ledger:** entries that depend on a hero's save are queued on its row (`queueLedger()`) and written only after it commits. They stay best effort.
+  - **Tests:** a failing save is made deterministic with a test-only trigger on the local stack (`tests/db/pending-rewards-api.test.mjs`).
+  - **Production:** the migration (`20261123120000`) and the `game` redeploy each need the owner's authorization, migration first.
 - **Signing out and refused sessions** (`net.js`; `docs/sign-out-report.md`):
   - **`signOut()` and `endSession()`** end this device's session only (`scope: 'local'`), with a 5 s limit. If the library errs, runs out of time or leaves a session saved, they remove `clickmonster.auth` themselves (only if it is still the session being ended), keep the message in `sessionStorage` (`clickmonster.note`) and reload. `signOut()` is the player's own; `endSession()` says "Your session has ended".
   - **Other tabs** follow a removed session through a `storage` listener.
@@ -287,9 +294,9 @@ Read these first:
 ## Testing
 
 ```
-npm test                 # engine, entrance file checks, the first-paint tripwire, the public pages, news rules, the news page handler, the town rule, the log rules and the session rule (77)
-npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (313)
-npm run test:db          # database (pgTAP, 82: news 42, pending rewards 40) and API/function/recovery/session tests (17, plus 1 opt-in) on the LOCAL Supabase stack, with Mailpit
+npm test                 # engine, entrance file checks, the first-paint tripwire, the public pages, news rules, the news page handler, the town rule, the log rules, the session rule and the pending-rewards staging rule (90)
+npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (315)
+npm run test:db          # database (pgTAP, 82: news 42, pending rewards 40) and API/function/recovery/session/pending-rewards tests (39, plus 1 opt-in) on the LOCAL Supabase stack, with Mailpit
 npx playwright install chromium   # once
 ```
 
