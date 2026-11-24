@@ -434,3 +434,32 @@ test('realtime: focus survives on a channel tab, a message and a menu action', a
   noLiveAccess(ctx);
   await ctx.context.close();
 });
+
+// #102, question 3 (docs/pending-rewards-scope.md, 5.6): a reward waiting for inventory space is
+// shown in the Gear tab, as plain text, until it is delivered.
+for (const [label, opts] of [['phone at 320 px', { viewport: { width: 320, height: 640 } }], ['desktop', { viewport: { width: 1440, height: 900 }, mobile: false }]]) {
+  test(`#102 the Gear tab shows a reward waiting for space, and it goes once delivered (${label})`, async () => {
+    const hero = makeHero();
+    while (hero.inventory.length < 40) hero.inventory.push({ uid: hero.nextUid++, base: 'sword_1', gems: [] });
+    hero.rewardsWaiting = [{ id: 7, slots: 1 }];
+    const backend = new FakeBackend({ hero, players: OTHERS, chat: structuredClone(CHAT) });
+    const ctx = await game({ backend, ...opts });
+    const { page } = ctx;
+    await page.click('[data-a="tab"][data-v="gear"]'); await settle(page);
+    assert.equal((await page.textContent('#rewards-waiting')).trim(),
+      '40 / 40 inventory slots. 1 reward waiting. Free 1 inventory slot to receive it.');
+    assert.equal(await page.$eval('#rewards-waiting', (el) => !!el.closest('[aria-live], [role="status"], [role="alert"]')), false,
+      'not a live region: the one-time notice announces it');
+    assert.equal(await page.isVisible('#rewards-waiting'), true);
+    const v = await axe(page, { minImpact: 'minor' });
+    assert.deepEqual(v, [], JSON.stringify(v, null, 1));
+
+    delete hero.rewardsWaiting; // the server delivered it: the next answer has no waiting reward
+    await page.click('[data-a="tab"][data-v="explore"]'); await settle(page);
+    await page.click('[data-a="move"][data-v="n"]'); await settle(page);
+    await page.click('[data-a="tab"][data-v="gear"]'); await settle(page);
+    assert.equal(await page.$('#rewards-waiting'), null, 'gone once delivered');
+    noLiveAccess(ctx);
+    await ctx.context.close();
+  });
+}

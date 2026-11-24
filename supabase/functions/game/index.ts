@@ -2,7 +2,7 @@
 // authority on all rolls, gold and stats. Rules are the shared engine in ./js
 // (a symlink to public/js), the exact same code the browser uses for display.
 import { createClient } from 'npm:@supabase/supabase-js@2.45.4';
-import { createCharacter, ensureCharacter, applyRegen, spendLevel, addItem, gainXp } from './js/engine/character.js';
+import { createCharacter, ensureCharacter, applyRegen, spendLevel } from './js/engine/character.js';
 import { move, walkTo, usePortal, heal } from './js/engine/world.js';
 import { startBattle, battleAction, randomRelic, MAX_INVENTORY } from './js/engine/battle.js';
 import { setWorld } from './js/engine/world-config.js';
@@ -13,6 +13,7 @@ import { buy, buyAndEquip, sell, equip, unequip, socketGem, extractGem, deposit,
 import { duel } from './js/engine/pvp.js';
 import { hourBucket, generateQuests, accept, questMatches, grantQuestReward, questTitle } from './js/engine/quests.js';
 import { sessionFailure } from './js/engine/session.js';
+import { stagePending, settleWaiting } from './js/engine/rewards.js';
 
 const admin = createClient(
   Deno.env.get('SUPABASE_URL')!,
@@ -37,9 +38,20 @@ class GameError extends Error {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...CORS, 'Content-Type': 'application/json' } });
 
+// Pending rewards staged in memory for this request (#102). Only the row that handle() stages for
+// (the acting hero) ever has one: a duel's target never does, so its save never claims rewards.
+type Staging = {
+  ids: number[]; // staged reward ids, claimed only by this row's commit
+  blocked: Array<{ id: number; slots: number }>; // the last pass's rewards that didn't fit
+  recheck: boolean; // a second pass is needed before the commit: something was blocked, or rewards were created
+  settled: boolean; // the last pass and the waiting list are done
+};
+
 type Row = {
   id: string; data: any; version: number;
   banned_until?: string | null; jailed_until?: string | null; muted_until?: string | null; sanction_reason?: string | null;
+  staging?: Staging;
+  pendingLedger?: Array<[string, number]>; // written only after this row's save commits
 };
 
 async function loadRow(filter: { user_id?: string; id?: string }): Promise<Row | null> {
@@ -57,13 +69,37 @@ function publicColumns(char: any) {
 }
 
 // Optimistic locking: only save if nobody else changed the row since we read it.
+// With staged rewards, the save and their claims commit together in save_hero_with_rewards()
+// (#102; supabase/migrations/20261123120000_save_hero_with_rewards.sql), or neither does. Every
+// other way of writing a hero's data must keep that rule (docs/pending-rewards-scope.md, R-1).
+// The row's queued ledger entries are written only after the commit.
 async function saveRow(row: Row, char: any) {
-  const { data, error } = await admin.from('characters')
-    .update({ data: char, ...publicColumns(char), version: row.version + 1, updated_at: new Date().toISOString() })
-    .eq('id', row.id).eq('version', row.version).select('id');
-  if (error) throw error;
-  if (!data?.length) throw new GameError('Your hero was busy — try again.', 409);
-  row.version += 1;
+  if (row.staging) await finishStaging(row, char, Date.now());
+  const ids = row.staging?.ids || [];
+  if (ids.length) {
+    const pub = publicColumns(char);
+    const { data, error } = await admin.rpc('save_hero_with_rewards', {
+      p_char: row.id, p_version: row.version, p_data: char,
+      p_name: pub.name, p_level: pub.level, p_zone: pub.zone, p_x: pub.x, p_y: pub.y,
+      p_reward_ids: ids,
+    });
+    if (error) {
+      // A reward claimed elsewhere, or the hero changed: the same answer as a busy hero. Nothing
+      // was written, so the rewards stay pending. Anything else (MRARG) is a server error.
+      if (error.code === 'MRREW' || error.code === 'MRVER') throw new GameError('Your hero was busy — try again.', 409);
+      throw error;
+    }
+    row.version = Number(data);
+    row.staging!.ids = [];
+  } else {
+    const { data, error } = await admin.from('characters')
+      .update({ data: char, ...publicColumns(char), version: row.version + 1, updated_at: new Date().toISOString() })
+      .eq('id', row.id).eq('version', row.version).select('id');
+    if (error) throw error;
+    if (!data?.length) throw new GameError('Your hero was busy — try again.', 409);
+    row.version += 1;
+  }
+  await flushLedger(row);
 }
 
 async function announce(kind: string, text: string) {
@@ -103,26 +139,47 @@ const LEDGER_SOURCE: Record<string, string> = {
   melee: 'monsters', cast: 'monsters', buy: 'shop', buyequip: 'shop', sell: 'selling', heal: 'healer', extract: 'jeweler',
 };
 
+// Ledger entries that depend on a hero's save are queued on that row and written after it commits
+// (#102, question 2), so a failed save never records gold the hero didn't receive. Best effort, as
+// before: a ledger write that fails after the commit is logged and lost.
+function queueLedger(row: Row, source: string, amount: number) {
+  if (!amount) return;
+  (row.pendingLedger ||= []).push([source, amount]);
+}
+async function flushLedger(row: Row) {
+  const entries = row.pendingLedger || [];
+  row.pendingLedger = [];
+  for (const [source, amount] of entries) await ledger(source, amount);
+}
+
 // ---------------------------------------------------------------- pending rewards (hunts, gifts)
-// Returns the gold delivered (already recorded in the ledger under each reward's source).
-async function claimRewards(row: Row, char: any): Promise<number> {
-  const { data: open } = await admin.from('pending_rewards').select('id').eq('character_id', row.id).is('claimed_at', null).limit(20);
-  if (!open?.length) return 0;
-  let delivered = 0;
-  const { data: claimed, error } = await admin.from('pending_rewards').update({ claimed_at: new Date().toISOString() })
-    .in('id', open.map((r: any) => r.id)).is('claimed_at', null).select('*');
+// #102 (docs/pending-rewards-scope.md, 5.1 to 5.6): rewards are staged in memory, never claimed
+// here. saveRow() claims exactly the staged ids in the same transaction as the hero's save. A
+// reward whose items don't fit in the pack stays pending, whole (engine/rewards.js).
+async function stageRewards(row: Row, char: any, now: number) {
+  const st = (row.staging ||= { ids: [], blocked: [], recheck: false, settled: false });
+  const { data: open, error } = await admin.from('pending_rewards').select('id, source, gold, xp, items, gems, note')
+    .eq('character_id', row.id).is('claimed_at', null).order('id');
   if (error) throw error;
-  for (const r of claimed || []) {
-    char.bank = (char.bank || 0) + Number(r.gold || 0);
-    if (r.xp) gainXp(char, Number(r.xp));
-    for (const it of r.items || []) if (char.inventory.length < MAX_INVENTORY) addItem(char, it.base, it.q || null);
-    for (const [k, n] of Object.entries(r.gems || {})) char.gems[k] = (char.gems[k] || 0) + Number(n);
-    const parts = [r.gold ? `${r.gold} gold (sent to your bank)` : '', r.xp ? `${r.xp} experience` : '', (r.items || []).length ? 'a rare item' : ''].filter(Boolean);
-    char.notices = [...(char.notices || []).slice(-9), { at: Date.now(), text: `${r.note || 'Reward'}: ${parts.join(', ')}.` }];
-    await ledger(r.source || 'rewards', Number(r.gold || 0));
-    delivered += Number(r.gold || 0);
+  const fresh = (open || []).filter((r: any) => !st.ids.includes(Number(r.id)));
+  const { staged, blocked } = stagePending(char, fresh, now, MAX_INVENTORY);
+  for (const r of staged) {
+    st.ids.push(Number(r.id));
+    queueLedger(row, r.source || 'rewards', Number(r.gold || 0));
   }
-  return delivered;
+  st.blocked = blocked;
+  if (blocked.length) st.recheck = true;
+}
+
+// Once, just before the acting hero's commit: a second pass if something was blocked (space may
+// have been freed by the action) or rewards were created (a killing blow), then the waiting list
+// and its one-time notice. Returns whether the waiting list changed.
+async function finishStaging(row: Row, char: any, now: number): Promise<boolean> {
+  const st = row.staging;
+  if (!st || st.settled) return false;
+  if (st.recheck) await stageRewards(row, char, now);
+  st.settled = true;
+  return settleWaiting(char, st.blocked, now);
 }
 
 // ---------------------------------------------------------------- hunts (world bosses)
@@ -178,7 +235,10 @@ async function huntAction(row: Row, char: any, action: string): Promise<number> 
       b.over = 'victory';
       b.log.push({ kind: 'win', text: `You landed the killing blow on ${hunt.name}!` });
       await finishHunt(hunt.id);
-      return await claimRewards(row, char);
+      // The hunt's rewards (this hero's share, and the killing blow's) are staged at the commit, in
+      // saveRow()'s second pass, after this action's ledger delta is taken (#102, 5.5).
+      (row.staging ||= { ids: [], blocked: [], recheck: false, settled: false }).recheck = true;
+      return 0;
     } else if (r && r.status !== 'active') {
       if (!b.over) b.over = 'ended';
       b.log.push({ kind: 'info', text: r.status === 'defeated' ? `${hunt.name} has already fallen.` : 'The hunt is over.' });
@@ -351,7 +411,7 @@ async function tryCompleteQuest(row: Row, char: any, now: number) {
     return;
   }
   const r = grantQuestReward(char, now);
-  await ledger('quests', r.gold);
+  queueLedger(row, 'quests', r.gold);
   char.battle.log.push({ kind: 'win', text: `Quest complete! You earn ${r.xp} experience and ${r.gold} gold${r.gem ? ' and a gem' : ''}.` });
   await announce('quest', `${char.name} completed a quest: ${questTitle(q)}.`);
 }
@@ -410,8 +470,12 @@ async function handle(userId: string, action: string, args: any) {
       changed = true;
     }
     if (notice) row.data.notices = [...(row.data.notices || []).slice(-9), { at: now, text: notice }];
-    await claimRewards(row, row.data);
-    if (changed || JSON.stringify(row.data.notices || []) !== before) await saveRow(row, row.data);
+    // Staged rewards are saved even if nothing else changed (#102, 5.4). A read whose commit
+    // conflicts answers 409 like any save, and returns no rewards as delivered.
+    await stageRewards(row, row.data, now);
+    const waitingChanged = await finishStaging(row, row.data, now);
+    const staged = row.staging!.ids.length > 0;
+    if (changed || staged || waitingChanged || JSON.stringify(row.data.notices || []) !== before) await saveRow(row, row.data);
     return { char: row.data, sanctions: sanctionsOf(row) };
   }
 
@@ -447,7 +511,7 @@ async function handle(userId: string, action: string, args: any) {
   }
   enforceSanctions(row, action);
   const char = row.data;
-  await claimRewards(row, char);
+  await stageRewards(row, char, now);
 
   if (FAST_ACTIONS.has(action)) {
     if (now - (char.lastActionAt || 0) < MIN_ACTION_MS) throw new GameError('Slow down!', 429);
@@ -492,7 +556,7 @@ async function handle(userId: string, action: string, args: any) {
     if (action !== 'again' && char.battle.over) throw new GameError('This fight is over.');
     const delivered = await huntAction(row, char, action);
     const d = wealth(char) - wealthBefore - delivered;
-    await ledger(d < 0 ? 'death' : 'hunt', d);
+    queueLedger(row, d < 0 ? 'death' : 'hunt', d);
     await saveRow(row, char);
     return { char, sanctions: sanctionsOf(row) };
   }
@@ -501,7 +565,7 @@ async function handle(userId: string, action: string, args: any) {
   if (!fn) throw new GameError('Unknown action.');
   fn(char, args || {});
   const delta = wealth(char) - wealthBefore;
-  if (delta) await ledger(delta < 0 && (action === 'melee' || action === 'cast' || action === 'flee') ? 'death' : (LEDGER_SOURCE[action] || action), delta);
+  if (delta) queueLedger(row, delta < 0 && (action === 'melee' || action === 'cast' || action === 'flee') ? 'death' : (LEDGER_SOURCE[action] || action), delta);
 
   const b = char.battle;
   if ((action === 'melee' || action === 'cast') && b?.over === 'victory') {
