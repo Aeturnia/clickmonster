@@ -156,12 +156,28 @@ async function flushLedger(row: Row) {
 // #102 (docs/pending-rewards-scope.md, 5.1 to 5.6): rewards are staged in memory, never claimed
 // here. saveRow() claims exactly the staged ids in the same transaction as the hero's save. A
 // reward whose items don't fit in the pack stays pending, whole (engine/rewards.js).
+// Every open reward of a hero, oldest first. PostgREST caps each answer (max_rows in config.toml),
+// so this reads in pages by id (keyset) until a page comes back empty: a long run of blocked rewards
+// can never hide a later eligible one (review of PR #108, B-01). A failed page throws, so a partial
+// read is never taken as the whole waiting list: the request fails and nothing is committed.
+const REWARD_PAGE = 500;
+async function openRewards(charId: string): Promise<any[]> {
+  const all: any[] = [];
+  let after = 0;
+  for (;;) {
+    const { data, error } = await admin.from('pending_rewards').select('id, source, gold, xp, items, gems, note')
+      .eq('character_id', charId).is('claimed_at', null).gt('id', after).order('id').limit(REWARD_PAGE);
+    if (error) throw error;
+    if (!data?.length) return all;
+    all.push(...data);
+    after = Number(data[data.length - 1].id);
+  }
+}
+
 async function stageRewards(row: Row, char: any, now: number) {
   const st = (row.staging ||= { ids: [], blocked: [], recheck: false, settled: false });
-  const { data: open, error } = await admin.from('pending_rewards').select('id, source, gold, xp, items, gems, note')
-    .eq('character_id', row.id).is('claimed_at', null).order('id');
-  if (error) throw error;
-  const fresh = (open || []).filter((r: any) => !st.ids.includes(Number(r.id)));
+  const open = await openRewards(row.id);
+  const fresh = open.filter((r: any) => !st.ids.includes(Number(r.id)));
   const { staged, blocked } = stagePending(char, fresh, now, MAX_INVENTORY);
   for (const r of staged) {
     st.ids.push(Number(r.id));

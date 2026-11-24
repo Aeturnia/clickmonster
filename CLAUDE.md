@@ -294,9 +294,9 @@ Read these first:
 ## Testing
 
 ```
-npm test                 # engine, entrance file checks, the first-paint tripwire, the public pages, news rules, the news page handler, the town rule, the log rules, the session rule and the pending-rewards staging rule (88)
+npm test                 # engine, entrance file checks, the first-paint tripwire, the public pages, news rules, the news page handler, the town rule, the log rules, the session rule and the pending-rewards staging rule (90)
 npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (315)
-npm run test:db          # database (pgTAP, 82: news 42, pending rewards 40) and API/function/recovery/session/pending-rewards tests (30, plus 1 opt-in) on the LOCAL Supabase stack, with Mailpit
+npm run test:db          # database (pgTAP, 82: news 42, pending rewards 40) and API/function/recovery/session/pending-rewards tests (39, plus 1 opt-in) on the LOCAL Supabase stack, with Mailpit
 npx playwright install chromium   # once
 ```
 

@@ -25,15 +25,16 @@ function addNotice(char, text, now) {
 // open: pending_rewards rows ({ id, gold, xp, items, gems, note }), any order. Returns
 // { staged: [rows applied], blocked: [{ id, slots }] }, where slots is how many more free pack
 // slots that reward needs. The staged rows' effects, and a delivery notice for each, are on `char`.
+// A blocked reward's slots are counted against the pack as it is after every eligible reward of
+// the pass has been applied (review of PR #108, B-02), since a later reward can take a free slot.
 export function stagePending(char, open, now = Date.now(), maxInventory = MAX_INVENTORY) {
   const staged = [];
-  const blocked = [];
+  const waiting = [];
   const rows = [...(open || [])].sort((a, b) => Number(a.id) - Number(b.id));
   for (const r of rows) {
     const items = itemsOf(r);
-    const over = char.inventory.length + items.length - maxInventory;
-    if (over > 0) {
-      blocked.push({ id: Number(r.id), slots: over });
+    if (char.inventory.length + items.length > maxInventory) {
+      waiting.push(r);
       continue;
     }
     char.bank = (char.bank || 0) + Number(r.gold || 0);
@@ -43,6 +44,7 @@ export function stagePending(char, open, now = Date.now(), maxInventory = MAX_IN
     addNotice(char, deliveryText(r), now);
     staged.push(r);
   }
+  const blocked = waiting.map((r) => ({ id: Number(r.id), slots: char.inventory.length + itemsOf(r).length - maxInventory }));
   return { staged, blocked };
 }
 

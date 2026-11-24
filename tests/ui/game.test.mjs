@@ -436,16 +436,29 @@ test('realtime: focus survives on a channel tab, a message and a menu action', a
 });
 
 // #102, question 3 (docs/pending-rewards-scope.md, 5.6): a reward waiting for inventory space is
-// shown in the Gear tab, as plain text, until it is delivered.
+// shown in the Gear tab, as plain text, until it is delivered. Reached by keyboard only (review of
+// PR #108, NB-03): Tab to the control, then Enter.
+async function keyTo(page, selector) {
+  for (let i = 0; i < 120; i++) {
+    if (await page.evaluate((s) => !!document.activeElement?.matches(s), selector)) {
+      await page.keyboard.press('Enter');
+      await settle(page);
+      return;
+    }
+    await page.keyboard.press('Tab');
+  }
+  assert.fail(`not reachable with the Tab key: ${selector}`);
+}
+
 for (const [label, opts] of [['phone at 320 px', { viewport: { width: 320, height: 640 } }], ['desktop', { viewport: { width: 1440, height: 900 }, mobile: false }]]) {
-  test(`#102 the Gear tab shows a reward waiting for space, and it goes once delivered (${label})`, async () => {
+  test(`#102 the Gear tab shows a reward waiting for space, and it goes once delivered (${label}, by keyboard)`, async () => {
     const hero = makeHero();
     while (hero.inventory.length < 40) hero.inventory.push({ uid: hero.nextUid++, base: 'sword_1', gems: [] });
     hero.rewardsWaiting = [{ id: 7, slots: 1 }];
     const backend = new FakeBackend({ hero, players: OTHERS, chat: structuredClone(CHAT) });
     const ctx = await game({ backend, ...opts });
     const { page } = ctx;
-    await page.click('[data-a="tab"][data-v="gear"]'); await settle(page);
+    await keyTo(page, '[data-a="tab"][data-v="gear"]');
     assert.equal((await page.textContent('#rewards-waiting')).trim(),
       '40 / 40 inventory slots. 1 reward waiting. Free 1 inventory slot to receive it.');
     assert.equal(await page.$eval('#rewards-waiting', (el) => !!el.closest('[aria-live], [role="status"], [role="alert"]')), false,
@@ -455,9 +468,9 @@ for (const [label, opts] of [['phone at 320 px', { viewport: { width: 320, heigh
     assert.deepEqual(v, [], JSON.stringify(v, null, 1));
 
     delete hero.rewardsWaiting; // the server delivered it: the next answer has no waiting reward
-    await page.click('[data-a="tab"][data-v="explore"]'); await settle(page);
-    await page.click('[data-a="move"][data-v="n"]'); await settle(page);
-    await page.click('[data-a="tab"][data-v="gear"]'); await settle(page);
+    await keyTo(page, '[data-a="tab"][data-v="explore"]');
+    await keyTo(page, '[data-a="move"][data-v="n"]');
+    await keyTo(page, '[data-a="tab"][data-v="gear"]');
     assert.equal(await page.$('#rewards-waiting'), null, 'gone once delivered');
     noLiveAccess(ctx);
     await ctx.context.close();

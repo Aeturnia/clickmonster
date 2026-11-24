@@ -114,3 +114,26 @@ test('waitingReminder: the Gear tab text, and nothing when no reward waits', () 
   c.rewardsWaiting = [{ id: 4, slots: 2 }, { id: 5, slots: 1 }];
   assert.equal(waitingReminder(c).text, '2 rewards waiting. Free 2 inventory slots to receive the next one.');
 });
+
+// Review of PR #108, B-02: a blocked reward's slots are counted after the pass's eligible rewards.
+test('B-02 an older reward needing two slots, a newer one needing one: the newer one takes the free slot, and the older one still needs two', () => {
+  const c = hero(MAX_INVENTORY - 1);
+  const { staged, blocked } = stagePending(c, [reward(1, { items: [relic, relic] }), reward(2, { items: [relic] })], NOW);
+  assert.deepEqual(staged.map((r) => r.id), [2], 'the newer reward fits and is delivered');
+  assert.equal(c.inventory.length, MAX_INVENTORY, 'the pack is full again');
+  assert.deepEqual(blocked, [{ id: 1, slots: 2 }], 'the older reward needs two more slots, counted against the final pack');
+});
+
+// Review of PR #108, NB-05: gold, XP, items and gems are delivered together.
+test('NB-05 a reward with gold, XP, an item and gems is delivered whole', () => {
+  const c = hero(10);
+  const before = { bank: c.bank, xp: c.xp, level: c.level, inv: c.inventory.length, ruby: c.gems['ruby:1'] || 0 };
+  const { staged } = stagePending(c, [reward(1, { gold: 250, xp: 3, items: [relic], gems: { 'ruby:1': 2 } })], NOW);
+  assert.deepEqual(staged.map((r) => r.id), [1]);
+  assert.equal(c.bank, before.bank + 250, 'the gold, to the bank');
+  assert.ok(c.level > before.level || c.xp === before.xp + 3, 'the experience');
+  assert.equal(c.inventory.length, before.inv + 1, 'the item');
+  assert.equal(c.inventory.at(-1).base, 'sword_4');
+  assert.equal(c.inventory.at(-1).q, 'relic');
+  assert.equal(c.gems['ruby:1'], before.ruby + 2, 'the gems');
+});

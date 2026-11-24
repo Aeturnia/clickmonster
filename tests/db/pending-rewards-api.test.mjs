@@ -4,9 +4,10 @@
 //
 // A failing save is made deterministic with a test-only trigger, installed and dropped by each test
 // on the local database (never in a migration):
-//   - "skip": a BEFORE UPDATE trigger that returns NULL for one hero, so the save updates no row,
-//     exactly as when the version has changed (the ordinary save answers 409; the atomic save raises
-//     MRVER, which the function maps to 409);
+//   - "skip": a BEFORE UPDATE trigger that returns NULL for one hero, so the save updates no row. It
+//     simulates the zero-row update a changed version produces, without a second writer; the real
+//     code paths then run (the ordinary save answers 409; the atomic save raises MRVER, which the
+//     function maps to 409). A real conflict between two requests is PR-5, with no trigger;
 //   - "raise": the same trigger raising an error (a save that fails outright: 500);
 //   - "skip claims": the same on pending_rewards, so the claim updates no row (MRREW, 409).
 import { test, before, after, afterEach } from 'node:test';
@@ -15,6 +16,8 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { ITEMS } from '../../public/js/data/items.js';
+import { shopItems } from '../../public/js/engine/inventory.js';
 
 let API, ANON, SERVICE, DB_URL;
 const RUN = `t${Date.now()}`;
@@ -102,11 +105,41 @@ async function reward(id) {
 async function clearOpenRewards(who) {
   await service(`/rest/v1/pending_rewards?character_id=eq.${users[who].charId}&claimed_at=is.null`, { method: 'DELETE' });
 }
-async function ledgerTotal(source) {
-  const rows = await (await service(`/rest/v1/ledger?source=eq.${encodeURIComponent(source)}&select=amount`)).json();
-  return rows.reduce((a, r) => a + Number(r.amount), 0);
+// A source's ledger amount and number of entries (summed over days, in case the run crosses midnight).
+async function ledgerOf(source) {
+  const rows = await (await service(`/rest/v1/ledger?source=eq.${encodeURIComponent(source)}&select=amount,count`)).json();
+  return rows.reduce((a, r) => ({ amount: a.amount + Number(r.amount), count: a.count + Number(r.count) }), { amount: 0, count: 0 });
 }
 const wealth = (c) => (c.gold || 0) + (c.bank || 0);
+const RELIC = { base: 'sword_4', q: 'relic' };
+const unequipped = (c) => c.inventory.filter((i) => !Object.values(c.equipment).includes(i.uid));
+function fillPack(c, n = 40) {
+  while (c.inventory.length < n) c.inventory.push({ uid: c.nextUid++, base: 'sword_1', gems: [] });
+  while (c.inventory.length > n) c.inventory.splice(c.inventory.indexOf(unequipped(c)[0]), 1);
+}
+const STRONG = { str: 5000, dex: 5000, int: 5000, wis: 5000, vit: 5000 };
+// In Ashford, one step north of the village: open ground with Field Rats, which a STRONG hero beats.
+const ASHFORD_FIELD = { zone: 'ashford', x: 5, y: 4 };
+const ASHFORD_TOWN = { zone: 'ashford', x: 5, y: 5 };
+async function insertHunt(fields) {
+  const res = await service('/rest/v1/hunts', {
+    method: 'POST', headers: { Prefer: 'return=representation' },
+    body: JSON.stringify({ zone: 'ashford', name: `Test Boss ${RUN} ${Math.random().toString(36).slice(2, 7)}`, ends_at: new Date(Date.now() + 3600000).toISOString(), ...fields }),
+  });
+  return (await res.json())[0];
+}
+const huntStatus = async (id) => (await (await service(`/rest/v1/hunts?id=eq.${id}&select=status`)).json())[0].status;
+const endHunt = (id) => service(`/rest/v1/hunts?id=eq.${id}`, { method: 'PATCH', body: JSON.stringify({ status: 'cancelled' }) });
+// Melee until the fight is over (a hit can miss). Returns the last answer.
+async function meleeUntilOver(who, max = 20) {
+  let res;
+  for (let i = 0; i < max; i++) {
+    res = await game(who, 'melee');
+    assert.equal(res.status, 200, JSON.stringify(res.body).slice(0, 200));
+    if (res.body.char.battle?.over) return res;
+  }
+  assert.fail('the fight did not end');
+}
 
 before(async () => {
   const out = execFileSync(npx, ['--no-install', 'supabase', 'status', '-o', 'json'], { encoding: 'utf8', shell: process.platform === 'win32' });
@@ -310,21 +343,25 @@ test('PR-9 a failed save writes no ledger entry: pending rewards and an ordinary
   skipSaves(users.a.charId);
   assert.equal((await game('a', 'state')).status, 409);
   dropTriggers();
-  assert.equal(await ledgerTotal(source), 0, 'the reward\'s gold isn\'t recorded when its save fails');
+  assert.deepEqual(await ledgerOf(source), { amount: 0, count: 0 }, 'the reward\'s gold isn\'t recorded when its save fails');
   assert.equal((await game('a', 'state')).status, 200);
   assert.ok((await reward(id)).claimed_at);
-  assert.equal(await ledgerTotal(source), 77, 'and is recorded once it is delivered');
+  assert.deepEqual(await ledgerOf(source), { amount: 77, count: 1 }, 'and is recorded once, exactly, when it is delivered');
 
   const hero = (await heroRow('a')).data;
   const spare = hero.inventory.find((i) => !Object.values(hero.equipment).includes(i.uid));
-  const selling = await ledgerTotal('selling');
+  const selling = await ledgerOf('selling');
   skipSaves(users.a.charId);
   assert.equal((await game('a', 'sell', { uid: spare.uid })).status, 409);
   dropTriggers();
-  assert.equal(await ledgerTotal('selling'), selling, 'a sale whose save fails isn\'t recorded');
+  assert.deepEqual(await ledgerOf('selling'), selling, 'a sale whose save fails isn\'t recorded');
+  const beforeSale = wealth((await heroRow('a')).data);
   const sold = await game('a', 'sell', { uid: spare.uid });
   assert.equal(sold.status, 200, JSON.stringify(sold.body));
-  assert.ok(await ledgerTotal('selling') > selling, 'a sale that saves is recorded');
+  const price = wealth(sold.body.char) - beforeSale;
+  assert.ok(price > 0);
+  assert.deepEqual(await ledgerOf('selling'), { amount: selling.amount + price, count: selling.count + 1 },
+    'a sale that saves is recorded once, with exactly its price');
 });
 
 // ------------------------------------------------------------ the error mapping, concurrency, R-1, privileges
@@ -383,4 +420,209 @@ test('PR-12 save_hero_with_rewards() is refused to players through the REST API 
   assert.equal((await anon.json()).code, '42501', 'the anon key is refused');
   const player = await fetch(`${API}/rest/v1/rpc/save_hero_with_rewards`, { method: 'POST', headers: headers(users.a.token), body });
   assert.equal((await player.json()).code, '42501', 'a signed-in player is refused');
+});
+
+// ------------------------------------------------------------ the review of PR #108 (head 92f255e)
+
+test('B-01 a reward after more blocked rewards than one PostgREST answer holds (max_rows 1000) is still delivered', async () => {
+  await clearOpenRewards('a');
+  await setHero('a', (c) => { c.battle = null; c.notices = []; c.rewardsWaiting = undefined; c.loc = { ...ASHFORD_TOWN }; fillPack(c, 40); });
+  const rows = [];
+  for (let i = 0; i < 1000; i++) rows.push({ character_id: users.a.charId, source: 'hunt', gold: 1, xp: 0, items: [RELIC], gems: {}, note: `B-01 blocked ${i}` });
+  rows.push({ character_id: users.a.charId, source: 'hunt', gold: 17, xp: 0, items: [], gems: {}, note: 'B-01 gold reward' });
+  const ins = await service('/rest/v1/pending_rewards', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(rows) });
+  assert.equal(ins.status, 201, await ins.text());
+  const goldId = (await (await service(`/rest/v1/pending_rewards?character_id=eq.${users.a.charId}&note=eq.B-01%20gold%20reward&select=id`)).json())[0].id;
+  const before = wealth((await heroRow('a')).data);
+  try {
+    const state = await game('a', 'state');
+    assert.equal(state.status, 200, JSON.stringify(state.body).slice(0, 200));
+    assert.ok((await reward(goldId)).claimed_at, 'the eligible reward behind 1,000 blocked ones is delivered');
+    assert.equal(wealth(state.body.char), before + 17);
+    assert.equal(state.body.char.rewardsWaiting.length, 1000, 'all 1,000 blocked rewards are still waiting');
+  } finally {
+    await clearOpenRewards('a');
+    await setHero('a', (c) => { c.rewardsWaiting = undefined; c.notices = []; });
+  }
+});
+
+test('B-02 an older reward needing two slots stays waiting for two after a newer one takes the freed slot (response and saved state)', async () => {
+  await clearOpenRewards('a');
+  await setHero('a', (c) => { c.battle = null; c.notices = []; c.rewardsWaiting = undefined; c.loc = { ...ASHFORD_TOWN }; fillPack(c, 40); });
+  const older = await addReward('a', { gold: 1, items: [RELIC, RELIC], note: 'B-02 older reward' });
+  const newer = await addReward('a', { gold: 2, items: [RELIC], note: 'B-02 newer reward' });
+  const first = await game('a', 'state');
+  assert.deepEqual(first.body.char.rewardsWaiting, [{ id: Number(older), slots: 2 }, { id: Number(newer), slots: 1 }]);
+  const spare = unequipped(first.body.char).find((i) => i.q !== 'relic');
+  const sold = await game('a', 'sell', { uid: spare.uid });
+  assert.equal(sold.status, 200, JSON.stringify(sold.body));
+  assert.ok((await reward(newer)).claimed_at, 'the newer reward takes the freed slot');
+  assert.equal((await reward(older)).claimed_at, null, 'the older one stays pending, whole');
+  assert.equal(sold.body.char.inventory.length, 40, 'the pack is full again');
+  assert.deepEqual(sold.body.char.rewardsWaiting, [{ id: Number(older), slots: 2 }], 'the answer: it still needs two slots');
+  assert.deepEqual((await heroRow('a')).data.rewardsWaiting, [{ id: Number(older), slots: 2 }], 'the saved state: the same');
+  await clearOpenRewards('a');
+});
+
+test('B-03 ordinary fighting: a won fight whose save fails writes no ledger entry; a saved one writes exactly its gold, once', async () => {
+  await clearOpenRewards('a');
+  await setHero('a', (c) => { c.battle = null; c.quest = null; c.loc = { ...ASHFORD_FIELD }; c.stats = { ...STRONG }; c.hp = 9e9; c.lastActionAt = 0; fillPack(c, 10); });
+  assert.equal((await game('a', 'fight', { monsterId: 'ashford:field-rat' })).status, 200);
+  const before = await ledgerOf('monsters');
+  skipSaves(users.a.charId);
+  for (let i = 0; i < 8; i++) assert.equal((await game('a', 'melee')).status, 409);
+  dropTriggers();
+  assert.deepEqual(await ledgerOf('monsters'), before, 'no entry for fights whose save failed');
+  const won = await meleeUntilOver('a');
+  assert.equal(won.body.char.battle.over, 'victory');
+  const gold = won.body.char.battle.rewards.gold;
+  assert.ok(gold > 0);
+  assert.deepEqual(await ledgerOf('monsters'), { amount: before.amount + gold, count: before.count + 1 }, 'exactly the fight\'s gold, once');
+  await game('a', 'done');
+});
+
+test('B-03 buying: a purchase whose save fails writes no ledger entry; a saved one writes exactly its price, once', async () => {
+  await setHero('a', (c) => { c.battle = null; c.loc = { ...ASHFORD_TOWN }; c.gold = 100000; fillPack(c, 10); });
+  const hero = (await heroRow('a')).data;
+  const itemId = shopItems(hero)[0];
+  const price = ITEMS[itemId].price;
+  const before = await ledgerOf('shop');
+  skipSaves(users.a.charId);
+  assert.equal((await game('a', 'buy', { itemId })).status, 409);
+  dropTriggers();
+  assert.deepEqual(await ledgerOf('shop'), before, 'no entry for a purchase whose save failed');
+  const bought = await game('a', 'buy', { itemId });
+  assert.equal(bought.status, 200, JSON.stringify(bought.body));
+  assert.equal(bought.body.char.gold, 100000 - price);
+  assert.deepEqual(await ledgerOf('shop'), { amount: before.amount - price, count: before.count + 1 }, 'exactly the price, once');
+});
+
+test('B-03 hunt actions: a death in a hunt whose save fails writes no ledger entry; a saved one writes exactly the gold lost, once', async () => {
+  await setHero('a', (c) => {
+    c.battle = null; c.loc = { ...ASHFORD_FIELD }; c.stats = { str: 10, dex: 10, int: 10, wis: 10, vit: 10 };
+    c.hp = 1; c.lastTick = Date.now() + 3600000; // no regeneration during the test
+    c.gold = 500; c.lastActionAt = 0;
+  });
+  const hunt = await insertHunt({ level: 200, max_hp: 1e12, hp: 1e12, reward: { gold: 0, xp: 0, relic: false } });
+  try {
+    assert.equal((await game('a', 'hunt', { huntId: hunt.id })).status, 200);
+    const before = await ledgerOf('death');
+    skipSaves(users.a.charId);
+    for (let i = 0; i < 8; i++) assert.equal((await game('a', 'melee')).status, 409);
+    dropTriggers();
+    assert.deepEqual(await ledgerOf('death'), before, 'no entry for hunt actions whose save failed');
+    let prev = wealth((await heroRow('a')).data);
+    let res;
+    for (let i = 0; i < 20; i++) {
+      res = await game('a', 'melee');
+      assert.equal(res.status, 200, JSON.stringify(res.body).slice(0, 200));
+      if (res.body.char.battle?.over === 'defeat') break;
+      prev = wealth(res.body.char);
+    }
+    assert.equal(res.body.char.battle.over, 'defeat', 'the boss defeated the hero');
+    const lost = wealth(res.body.char) - prev;
+    assert.equal(lost, -500, 'all carried gold was lost');
+    assert.deepEqual(await ledgerOf('death'), { amount: before.amount + lost, count: before.count + 1 }, 'exactly the loss, once');
+  } finally {
+    await endHunt(hunt.id);
+    await setHero('a', (c) => { c.battle = null; c.lastTick = Date.now(); });
+  }
+});
+
+test('B-03 quest-completing fights: no ledger entry when the save fails; exactly the quest gold and the loot, once each, when it saves', async () => {
+  await clearOpenRewards('a');
+  const bucket = 900000 + Math.floor(Math.random() * 90000);
+  const mkQuest = async (slot) => {
+    const res = await service('/rest/v1/quests', {
+      method: 'POST', headers: { Prefer: 'return=representation' },
+      body: JSON.stringify({ bucket, slot, zone: 'ashford', variant: 'gilded', min_level: 1, max_level: 10, reward: { gold: 321, xp: 1 }, expires_at: new Date(Date.now() + 3600000).toISOString() }),
+    });
+    const q = (await res.json())[0];
+    return { id: q.id, bucket, slot, zone: 'ashford', variant: 'gilded', minLevel: 1, maxLevel: 10, reward: { gold: 321, xp: 1 }, expiresAt: Date.now() + 3600000, completedBy: null };
+  };
+  const q1 = await mkQuest(1);
+  const q2 = await mkQuest(2);
+  await setHero('a', (c) => { c.battle = null; c.quest = q1; c.loc = { ...ASHFORD_FIELD }; c.stats = { ...STRONG }; c.hp = 9e9; c.lastActionAt = 0; c.lastTick = Date.now(); fillPack(c, 10); });
+  assert.equal((await game('a', 'fight', { monsterId: 'ashford:field-rat' })).status, 200);
+  await setHero('a', (c) => { c.battle.variant = 'gilded'; }); // the quest's target
+  const before = { quests: await ledgerOf('quests'), monsters: await ledgerOf('monsters') };
+  skipSaves(users.a.charId);
+  for (let i = 0; i < 8; i++) assert.equal((await game('a', 'melee')).status, 409);
+  dropTriggers();
+  assert.deepEqual(await ledgerOf('quests'), before.quests, 'no quest entry for fights whose save failed');
+  assert.deepEqual(await ledgerOf('monsters'), before.monsters, 'nor a loot entry');
+  // The failed attempts left q1 marked completed (#105, outside this fix), so the saved fight uses q2.
+  await setHero('a', (c) => { c.quest = q2; });
+  const won = await meleeUntilOver('a');
+  assert.equal(won.body.char.battle.over, 'victory');
+  assert.equal(won.body.char.quest, null, 'the quest is complete');
+  assert.deepEqual(await ledgerOf('quests'), { amount: before.quests.amount + 321, count: before.quests.count + 1 }, 'exactly the quest gold, once');
+  const loot = won.body.char.battle.rewards.gold;
+  assert.deepEqual(await ledgerOf('monsters'), { amount: before.monsters.amount + loot, count: before.monsters.count + 1 }, 'and exactly the loot, once');
+  await game('a', 'done');
+});
+
+test('NB-01 a reward staged in the first pass and one staged in the second are both delivered in one request, each once', async () => {
+  await clearOpenRewards('a');
+  await setHero('a', (c) => { c.battle = null; c.notices = []; c.rewardsWaiting = undefined; c.loc = { ...ASHFORD_TOWN }; fillPack(c, 40); });
+  const s1 = `${RUN}-pass1`;
+  const s2 = `${RUN}-pass2`;
+  const first = await addReward('a', { gold: 31, source: s1, note: 'NB-01 first-pass reward' });
+  const second = await addReward('a', { gold: 47, items: [RELIC], source: s2, note: 'NB-01 second-pass reward' });
+  const hero = (await heroRow('a')).data;
+  const sold = await game('a', 'sell', { uid: unequipped(hero)[0].uid });
+  assert.equal(sold.status, 200, JSON.stringify(sold.body));
+  assert.ok((await reward(first)).claimed_at, 'the first-pass reward is claimed');
+  assert.ok((await reward(second)).claimed_at, 'the second-pass reward is claimed');
+  assert.equal(sold.body.char.bank, hero.bank + 31 + 47, 'both are applied, once each');
+  assert.deepEqual(await ledgerOf(s1), { amount: 31, count: 1 });
+  assert.deepEqual(await ledgerOf(s2), { amount: 47, count: 1 });
+  const again = await game('a', 'state');
+  assert.equal(again.body.char.bank, hero.bank + 78, 'nothing more on the next request');
+  assert.deepEqual(await ledgerOf(s1), { amount: 31, count: 1 });
+  assert.deepEqual(await ledgerOf(s2), { amount: 47, count: 1 });
+});
+
+test('NB-02 a killing blow that saves delivers the hunt\'s rewards in the same request, with exact ledger entries, once', async () => {
+  await clearOpenRewards('a');
+  await setHero('a', (c) => { c.battle = null; c.loc = { ...ASHFORD_FIELD }; c.stats = { ...STRONG }; c.hp = 9e9; c.lastActionAt = 0; c.lastTick = Date.now(); fillPack(c, 10); });
+  const hunt = await insertHunt({ level: 1, max_hp: 1, hp: 1, reward: { gold: 1000, xp: 10, relic: false } });
+  try {
+    assert.equal((await game('a', 'hunt', { huntId: hunt.id })).status, 200);
+    const before = { wealth: wealth((await heroRow('a')).data), hunt: await ledgerOf('hunt') };
+    let res;
+    for (let i = 0; i < 20; i++) {
+      res = await game('a', 'melee');
+      assert.equal(res.status, 200, JSON.stringify(res.body).slice(0, 200));
+      if (await huntStatus(hunt.id) === 'defeated') break;
+    }
+    assert.equal(await huntStatus(hunt.id), 'defeated');
+    assert.equal(wealth(res.body.char), before.wealth + 1250, 'the killing request\'s answer already has the share (1,000) and the killing blow (250)');
+    const mine = await (await service(`/rest/v1/pending_rewards?character_id=eq.${users.a.charId}&claimed_at=is.null&select=id`)).json();
+    assert.equal(mine.length, 0, 'both are claimed in that request');
+    assert.deepEqual(await ledgerOf('hunt'), { amount: before.hunt.amount + 1250, count: before.hunt.count + 2 }, 'two entries, 1,250 gold in all');
+    const again = await game('a', 'state');
+    assert.equal(wealth(again.body.char), before.wealth + 1250, 'nothing more on the next request');
+    assert.deepEqual(await ledgerOf('hunt'), { amount: before.hunt.amount + 1250, count: before.hunt.count + 2 });
+  } finally {
+    await endHunt(hunt.id);
+    await setHero('a', (c) => { c.battle = null; });
+  }
+});
+
+test('NB-05 a reward with gold, XP, an item and gems is delivered whole through the game function', async () => {
+  await clearOpenRewards('a');
+  await setHero('a', (c) => { c.battle = null; c.notices = []; c.rewardsWaiting = undefined; fillPack(c, 10); });
+  const before = (await heroRow('a')).data;
+  const id = await addReward('a', { gold: 250, xp: 3, items: [RELIC], gems: { 'ruby:1': 2 }, note: 'NB-05 mixed reward' });
+  const state = await game('a', 'state');
+  assert.equal(state.status, 200);
+  const c = state.body.char;
+  assert.ok((await reward(id)).claimed_at);
+  assert.equal(c.bank, before.bank + 250, 'the gold, to the bank');
+  assert.ok(c.level > before.level || c.xp === before.xp + 3, 'the experience');
+  assert.equal(c.inventory.length, before.inventory.length + 1, 'the item');
+  assert.ok(c.inventory.some((i) => i.base === 'sword_4' && i.q === 'relic'));
+  assert.equal(c.gems['ruby:1'] || 0, (before.gems['ruby:1'] || 0) + 2, 'the gems');
+  assert.deepEqual((await heroRow('a')).data.gems, c.gems, 'and all of it is saved');
 });

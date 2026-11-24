@@ -178,11 +178,12 @@ The scope is [`docs/pending-rewards-scope.md`](pending-rewards-scope.md), accept
 - the list removed when empty;
 - the Gear text.
 
-**The `game` function on the local stack** (`tests/db/pending-rewards-api.test.mjs`, 13):
+**The `game` function on the local stack** (`tests/db/pending-rewards-api.test.mjs`, 13; 22 after the review corrections, 2.6):
 - **How the failing saves are made:** a test-only trigger on the local database, installed and dropped by each test through `supabase db query --file`, and never in a migration.
-  - **"Skip"** returns NULL for one hero's update, a real version conflict: 409 from the ordinary save, and `MRVER` mapped to 409 from the atomic one.
+  - **"Skip"** returns NULL for one hero's update. It **deterministically simulates** the zero-row update a changed version produces, without a second writer (corrected after the review, NB-04). Through it, the ordinary save answers 409, and the atomic save raises `MRVER`, which the function maps to 409. The real code paths run, but the cause of the zero rows is the trigger, not another request.
   - **"Raise"** fails the save outright (500).
-  - **"Skip claims"** on `pending_rewards` gives a real `MRREW`.
+  - **"Skip claims"** on `pending_rewards` simulates, in the same way, the zero-row claim that produces a real `MRREW`.
+  - **A real conflict between two requests** is PR-5, with no trigger.
 - **These calls go through** the real `game` function, its service-role client and PostgREST. That is NB-01.
 
 **The old-code check:** the same file was run against `main`'s `game` function (`832199f`), on a restarted stack, then the new code was restored:
@@ -218,7 +219,7 @@ Each old-code failure was checked for its reason: an assertion that the reward w
 
 Both fail on `main`'s `main.js`, and pass with the change.
 
-### 2.3 Evidence (local, the owner's laptop, 2026-11-23)
+### 2.3 Evidence at `92f255e` (local, the owner's laptop, 2026-11-23; after the corrections, see 2.6)
 
 - **`npm test`:** 88 of 88 (77 before, plus 11).
 - **`npm run test:db`,** on a restarted stack with the new code:
@@ -244,3 +245,43 @@ Both fail on `main`'s `main.js`, and pass with the change.
 - **Two details settled in the implementation:**
   - **The full-pack notice's wording:** "Free N inventory slots" rather than "make room for N items", to match the reminder and the limit's own counting.
   - **The second pass's trigger** is the scope's: something was blocked, or rewards were created. It re-reads the hero's open rewards once.
+
+### 2.6 Review corrections (the review of `92f255e`, 2026-11-24)
+
+**The review's verdict:** changes requested. It accepted the core design: the atomic commit, acting-row staging, the error mapping and the ledger after the commit. It found three blocking issues and five smaller ones. All are corrected on the same PR (#108). The database contract (stage 1) isn't reopened, and #105 isn't touched.
+
+| Finding | The correction | Its test | Detected |
+|---|---|---|---|
+| **B-01:** retrieval still capped at PostgREST's `max_rows` (1,000), so blocked rewards could hide a later eligible one | `openRewards()` reads in **keyset pages by id** (500 a page, `id > last`), until a page comes back empty. A failed page throws, so the request fails and nothing is committed: a partial read is never taken as the whole waiting list | **B-01:** 1,000 blocked rewards and then a gold-only one, at a full pack. The gold-only one is delivered, and all 1,000 are still waiting | Fails on `92f255e` (the gold-only reward isn't delivered) |
+| **B-02:** a blocked reward's slots counted before later rewards of the same pass took a free slot | `stagePending()` counts each blocked reward's slots against the pack **after** every eligible reward of the pass is applied | **B-02** (engine and API), the review's scenario: a full pack, an older reward needing 2 slots, a newer one needing 1, one item sold. The newer one is delivered, the pack is full again, and the older one waits for 2, in the answer and in the saved state | Both fail on `92f255e` (they report 1) |
+| **B-03:** the ledger timing wasn't tested for fighting, buying, hunt actions and quest-completing fights | No code change: they were already queued after the commit | **B-03**, four tests, each with **exact amounts and counts.** A failed save writes no entry; then a saved one writes: the fight's gold, once; the price, once; the hunt death's loss (−500), once; and the quest gold (321) and the loot, once each. The sale in PR-9 is now exact too | All four fail on `main`'s function ("no entry … whose save failed") |
+| **NB-01:** no test of a first-pass and a second-pass reward in one request | None needed | **NB-01:** a gold-only reward (first pass) and a relic reward (second pass, after a sale) delivered in one request. Each is applied once and recorded once, with an exact ledger entry by its own source, and nothing more on the next request | A mutation, no exclusion of already-staged ids: fails (the RPC is sent a duplicate id) |
+| **NB-02:** no test of a killing blow that saves | None needed | **NB-02:** the killing request's own answer already has the share and the killing blow (1,250 gold). Both are claimed, the `hunt` ledger has +1,250 in exactly 2 entries, and nothing more on the next request | A mutation, no second pass after the killing blow: fails |
+| **NB-03:** the Gear browser tests used pointer clicks | The two tests now reach the Gear tab (and Explore, and the move) **by keyboard only**: Tab to the control, then Enter. 320 px, desktop and axe (0 of any impact) are kept | The same two tests | Both fail on `main`'s `main.js` |
+| **NB-04:** the report called the "skip" trigger a real version conflict | The wording now says it deterministically simulates the zero-row update a changed version produces (2.2, and the test file's header). PR-5 is the real conflict | n/a | n/a |
+| **NB-05:** no positive test of gold, XP, item and gems together | None needed | **NB-05** (engine and API): all four delivered and saved | A mutation, no gem delivery: both fail |
+
+**The test counts after the corrections:**
+- **engine:** 13 in `tests/rewards.test.mjs` (11 before, plus B-02 and NB-05);
+- **the `game` function:** 22 in `tests/db/pending-rewards-api.test.mjs` (13 before, plus B-01, B-02, the four B-03 tests, NB-01, NB-02 and NB-05);
+- **browser:** 2, unchanged in number, now by keyboard.
+
+**Detection runs** (local, each on a restarted stack, then restored):
+
+| Code under test | Failing tests |
+|---|---|
+| The previous stage 2 (`92f255e`) | B-01 and B-02 only (20 of 22 pass) |
+| `main`'s `game` function (before stage 2) | 16: PR-1 to PR-4b, PR-6 to PR-10, B-01, B-02 and the four B-03 tests. The four B-03 tests fail on their "no entry for … whose save failed" assertions. PR-5, PR-11, PR-12, NB-01, NB-02 and NB-05 pass: they are guards and positive checks |
+| A mutation: no staged-id exclusion | NB-01 |
+| A mutation: no second pass after the killing blow | NB-02 |
+| A mutation: no gem delivery | NB-05 (API and engine) |
+
+**Evidence after the corrections** (local, 2026-11-24):
+- **`npm test`:** 90 of 90.
+- **`npm run test:db`:** pgTAP 82 of 82; the API tests 39 passed, 1 opt-in skipped (18 before stage 2, plus 22). PR-5 recorded 7 answers of 200 and 5 of 409.
+- **`npm run test:ui`,** with the stack stopped: **315 of 315**.
+- **CI:** see the PR's evidence.
+
+**Deviations:** none from the scope.
+- **The page size, 500,** is below `max_rows` (1,000), and pagination doesn't depend on it: it stops only at an empty page.
+- **The cost:** one more read when a hero has open rewards (the empty last page).
