@@ -30,11 +30,13 @@ Read these first:
   - World & Zone Expansion Research;
   - Monstra Regna — Identity & Homepage;
   - Public Launch Readiness.
-- **Issues #76 to #99, plus #102, #105, #113 and #114,** mirror the open work. Each entry in `docs/backlog.md` names its issue. The backlog lists the issues whose source is a design note or scope instead.
-- **Milestones:** 21 of the 28 open issues have one.
-  - **#102 and #105** are in Public Launch Readiness. That doesn't make #105 a launch blocker or set its priority.
+- **Issues #76 to #99, plus #105, #113 and #114,** mirror the open work. **#102 is closed** (completed, 2026-11-24). Each entry in `docs/backlog.md` names its issue. The backlog lists the issues whose source is a design note or scope instead.
+- **Milestones:** 20 of the 27 open issues have one.
+  - **Public Launch Readiness:** 6 open, 1 closed.
+    - **#102** is closed, and keeps the milestone.
+    - **#105** is open in it. That doesn't make #105 a launch blocker or set its priority.
   - **#85, #96 to #99, #113 and #114** are deliberately unassigned.
-- **Dependencies** use GitHub's native "blocked by". There is one: **#83 (Kingdoms K-1) is blocked by #102.** It's a K-1 implementation prerequisite; K-0, the design, stays accepted. Add one only when it's established, not for sequencing that is still conceptual.
+- **Dependencies** use GitHub's native "blocked by". There is one: **#83 (Kingdoms K-1) is blocked by #102.** It's a K-1 implementation prerequisite, **satisfied since #102 was closed** (2026-11-24). The link is kept for traceability. K-0, the design, stays accepted. Add one only when it's established, not for sequencing that is still conceptual.
 - **The Project is issue-only:** PRs aren't added. While a PR is in review, its issue keeps its real status.
 - **The rules:**
   - **The Markdown documents stay authoritative** (the backlog, the scopes and the reports). Issues link to them, not the reverse.
@@ -61,8 +63,8 @@ Read these first:
 - **Kingdoms K-0, the design scope, is accepted** (#83, #84):
   - `docs/kingdoms-scope.md`, PR #101 (`707eabc`), with amendment 1 in PR #106 (`3bd6116`);
   - the owner's decisions K-D1 to K-D20 and eight follow-ups;
-  - **K-1 and K-2 implementation are not authorized.** K-1 is blocked by #102 until #102 is closed.
-- **#102, pending rewards delivered exactly once: fixed, deployed, and its live checks accepted in independent review** (2026-11-24). **It stays open until the owner authorizes closing it.**
+  - **K-1 and K-2 implementation are not authorized.** K-1's prerequisite, #102, is satisfied.
+- **#102, pending rewards delivered exactly once: fixed, deployed, accepted in independent review, and closed as completed** (2026-11-24, on the owner's authorization).
   - **The scope and reports:** `docs/pending-rewards-scope.md` and `docs/pending-rewards-report.md`.
   - **The implementation:** stage 1, PR #107; stage 2, PR #108. The rollout procedure is PR #109.
   - **Production:** migration `20261123120000` applied (Gate B), and `game` **v15** deployed (Gate C). The Gate C record is PR #111.

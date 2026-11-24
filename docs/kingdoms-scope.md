@@ -285,7 +285,7 @@ Every change that could break I-1 is listed here, with its single transaction. N
 - **Current status (2026-11-24): fixed in production.**
   - **The fix:** `save_hero_with_rewards()` and `game` v15. The live checks were accepted in independent review (`docs/pending-rewards-report.md`, 4.4).
   - **What K-1 keeps:** the rule above, through amendment 1 (R-1).
-  - **The dependency:** #83 stays blocked by #102 until the owner closes #102.
+  - **The dependency:** **satisfied.** #102 was closed as completed on 2026-11-24, on the owner's authorization. #83's native "blocked by" link is kept for traceability.
   - **K-1 is still not authorized.**
 
   The bullets above describe the defect as found, at `2a43a12`.

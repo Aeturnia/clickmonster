@@ -311,7 +311,10 @@ A separate staging Supabase project is dropped. The live sign-in session above c
   - Add a test that signs out while effects are queued.
 
 - **Pending rewards can be marked claimed but never delivered** (found while writing the Kingdoms scope, 2026-11-23). **Tracked in #102.**
-  - **Status (2026-11-24, later): fixed, deployed, and the live checks accepted in independent review.** The issue stays open until the owner authorizes closing it.
+  - **Status (2026-11-24, closed): resolved, and closed as completed** (22:52:14 UTC) on the owner's authorization, after PR #115's review.
+    - **What was kept:** its milestone, Public Launch Readiness.
+    - **#83's K-1 implementation prerequisite is satisfied.** K-1 stays unauthorized.
+  - **Status (2026-11-24, later): fixed, deployed, and the live checks accepted in independent review.** The issue stayed open until the owner authorized closing it.
     - **The scope:** `docs/pending-rewards-scope.md` (PR #104).
     - **The implementation:** stage 1, PR #107; stage 2, PR #108.
     - **The production rollout:** migration `20261123120000` applied and verified, and `game` **v15** deployed. See `docs/pending-rewards-report.md`, sections 3 and 4.

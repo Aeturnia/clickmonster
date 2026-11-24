@@ -8,7 +8,8 @@ The scope is [`docs/pending-rewards-scope.md`](pending-rewards-scope.md), accept
 - **Done:** both stages are merged, and the production rollout passed Gates A to C (section 4).
 - **The owner's live checks:** done, and accepted in independent review (section 4.4).
 - **The refused-action check:** wasn't done in production. The owner approved automated evidence instead.
-- **#102 stays open until the owner authorizes closing it,** after this record is reviewed.
+- **#102 is closed as completed** (2026-11-24, 22:52:14 UTC), on the owner's authorization, after this record's review corrections (4.4).
+- **#83's K-1 implementation prerequisite is satisfied.** K-1 and K-2 stay unauthorized.
 
 The stage sections below keep the status they had when each was written.
 
@@ -710,12 +711,14 @@ Each gate was authorized by the owner on its own, and run by the procedure in se
 
 It found **no remaining implementation blockers.**
 
-**Closing #102** is the owner's decision, once this record is accepted.
-- **The K-1 prerequisite:** with #102 closed, #83's implementation prerequisite is met. The native "blocked by" link then points at a closed issue.
-- **K-1 itself stays unauthorized.**
+**Closing #102** was the owner's decision, once this record was accepted.
+- **Closed as completed:** 2026-11-24, 22:52:14 UTC. The owner authorized it once the review corrections DOC-01 and DOC-02 were made (`f509590`, CI run 45503113039 green).
+- **What was kept:** its milestone, Public Launch Readiness (now 1 closed, 6 open), and its Done status on the Project.
+- **The K-1 prerequisite:** #83's implementation prerequisite is satisfied.
+  - **The native "blocked by" link is kept,** pointing at the closed issue, for traceability.
+  - **K-1 and K-2 stay unauthorized.**
 
 **Not done:**
 - any production read or write of mine after Gate C;
 - reward compensation;
-- a rollback;
-- closing #102.
+- a rollback.
