@@ -285,3 +285,129 @@ Both fail on `main`'s `main.js`, and pass with the change.
 **Deviations:** none from the scope.
 - **The page size, 500,** is below `max_rows` (1,000), and pagination doesn't depend on it: it stops only at an empty page.
 - **The cost:** one more read when a hero has open rewards (the empty last page).
+
+## 3. The production rollout procedure (proposed, for review; nothing in it has been done)
+
+**Status: written for review, after stage 2 merged as `fc189b4` (2026-11-24).**
+- **Not done:** no production read, apply, history change or deploy.
+- **Authorization:** every step below needs the owner's explicit authorization, separately from approving this procedure. That includes the read-only inspections and any history change. Each gate is authorized on its own.
+- **The basis:** it follows the scope's section 7, and the L-3 procedure that put the news migration into production (`docs/landing-l3-report.md`, section 4, with its record in section 12). L-3 is also why production's migration history is deliberately incomplete.
+
+### 3.1 What production is expected to look like, and what is reviewed
+
+**From the L-3 record** (`docs/landing-l3-report.md`, section 12, 2026-11-13): this was **not re-read for this procedure.**
+- **The history table** exists and records only `20261115090000` (news). The six earlier versions (`20261112140000` to `20261114090000`) are deliberately unrecorded, although their objects exist.
+- **Postgres** is 17.11, the same as the local stack.
+- **The deployed `game` function** was version 14, from `e1ffa43` (`docs/sign-out-report.md`, section 22), and `admin` version 8. **Neither was re-read:** the version numbers are read at their gates (3.3 and 3.4), not assumed.
+
+**What goes in.** The reviewed migration is `supabase/migrations/20261123120000_save_hero_with_rewards.sql` on `main` (stage 1, PR #107, merged at `832199f` and unchanged since).
+- **Its exact bytes, as git and GitHub store them (LF line endings): SHA-256 `12a5d73ee4884f77177bc20d13065fa6fd61a5e3f1fb7da46c113cc59c7915fe`.**
+- **Line endings matter.** A Windows checkout with `core.autocrlf=true` turns the file into CRLF (SHA-256 `3be3856a…`). Applied from that copy, the function's body would carry 30 carriage returns, and its definition wouldn't match the reviewed one: md5 `f825cc85…` instead of `46cea39f…`. This was seen on the local stack.
+- **So the file is always taken with `git show main:supabase/migrations/20261123120000_save_hero_with_rewards.sql`,** and its SHA-256 is checked before it is sent.
+
+**The expected installed definition** (NB-03; `supabase/checks/pending_rewards_functiondef.sql`, new and read-only): **md5 `46cea39f9a83b467c847dc4916815ca2`, length 1,329.**
+- This is `pg_get_functiondef()` on the local stack (Postgres 17.11), after applying those LF bytes.
+
+### 3.2 Gate A: read-only inspection (the owner's authorization)
+
+As in L-3, all production SQL goes through the Supabase Management API query endpoint (the service the SQL editor uses), with the owner's access token. **Every read runs inside `begin transaction read only; … rollback;`.**
+
+1. **Link the CLI for the history only:** `npx supabase link --project-ref janiqspmhkbsyemkknpv`. It writes only to `supabase/.temp/`, which git ignores.
+2. **Read the history:** `npx supabase migration list --linked`. Record the output.
+3. **Run `supabase/checks/pending_rewards_precheck.sql`,** read-only, and record all seven rows. The expected results:
+   - **row 1:** the Postgres version (expected 17.11);
+   - **row 2:** **none**, meaning no function of that name;
+   - **rows 3 and 4:** true;
+   - **row 5:** exactly the expected column types;
+   - **rows 6 and 7:** the history table, with its recorded versions.
+4. **Decide how to apply, from steps 2 and 3:**
+
+   | What production shows | How `20261123120000` is applied |
+   |---|---|
+   | The history records **exactly `20261115090000`** (as expected), row 2 is `none`, and row 5 matches | **By hand** (3.3). `db push` is never used here: with the six earlier versions unrecorded it refuses, and its suggested `--include-all` would re-apply them. `--include-all` is never used |
+   | The history records all seven earlier versions and nothing newer | **Through the CLI:** `npx supabase db push --linked --dry-run`, which must list only `20261123120000_save_hero_with_rewards.sql`, then `npx supabase db push --linked` |
+   | `20261123120000` already recorded; a function named `save_hero_with_rewards` present; row 5 different; or any other history | **Stop.** Nothing is applied until the owner has looked at what is there |
+
+   **The six earlier versions are never marked applied** because their files exist. That stays as L-3 left it, and reconciling them is a separate decision for the owner.
+5. **Unlink, or leave linked only until Gate B** if it follows straight after. Record which.
+
+### 3.3 Gate B: the migration (the owner's authorization, after Gate A)
+
+1. **Run the precheck again** just before applying, and confirm the result is unchanged.
+2. **Take the file from `main` and check its SHA-256** is `12a5d73e…7915fe` (3.1).
+3. **Apply it as one transaction:** the request is `begin;`, then the file's exact bytes, then `commit;`. Record the endpoint's answer.
+   - **Nothing else may be applied.**
+   - **The function is inert until Gate C:** the deployed `game` function doesn't call it.
+4. **Record only this version** (the manual route): `npx supabase migration repair 20261123120000 --status applied --linked`. Record the output.
+5. **Verify,** each read-only:
+   - **`supabase/checks/pending_rewards_verify.sql`: all 10 rows `ok`.**
+     - the exact signature, and only one function of that name;
+     - it returns integer;
+     - `security definer`;
+     - `search_path` is `public`;
+     - no execute for PUBLIC, `anon` or `authenticated`;
+     - execute for `service_role`;
+     - the history entry.
+   - **`supabase/checks/pending_rewards_functiondef.sql`: md5 `46cea39f9a83b467c847dc4916815ca2` and length 1,329** (NB-03). If they differ, the `definition` column is compared line by line with the reviewed migration before anything else is done. A difference is a stop, not a pass.
+   - **`npx supabase migration list --linked`** shows `20261115090000` and `20261123120000`, and the six earlier versions still unrecorded.
+   - **One refused call through the public API** (non-mutating): `POST /rest/v1/rpc/save_hero_with_rewards` with the publishable key must answer 401 with code `42501`. The privilege check refuses it before the function body runs.
+6. **Unlink the CLI,** and record every result in this report (a new section 4, "Production record").
+
+**If any verification fails, roll back** (the owner's authorization):
+1. run `supabase/rollback/20261123120000_save_hero_with_rewards_down.sql`, which drops the function;
+2. then `npx supabase migration repair 20261123120000 --status reverted --linked`.
+
+This is safe at this gate because nothing calls the function yet. No table or data changes either way.
+
+### 3.4 Gate C: the `game` function (the owner's authorization, only after Gate B's verification passed)
+
+**The `game` function is not deployed before Gate B has passed in full,** all 10 verify rows and the md5 included.
+- **Deployed first,** the new function's commit would fail (the RPC doesn't exist).
+- **What players would see:** requests with staged rewards would answer 500. The rewards would stay pending, not lost (report 2.4). That is still a broken game, so the order isn't optional.
+
+1. **Read the deployed function,** read-only: `supabase functions list` (or the dashboard). Record its version and update time, expected version 14 from 2026-11-19T15:53:01Z.
+   - **Optional, with the owner's authorization:** download its source (read-only), and compare it with `832199f` (section 2.4, and the scope's section 7). That would turn "the deployed function has the defect" from repository evidence into production evidence.
+2. **Deploy** from `main` with a clean working tree: `npm run deploy:functions -- game`, with `SUPABASE_ACCESS_TOKEN` set.
+   - **Only `game`:** `admin` is unchanged, and the argument keeps the script from deploying it.
+   - **Record** the commit SHA and the new version number, as read after the deploy, not assumed.
+   - **The deploy script uploads every file in `public/js/engine` and `public/js/data`,** `rewards.js` included (section 2.4).
+3. **Boot check:** an unauthenticated call. The function's own answer (401 "Please sign in again.", or 503 if the sign-in service can't be reached) shows the new version boots, including its new import.
+4. **The owner's live check:** sign in and play normally (a fight, a move, the Gear tab), with no errors.
+   - **If a world-boss hunt is available:** its reward arrives once, with its notice.
+   - **Optional:** a full-pack check with the owner's own hero.
+
+   No test data is created in production unless the owner chooses to.
+
+**Rollback:** redeploy `game` from `832199f`, whose function, engine and data files are unchanged since v14's commit `e1ffa43` (`git log e1ffa43..832199f` lists no change to them).
+- **This brings back #102's reward loss** on refused or failed requests, and the discarded relic at a full pack, until the fix is redeployed.
+- **The database function can stay:** the old code doesn't call it.
+- **The client:** the Gear reminder is already live, and harmless without `rewardsWaiting`.
+
+### 3.5 After the rollout
+
+- **The record:** each gate's results go in this report, section 4.
+- **Closing #102** is the owner's decision once Gate C's live check is accepted.
+- **Not in this procedure:**
+  - **Repairing rewards lost before the fix.** Claimed rewards whose effects were never saved can't be told apart from delivered ones by `claimed_at` alone. Any compensation is a separate decision.
+  - **#105** (quest completion).
+  - **The six earlier history entries.**
+
+### 3.6 Rehearsed on the local stack (2026-11-24)
+
+The database was first put into production's expected state: the function dropped (the rollback script), and the history reduced to `20261115090000` with `migration repair … --status reverted --local`. Then each step ran with `--local` and `psql`:
+
+| Step | Result |
+|---|---|
+| Precheck | Postgres 17.11; row 2 `none`; rows 3 and 4 true; row 5 exactly the expected types; history `20261115090000` |
+| `db push --dry-run --local` | **Refused:** "Found local migration files to be inserted before the last migration on remote database", suggesting `--include-all` with the six earlier files. That confirms the manual route in the decision table |
+| The LF bytes applied as one transaction (`psql -1`) | Applied |
+| `migration repair 20261123120000 --status applied --local` | Only that version recorded: history `20261115090000, 20261123120000` |
+| Verify | **10 of 10 `ok`** |
+| Definition check | **md5 `46cea39f9a83b467c847dc4916815ca2`, length 1,329,** with no carriage returns in the body |
+| Rollback (the script, then `--status reverted`) | The function gone; verify 0 of 10 `ok`, as it should be before the migration; history `20261115090000` |
+| Restored | The function re-applied from the LF bytes, the full local history restored (all eight versions), verify 10 of 10, and the same md5 |
+
+**Not rehearsed:**
+- the Management API endpoint itself (L-3 used it, and the rehearsal used `psql` against the local container);
+- `supabase link` and `--linked` commands against production;
+- the `game` deploy.
