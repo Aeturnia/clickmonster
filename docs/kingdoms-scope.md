@@ -282,6 +282,13 @@ Every change that could break I-1 is listed here, with its single transaction. N
 - **It matters more for Kingdoms.** A refused claim (the plot was just taken, or the hero already has one) is a routine outcome, and it lands in that window. With #102's fix and amendment 1, a refused claim leaves the staged rewards pending: their claim is rolled back with the rest of the function.
 - **It affects every action today,** not only Kingdoms.
 - **Fixing it is not part of this scope.** It is #102's own workstream, recommended for priority review before K-1 reaches production. Until it is fixed, K-1 inherits it.
+- **Current status (2026-11-24): fixed in production.**
+  - **The fix:** `save_hero_with_rewards()` and `game` v15. The live checks were accepted in independent review (`docs/pending-rewards-report.md`, 4.4).
+  - **What K-1 keeps:** the rule above, through amendment 1 (R-1).
+  - **The dependency:** #83 stays blocked by #102 until the owner closes #102.
+  - **K-1 is still not authorized.**
+
+  The bullets above describe the defect as found, at `2a43a12`.
 
 ### 5.4 Claim rules (K-D2, K-D5, K-D7, K-D9, K-D10: decided)
 

@@ -30,10 +30,10 @@ Read these first:
   - World & Zone Expansion Research;
   - Monstra Regna — Identity & Homepage;
   - Public Launch Readiness.
-- **Issues #76 to #99, plus #102 and #105,** mirror the open work. Each entry in `docs/backlog.md` names its issue. The backlog lists the issues whose source is a design note or scope instead.
-- **Milestones:** 21 of the 26 open issues have one.
+- **Issues #76 to #99, plus #102, #105, #113 and #114,** mirror the open work. Each entry in `docs/backlog.md` names its issue. The backlog lists the issues whose source is a design note or scope instead.
+- **Milestones:** 21 of the 28 open issues have one.
   - **#102 and #105** are in Public Launch Readiness. That doesn't make #105 a launch blocker or set its priority.
-  - **#85 and #96 to #99** are deliberately unassigned.
+  - **#85, #96 to #99, #113 and #114** are deliberately unassigned.
 - **Dependencies** use GitHub's native "blocked by". There is one: **#83 (Kingdoms K-1) is blocked by #102.** It's a K-1 implementation prerequisite; K-0, the design, stays accepted. Add one only when it's established, not for sequencing that is still conceptual.
 - **The Project is issue-only:** PRs aren't added. While a PR is in review, its issue keeps its real status.
 - **The rules:**
@@ -61,13 +61,15 @@ Read these first:
 - **Kingdoms K-0, the design scope, is accepted** (#83, #84):
   - `docs/kingdoms-scope.md`, PR #101 (`707eabc`), with amendment 1 in PR #106 (`3bd6116`);
   - the owner's decisions K-D1 to K-D20 and eight follow-ups;
-  - **K-1 and K-2 implementation are not authorized.** K-1 is blocked by #102.
-- **#102, pending rewards delivered exactly once: fixed and deployed** (2026-11-24). **The owner's live checks are pending, so #102 stays open.**
+  - **K-1 and K-2 implementation are not authorized.** K-1 is blocked by #102 until #102 is closed.
+- **#102, pending rewards delivered exactly once: fixed, deployed, and its live checks accepted in independent review** (2026-11-24). **It stays open until the owner authorizes closing it.**
   - **The scope and reports:** `docs/pending-rewards-scope.md` and `docs/pending-rewards-report.md`.
   - **The implementation:** stage 1, PR #107; stage 2, PR #108. The rollout procedure is PR #109.
   - **Production:** migration `20261123120000` applied (Gate B), and `game` **v15** deployed (Gate C). The Gate C record is PR #111.
-  - **Remaining:** the smoke check, a hunt reward delivered once, and a pending reward surviving a refused action.
+  - **The live checks** (report 4.4): the smoke check and a hunt reward delivered once passed.
+  - **The refused action wasn't checked in production.** The owner approved the real-stack integration tests instead. Don't describe it as a production result.
 - **#105, quest completion before the hero's save:** tracked, not authorized.
+- **#113, a hunt's replayed effects, and #114, a hunt's hidden reward notices:** both found in #102's play test, tracked in the backlog, and not authorized. #113 is for after Kingdoms.
 
 - **UI modernization Phases 1–4 are complete and merged into `main`.** Phase 4 (the admin console) was approved in its final independent review at `a8d9dc6` and merged as PR #13 (`baa75d9`). All four review findings, P4-01 to P4-04, are closed.
 - **The desktop layout milestone is complete and merged into `main`** (2026-11-13). It was scoped in `docs/desktop-scope.md` (PR #17), with the owner's decisions in its section 4.

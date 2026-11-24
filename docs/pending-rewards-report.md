@@ -4,6 +4,14 @@ The scope is [`docs/pending-rewards-scope.md`](pending-rewards-scope.md), accept
 1. **the database migration and its atomicity tests;**
 2. **the `game` function and client changes,** with end-to-end regression tests.
 
+**Current status (2026-11-24):**
+- **Done:** both stages are merged, and the production rollout passed Gates A to C (section 4).
+- **The owner's live checks:** done, and accepted in independent review (section 4.4).
+- **The refused-action check:** wasn't done in production. The owner approved automated evidence instead.
+- **#102 stays open until the owner authorizes closing it,** after this record is reviewed.
+
+The stage sections below keep the status they had when each was written.
+
 ## 1. Stage 1: the database function (authorized by the owner, 2026-11-23)
 
 **Status: implemented, at its review gate.**
@@ -616,3 +624,90 @@ Each gate was authorized by the owner on its own, and run by the procedure in se
 - no production test data has been created, and no criterion is waived.
 
 **Rollback**, if it is ever needed, is separately authorized. It is pinned at `832199f` (section 3.5), and it brings back #102's reward loss.
+
+**Update (2026-11-24, later):** the owner's live checks are done. They are recorded, with their acceptance, in 4.4.
+
+### 4.4 The owner's live checks, and their acceptance (2026-11-24)
+
+- **Who did them:** the owner, on the live site, against `game` v15, after Gate C.
+- **The source:** the owner's report. I didn't observe them.
+- **The record:** [#102's comment of 2026-11-24](https://github.com/Aeturnia/clickmonster/issues/102#issuecomment-7145672351).
+
+| Check (the scope's section 7; 3.5, step 7) | How it was verified | Result |
+|---|---|---|
+| **The smoke check:** sign in, an ordinary fight, a move, the Gear tab | The owner's play test | **Passed,** no errors reported |
+| **A world-boss hunt reward delivered exactly once** | The owner's play test | **Passed** |
+| **A pending reward surviving a refused action, then delivered once** | **Not observed in production.** The owner chose a substitute: the automated tests through the real `game` function, below | **Accepted:** by the owner (option 1), then by independent review |
+
+**The test hunt:**
+- **What it was:** *Iron Hulk 2*, level 20, 5,000 HP. The owner's hero was its only hunter.
+- **Where:** the world event placed it in Ashford Vale. The owner described it as Ironpeak, and #113 repeats that name.
+
+**Its final state, from the evidence there is:**
+- **The world event** recorded the owner's hero landing the killing blow, with one hunter sharing the reward.
+- **The owner saw the reward arrive once.**
+- **Its two notices,** the share and the killing blow, each showed once, in the Explore screen's notice box after pressing Continue.
+
+**What that evidence doesn't include:**
+- **Nothing was read in production for the play test.** The hunt's row, its reward rows' `claimed_at`, and the `hunt` ledger entries weren't queried, because no read was authorized.
+- **The final state rests on** the owner's observation and the event's text.
+
+**Production records are as the play test left them.** The test hunt, its rewards, its event and its ledger entries were not changed or removed after Gate C, and no reward was compensated.
+
+**Why the refused action couldn't be reproduced live:**
+- **The killing request delivers the reward.** With the fix, a hunter's rewards arrive in the same request as the killing blow, so nothing stays pending for the owner's own hero.
+- **Another hunter's share** arrives with that hero's next request that saves, normally the page's own state read.
+- **The screens offer no refused action.** For example, there's no heal button at full health.
+
+**The substitute: integration tests on the local stack.** They run through the real `game` function against the local database, not the browser suite's fake backend. Each one leaves the reward pending, then delivers it exactly once:
+
+| Test | What it shows | On the old code (2.2, 2.6) |
+|---|---|---|
+| PR-1 | An action refused with 429 | Fails |
+| PR-2 | An action refused by a rule (healing at full health), 400 | Fails |
+| PR-3 | An action whose save conflicts, 409 | Fails |
+| PR-4 | A `state` read whose save conflicts, 409 | Fails |
+| PR-4b | A `state` read whose save fails outright, 500 | Fails |
+| PR-6 | The killing blow, then a failed save: the share and the killing-blow reward stay pending, then each is delivered once | Fails |
+| NB-02 | A killing blow that saves delivers both rewards in the same request, with exactly 2 `hunt` ledger entries (+1,250), and nothing more on the next request | Passes. It's a positive check, and fails on a mutation that removes the second pass |
+
+**They passed in three CI runs:**
+- **45332806835:** PR #108's reviewed head `a961513`;
+- **45387120292:** `main` at `fc189b4`;
+- **45451197714:** `main` at `65278a4`.
+  - **Totals:** engine 90 of 90, browser 315 of 315, pgTAP 82 of 82, and API tests 39 passed with 1 opt-in skip.
+  - **These seven tests** pass as `ok 13` to `ok 18` and `ok 33` in the database job's log.
+  - **Independently checked** by the reviewer.
+
+**The limitation, as accepted:** the refused-action behaviour was **not exercised in production.** It is accepted through a verification method the owner explicitly authorized: the tests above, together with the successful production hunt and the verified deployment of the reviewed payload (4.3). This report doesn't present it as a production result.
+
+**Findings during the play test.** Neither affects the delivery of rewards, and neither blocks #102:
+- **#113: a hunt replays every earlier hit and miss after each attack.**
+  - **What it is:** cosmetic; announcements repeat too. It dates from 2026-11-12.
+  - **Confirmed** by the review's own reading of the source.
+  - **The review's condition for the fix:** compare typed battle identities, so a hunt and an ordinary fight can never count as the same fight. Test both the effects and the announcements.
+  - **Deferred** until after Kingdoms (the owner).
+- **#114: a hunt's reward notices are hidden behind the finished battle screen until Continue.**
+  - **What else:** no cue for banked gold, nor for the reward's XP across a level-up.
+  - **Confirmed** by the review.
+  - **The review's qualification:** naming the item, or giving exact XP across a level-up, may need more reward information from the server. Its scope must establish whether the current response is enough before it commits to a client-only fix.
+  - **Not authorized.**
+
+**Independent acceptance (2026-11-24).** The review accepted:
+- the implementation;
+- the production migration;
+- the production deployment;
+- the live play test;
+- the substitute for the refused-action check.
+
+It found **no remaining implementation blockers.**
+
+**Closing #102** is the owner's decision, once this record is accepted.
+- **The K-1 prerequisite:** with #102 closed, #83's implementation prerequisite is met. The native "blocked by" link then points at a closed issue.
+- **K-1 itself stays unauthorized.**
+
+**Not done:**
+- any production read or write of mine after Gate C;
+- reward compensation;
+- a rollback;
+- closing #102.
