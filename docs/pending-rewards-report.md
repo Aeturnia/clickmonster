@@ -518,3 +518,58 @@ This is safe at Gate B, because nothing calls the function until Gate C.
 1. **Authorizing the CLI's transient login role in Gate B.** That is the route L-3 used and this one rehearsed. Writing the history entry with SQL instead would avoid it, but it isn't rehearsed and isn't proposed.
 2. **If the live behavioural conditions don't arise:** whether to create them (a hunt started from the admin console, or a pending reward for the owner's own hero), or to leave that verification pending.
 3. **Closing #102.**
+
+## 4. Production record
+
+Each gate was authorized by the owner on its own, and run by the procedure in section 3 (merged as PR #109, `758c741`), with the safeguards OP-01 to OP-04.
+- **All production SQL** went through the Supabase Management API's query endpoint, with the owner's access token. The token was never printed or recorded.
+- **Every read** was sent as `set transaction read only;` plus the exact reviewed check file from `main`. That form returned the check's rows each time, so OP-01's fallback wasn't needed.
+
+### 4.1 Gate A: the read-only inspection (2026-11-24, 14:04:16 to 14:04:18 UTC)
+
+- **The authorization:** the owner authorized it with PR #109's merge.
+- **Method:** the Management API only. **No CLI and no link,** and nothing was written. `main` was at `758c741`.
+
+| Check | Expected | Production |
+|---|---|---|
+| `game` | v14, ACTIVE, `verify_jwt` false, 2026-11-19T15:53:01Z | **v14**, ACTIVE, `verify_jwt` false, updated 2026-11-19T15:53:01.715Z, `ezbr_sha256` `af1b47addd9cdab72e3d4fe894d643cc686320f0f3222e7ac48598143f5083db` |
+| `admin` | v8 | **v8**, ACTIVE, `verify_jwt` false, updated 2026-11-14T00:38:35.393Z, `ezbr_sha256` `572f2b2c3581588407c24efd7ed4ee315b25e2064b1a51e8a15bc2206146ef64` |
+| State: `function_present`, `history_recorded`, `history_versions` | false, false, `20261115090000` | **false, false, `20261115090000`** |
+| Precheck rows 1 to 7 | 17.11; none; true; true; the 12 expected column types; true; `20261115090000` | **identical** |
+
+- **Not done:** the optional download of `game`'s source (not separately authorized).
+- **Not shown:** that the read-only prefix is enforced in production. Testing it would take a write.
+- **The review:** Gate A was accepted in independent review on 2026-11-24, with no stop conditions.
+
+### 4.2 Gate B: the migration (2026-11-24, 14:30:07 to 14:32:09 UTC)
+
+- **The authorization:** the owner authorized it after Gate A's review, including the CLI's temporary login role for the history repair.
+
+1. **The baseline again** (OP-02), read-only, at 14:30:07 to 14:30:08: the functions (`game` v14, `admin` v8, the same `ezbr_sha256` values), the state and the full precheck. **All identical to Gate A.**
+   - `SUPABASE_PROJECT_REF` was unset, and `public/js/config.js` names `janiqspmhkbsyemkknpv`.
+2. **The file:** `git show fc189b4:supabase/migrations/20261123120000_save_hero_with_rewards.sql`. That is 3,466 bytes, no carriage returns, **SHA-256 `12a5d73ee4884f77177bc20d13065fa6fd61a5e3f1fb7da46c113cc59c7915fe`,** as expected. It is unchanged between `fc189b4` and `main`.
+3. **The apply** (14:30:41.848Z): one request, `begin;`, the file's exact bytes, then `commit;`. **The answer was HTTP 201 `[]`** at 14:30:42.410Z.
+   - **The state straight after** (read-only): `function_present` true; md5 `46cea39f9a83b467c847dc4916815ca2`; length 1,329; owner `postgres`; `history_recorded` false; history `20261115090000`.
+   - That is the expected point before the repair: the function applied and exact, the history not yet recorded.
+4. **The history repair:**
+   - **`npx supabase link --project-ref janiqspmhkbsyemkknpv`** (14:30:54Z) succeeded with the access token.
+   - **`npx supabase migration repair 20261123120000 --status applied --linked`** (14:31:11Z) printed "Initialising login role…", then **"Repaired migration history: [20261123120000] => applied"**. The login role is the disclosed transient one.
+   - **`npx supabase unlink`** (14:31:15Z) ran. The working tree was clean afterwards.
+5. **Verification,** read-only:
+   - **`pending_rewards_verify.sql`: 10 of 10 `ok`.** That covers the signature, only one such function, the integer return, `security definer`, the `search_path` `public`, no execute for PUBLIC, `anon` or `authenticated`, execute for `service_role`, and the history entry.
+   - **`pending_rewards_state.sql`:**
+     - `function_present` true;
+     - **md5 `46cea39f9a83b467c847dc4916815ca2`,** length **1,329**, owner **`postgres`**: all as reviewed;
+     - `history_recorded` true;
+     - history **exactly `20261115090000, 20261123120000`.** The six earlier versions are still unrecorded, as L-3 left them.
+   - **The refusal probe,** with the publishable key and the reviewed body with an empty id array: **HTTP 401, `{"code":"42501", … "permission denied for function save_hero_with_rewards"}`.**
+   - **The functions:** `game` **v14** and `admin` **v8**, both unchanged, with the same `ezbr_sha256` as Gate A.
+
+**A note on the first verification run** (14:31:48Z):
+- **What happened:** my verification script looked for the publishable key under the wrong constant name (`config.js` calls it `SUPABASE_KEY`). It reported "FAIL: publishable key found in config.js", and so didn't send the probe. Every production check in that run passed.
+- **The fix:** I corrected the script's lookup and re-ran the whole verification at 14:32:08Z, with every check passing.
+- **No production state was changed** between the two runs. Both were read-only.
+
+**Result:** Gate B passed. The function is installed exactly as reviewed, and recorded in the history. Nothing calls it yet: `game` is still v14.
+
+**Not done in Gate B:** the `game` deploy (Gate C), any rollback, any test data, and the earlier history entries.
