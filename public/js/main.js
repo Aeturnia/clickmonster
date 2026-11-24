@@ -22,6 +22,7 @@ import { PVP_LEVEL_GAP } from './engine/pvp.js';
 import { sb, api, playersAt, recentEvents, fetchZoneDefs, signOut, endSession } from './net.js';
 import { setupChat } from './chat-ui.js';
 import { questTitle, canAccept } from './engine/quests.js';
+import { waitingReminder } from './engine/rewards.js';
 import { setWorld, activeEvents, MULT_LABEL, MULT_KEYS } from './engine/world-config.js';
 import { huntCombatant } from './engine/hunt.js';
 import { watchLayout, setLayoutPreference, layoutStatus, LAYOUT_CHOICES } from './layout.js';
@@ -879,10 +880,14 @@ function viewGear() {
   const gems = Object.entries(char.gems).filter(([, n]) => n > 0)
     .map(([k, n]) => ({ ...parseGem(k), n })).filter((g) => g.name)
     .sort((a, b) => b.tier - a.tier || a.type.localeCompare(b.type));
+  // A reward waiting for inventory space (#102, question 3). Plain text, not a live region (the
+  // one-time notice announces it); it goes once the reward is delivered.
+  const waiting = waitingReminder(char);
   return `
     <h3 style="margin-top:0">Equipped</h3>
     <div class="rows">${equipped}</div>
     <h3>Pack (${pack.length})</h3>
+    ${waiting ? `<p class="small" id="rewards-waiting">${esc(waiting.slots)}. ${esc(waiting.text)}</p>` : ''}
     ${pack.length ? `<div class="rows">${pack.map((i) => itemRow(i)).join('')}</div>` : emptyState('Your pack is empty.', 'Town shops sell gear, and monsters sometimes drop it.')}
     <h3>Gems</h3>
     ${gems.length ? `<div class="rows">${gems.map((g) => `<div class="row static"><span class="nm">${gemText(g.key)}</span><span class="go">x${g.n}</span></div>`).join('')}</div>`

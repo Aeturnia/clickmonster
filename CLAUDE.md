@@ -11,6 +11,37 @@ Read these first:
 - `docs/ui-modernization-audit.md`: the Phase 0 audit and the phase plan.
 - `docs/ui-phase-1-report.md` … `docs/ui-phase-4-report.md`: what each phase changed, its acceptance criteria, deviations and the review corrections.
 - `docs/backlog.md`: agreed but unscheduled work (sign-in news, password recovery, follow-ups), and the release verification still owed, split into before and after release.
+- The owner's design notes, records rather than approved scopes:
+  - `docs/monstra-regna-world-zones-kingdoms-design-notes.md`: world, nested zones and Kingdoms;
+  - `docs/monstra-regna-security-hardening-design-notes.md`: security hardening, authentication, action frequency and engagement verification;
+  - `docs/monstra-regna-github-project-setup-brief.md`: the brief for the GitHub tracking below.
+
+## Tracking (GitHub, set up 2026-11-22)
+
+- **The Project:** [Monstra Regna — Development & Release](https://github.com/users/Aeturnia/projects/1), a private user-level Project linked to this repository.
+  - **Fields:** Status, Priority (set by the owner only), Work type and Area.
+  - **Status values:** Backlog, Research / Design, Scoped, Authorized, In progress, Review, Blocked, Done.
+  - **Views:** Board, Roadmap (grouped by milestone), Backlog, Review gates, and Security & release.
+- **Milestones #1 to #7** have no due dates; don't invent any:
+  - Security Hardening — Baseline;
+  - Authentication & Session Recovery — follow-ups;
+  - Kingdoms — Design & Foundation;
+  - Progression & Economy Simulation;
+  - World & Zone Expansion Research;
+  - Monstra Regna — Identity & Homepage;
+  - Public Launch Readiness.
+- **Issues #76 to #99** mirror the open work. Each entry in `docs/backlog.md` names its issue.
+- **The rules:**
+  - **The Markdown documents stay authoritative** (the backlog, the scopes and the reports). Issues link to them, not the reverse.
+  - **A Status, milestone or assignment is a tracking signal, never authorization.** Only the owner's explicit instructions and accepted scopes authorize work, merges or deployment.
+  - **Keep both in step:** when work is authorized, starts, reaches a review gate or completes, update the issue's Status. Cite the issue number in the PR and the report. Add new backlog entries as issues, linked both ways.
+  - **Closed work stays closed.** Don't reopen it, or assign old PRs to milestones afterwards.
+  - **Exploitable security findings** go in a private security advisory, not a public issue. The repository is public.
+  - **No secrets or personal details** in issues, as elsewhere.
+- **How to edit it:**
+  - **Most changes:** `gh` with the `project` scope (`gh project item-add`, `item-edit`, `field-list`) and `gh issue`.
+  - **The Status options and views:** GitHub's GraphQL API (`updateProjectV2Field`, `createProjectV2View`, `updateProjectV2View`).
+  - **Web UI only:** view grouping and the built-in workflows.
 
 ## Where things stand (2026-11-14)
 
@@ -86,7 +117,7 @@ Read these first:
     - two-line meters span the bar (an iPhone WebKit fix);
     - no HP bars on the fight screen, except a world boss's Shared HP.
   - **F2 is a game rule in the shared engine,** enforced by the live server since the redeploy.
-  - **Follow-ups:** the phone-landscape tabs below the screen's edge, and the Windows runner's `ERR_NO_BUFFER_SPACE` (`docs/backlog.md`).
+  - **Follow-ups:** the phone-landscape tabs below the screen's edge (#95), and the Windows runner's `ERR_NO_BUFFER_SPACE` (#97, parked by the owner on 2026-11-22: the NetLog capture only observes ordinary CI runs, and nothing more is done unless the owner asks).
 - **P1: sign-out on one device locks another out** (found 2026-11-19, live).
   - **Scope:** `docs/sign-out-scope.md`, PR #53 (`bfad9b3`), with two amendments decided at review gates.
   - **Delivered and resolved.** See `docs/sign-out-report.md`, section 22.
@@ -163,6 +194,13 @@ Read these first:
   - **Account isolation in `main.js`** (L-1 review, L1-01 and L1-02). Per-account UI state comes from `freshUi()`, and `stop()` replaces it. Every `start()` and `stop()` advances `gameGen`. Anything that awaits (an action in `runRemote()`, `loadBoard`, `refreshPlayers`, `loadHunts` and the other reads) records `gameGen` first and drops its result unless `live(g)`. New async game code must do the same.
   - **The entrance's CSS never reads `data-layout`.** Its colour tokens copy `style.css` `:root`, and `tests/entrance-files.test.mjs` checks they match.
 - **The Supabase client:** `net.js` owns the one client. `client()` loads `vendor/supabase-js@2.45.4/supabase.js` (Supabase's UMD build, byte-identical to the npm package; hashes and update steps in `public/vendor/README.md`) and creates the client once. `sb` is a live binding. Nothing else may call `createClient`. The admin console uses `await client()`.
+- **Pending rewards** (hunt shares, the killing blow; #102, `docs/pending-rewards-scope.md` and `docs/pending-rewards-report.md`):
+  - **How they're delivered:** staged in memory by the `game` function (`stageRewards()`, using `engine/rewards.js`), never claimed on their own. `saveRow()` claims exactly the staged ids in the same transaction as the hero's save, through `save_hero_with_rewards()` (service role only). A failed or refused request delivers nothing, and the rewards stay pending.
+  - **Indivisible:** a reward whose items don't fit in the pack (40, equipped items included) stays pending whole, with one notice and the Gear tab's reminder (`char.rewardsWaiting`). It never holds back later rewards.
+  - **The rule (R-1):** **every write of a hero's `data` goes through `saveRow()`,** or claims the request's staged reward ids in its own transaction (the future `kingdom_claim()` and `kingdom_release()`, Kingdoms amendment 1). Only the acting hero's row is staged. A duel's target save never claims.
+  - **The ledger:** entries that depend on a hero's save are queued on its row (`queueLedger()`) and written only after it commits. They stay best effort.
+  - **Tests:** a failing save is made deterministic with a test-only trigger on the local stack (`tests/db/pending-rewards-api.test.mjs`).
+  - **Production:** the migration (`20261123120000`) and the `game` redeploy each need the owner's authorization, migration first.
 - **Signing out and refused sessions** (`net.js`; `docs/sign-out-report.md`):
   - **`signOut()` and `endSession()`** end this device's session only (`scope: 'local'`), with a 5 s limit. If the library errs, runs out of time or leaves a session saved, they remove `clickmonster.auth` themselves (only if it is still the session being ended), keep the message in `sessionStorage` (`clickmonster.note`) and reload. `signOut()` is the player's own; `endSession()` says "Your session has ended".
   - **Other tabs** follow a removed session through a `storage` listener.
@@ -259,9 +297,9 @@ Read these first:
 ## Testing
 
 ```
-npm test                 # engine, entrance file checks, the first-paint tripwire, the public pages, news rules, the news page handler, the town rule, the log rules and the session rule (77)
-npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (313)
-npm run test:db          # database (pgTAP, 42) and API/function/recovery/session tests (17, plus 1 opt-in) on the LOCAL Supabase stack, with Mailpit
+npm test                 # engine, entrance file checks, the first-paint tripwire, the public pages, news rules, the news page handler, the town rule, the log rules, the session rule and the pending-rewards staging rule (90)
+npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (315)
+npm run test:db          # database (pgTAP, 82: news 42, pending rewards 40) and API/function/recovery/session/pending-rewards tests (39, plus 1 opt-in) on the LOCAL Supabase stack, with Mailpit
 npx playwright install chromium   # once
 ```
 
@@ -290,6 +328,12 @@ npx playwright install chromium   # once
   - **The runner's TCP table** (M2, `tools/ci-tcp-sampler.ps1`): the browser job samples it about every 5 to 6 s (a 5 s pause after each sample), as aggregate counts by state, machine-wide and loopback. It also takes snapshots, with the dynamic port range, before and after. The results go in the `browser-tcp-attempt-<n>` artifact.
     - **The steps** are `continue-on-error`, and the test step is unchanged, so they can't change its result.
     - **Correlating:** the metrics lines' `endedAt` (UTC) line up with the samples' `t`. `docs/ci-windows-reliability-plan.md`, section 8.3, says how to read them with a failure.
+  - **The Chromium NetLog** (`tests/ui/netlog.mjs`; plan section 9). It's on only when `UI_NETLOG_DIR` is set, which CI's browser job does.
+    - **What it adds:** each file's Chromium launch gets one added `--log-net-log=<unique file>`, in the default capture mode. A `.meta.json` beside it records the file, the server port, the PID, the launch command line (`DEBUG=pw:browser`) and whether the log was flushed.
+    - **The artifact:** `browser-netlog-attempt-<n>`, with `windows-network.txt` and a size summary.
+    - **Reading it:** `tools/netlog-trace.mjs`.
+    - **Switching it off:** remove `UI_NETLOG_DIR`; the launch is then exactly as before.
+    - **Never commit raw NetLogs.**
   - **The trace has no screenshots,** to reduce load on the two-core runner. `UI_TRACE_SCREENSHOTS=1` turns them back on, for comparison only.
   - **Reading the event-loop delay on Windows:** an idle process reads about 31 ms.
 - **The first paint** is a test (`tests/entrance-budget.test.mjs`): the document plus every stylesheet and script `index.html` loads, counted as LF. At most 48,000 bytes (MR-B2's tripwire); above 40,000 is reported.
