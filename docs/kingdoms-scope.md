@@ -1,5 +1,13 @@
 # Kingdoms: design scope (#83, #84)
 
+**Current status (2026-11-24):**
+- **Accepted as K-0** (PR #101, `707eabc`, with amendment 1 in PR #106, `3bd6116`). It is the design baseline for #83 and #84.
+- **#102, the K-1 prerequisite, is closed.**
+- **K-1 implementation planning is authorized.** The plan is `docs/kingdoms-k1-plan.md`.
+- **K-1 and K-2 implementation are not authorized.**
+
+The status below is from when this scope was written, and is kept as it was.
+
 **Status: a draft for independent review.**
 - **Design only.** No implementation, migration, deploy or balance numbers are authorized.
 - **Authorized:** the owner authorized writing this scope on 2026-11-22, for [#83](https://github.com/Aeturnia/clickmonster/issues/83) (ownership, the Kingdom Zone and the management interface) and [#84](https://github.com/Aeturnia/clickmonster/issues/84) (resources and buildings), together.
