@@ -13,10 +13,10 @@ with fns(n, sig) as (values
   (1, 'public.kingdom_claim(uuid,integer,jsonb,text,integer,text,integer,integer,integer,integer,bigint[])'),
   (2, 'public.kingdom_claim_staged_rewards(uuid,bigint[])'),
   (3, 'public.kingdom_free_plot(integer,integer,boolean)'),
-  (4, 'public.kingdom_release(uuid,integer,jsonb,text,integer,text,integer,integer,bigint[])'),
+  (4, 'public.kingdom_release(uuid,integer,jsonb,text,integer,text,integer,integer,bigint,bigint[])'),
   (5, 'public.kingdom_reserve(integer,integer,uuid,text,text)'),
-  (6, 'public.kingdom_revoke(integer,integer,uuid,text,text)'),
-  (7, 'public.kingdom_unreserve(integer,integer,uuid,text,text)')
+  (6, 'public.kingdom_revoke(integer,integer,bigint,uuid,uuid,text,text)'),
+  (7, 'public.kingdom_unreserve(integer,integer,bigint,uuid,text,text)')
 ),
 found as (
   select f.n, p.oid, p.proowner from fns f left join pg_proc p on p.oid = to_regprocedure(f.sig)

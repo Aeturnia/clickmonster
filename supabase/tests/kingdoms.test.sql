@@ -8,7 +8,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set search_path = public, extensions;
 
-select plan(104);
+select plan(133);
 
 -- ------------------------------------------------------------ fixtures (as the table owner)
 insert into auth.users (id, email) values
@@ -46,11 +46,24 @@ begin raise exception 'audit refused (test)'; end $$;
 select has_table('public', 'kingdom_plots', 'kingdom_plots exists');
 select col_is_pk('public', 'kingdom_plots', array['x', 'y'], 'its primary key is (x, y)');
 select ok((select relrowsecurity from pg_class where oid = 'public.kingdom_plots'::regclass), 'RLS is on');
-select ok(has_column_privilege('authenticated', 'public.kingdom_plots', 'character_id', 'select'),
-  'authenticated can read the plot columns');
-select ok(not has_table_privilege('anon', 'public.kingdom_plots', 'select'), 'anon can''t read the table');
-select ok(not has_table_privilege('authenticated', 'public.kingdom_plots', 'insert, update, delete, truncate'),
-  'authenticated can''t write the table');
+-- has_column_privilege() is true for a column OR a table-level grant, so these cover both (K1-DB03).
+select ok((select bool_and(has_column_privilege('authenticated', 'public.kingdom_plots', c, 'select'))
+           from unnest(array['id', 'x', 'y', 'status', 'character_id', 'claimed_at']) as c),
+  'authenticated can read all six plot columns');
+select ok((select not bool_or(has_column_privilege('anon', 'public.kingdom_plots', c, 'select, insert, update, references'))
+           from unnest(array['id', 'x', 'y', 'status', 'character_id', 'claimed_at']) as c)
+          and not has_table_privilege('anon', 'public.kingdom_plots', 'delete, truncate, trigger'),
+  'anon has no privilege on the table or any column');
+select ok((select not bool_or(has_column_privilege('authenticated', 'public.kingdom_plots', c, 'insert, update, references'))
+           from unnest(array['id', 'x', 'y', 'status', 'character_id', 'claimed_at']) as c)
+          and not has_table_privilege('authenticated', 'public.kingdom_plots', 'delete, truncate, trigger'),
+  'authenticated can''t write the table or any column');
+select is((select count(*)::int from pg_policy where polrelid = 'public.kingdom_plots'::regclass), 1,
+  'the table has exactly one policy');
+select ok((select polcmd = 'r' and polpermissive and polroles = array[(select oid from pg_roles where rolname = 'authenticated')]
+                  and pg_get_expr(polqual, polrelid) = 'true' and polwithcheck is null
+           from pg_policy where polrelid = 'public.kingdom_plots'::regclass),
+  'that policy lets authenticated read every row, and nothing else');
 select throws_ok($$ insert into public.kingdom_plots (x, y, status) values (0, 1, 'reserved') $$,
   '23514', null, 'x below 1 is refused');
 select throws_ok($$ insert into public.kingdom_plots (x, y, status) values (1, 101, 'reserved') $$,
@@ -75,7 +88,7 @@ select ok((select p.prosecdef and 'search_path=public' = any (p.proconfig)
              and not has_function_privilege('authenticated', p.oid, 'execute')
              and not has_function_privilege('anon', p.oid, 'execute')
              and not exists (select 1 from aclexplode(p.proacl) a where a.grantee = 0 and a.privilege_type = 'EXECUTE')
-           from pg_proc p where p.oid = to_regprocedure('public.kingdom_release(uuid,integer,jsonb,text,integer,text,integer,integer,bigint[])')),
+           from pg_proc p where p.oid = to_regprocedure('public.kingdom_release(uuid,integer,jsonb,text,integer,text,integer,integer,bigint,bigint[])')),
   'kingdom_release(): security definer, search_path public, service_role only');
 select ok((select bool_and(p.prosecdef and 'search_path=public' = any (p.proconfig)
              and has_function_privilege('service_role', p.oid, 'execute')
@@ -83,13 +96,13 @@ select ok((select bool_and(p.prosecdef and 'search_path=public' = any (p.proconf
              and not has_function_privilege('anon', p.oid, 'execute')
              and not exists (select 1 from aclexplode(p.proacl) a where a.grantee = 0 and a.privilege_type = 'EXECUTE'))
            from pg_proc p where p.oid in (
-             to_regprocedure('public.kingdom_revoke(integer,integer,uuid,text,text)'),
+             to_regprocedure('public.kingdom_revoke(integer,integer,bigint,uuid,uuid,text,text)'),
              to_regprocedure('public.kingdom_reserve(integer,integer,uuid,text,text)'),
-             to_regprocedure('public.kingdom_unreserve(integer,integer,uuid,text,text)'))
+             to_regprocedure('public.kingdom_unreserve(integer,integer,bigint,uuid,text,text)'))
            having count(*) = 3),
   'kingdom_revoke(), kingdom_reserve() and kingdom_unreserve(): security definer, search_path public, service_role only');
-select is((select format_type(prorettype, null) from pg_proc where oid = to_regprocedure('public.kingdom_revoke(integer,integer,uuid,text,text)')),
-  'integer', 'kingdom_revoke() returns the refund as an integer');
+select is((select format_type(prorettype, null) from pg_proc where oid = to_regprocedure('public.kingdom_revoke(integer,integer,bigint,uuid,uuid,text,text)')),
+  'bigint', 'kingdom_revoke() returns the refund as bigint (K1-DB02)');
 select ok((select p.prosecdef
              and not has_function_privilege('service_role', p.oid, 'execute')
              and not has_function_privilege('authenticated', p.oid, 'execute')
@@ -199,17 +212,28 @@ select throws_ok($$ select public.kingdom_claim('00000000-0000-4000-8000-0000000
 select ok(not exists (select 1 from public.kingdom_plots where x = 8 and y = 8), 'after it: no plot');
 
 -- ------------------------------------------------------------ release
+-- The ownership instances the requests below were "prepared against" (K1-DB01).
+create temporary table pids (name text primary key, id bigint) on commit drop;
+insert into pids select 'one-5-5', id from public.kingdom_plots where x = 5 and y = 5;
+
 select throws_ok($$ select public.kingdom_release('00000000-0000-4000-8000-00000000cb01', 4,
-    pg_temp.with_kingdom('{"gold": 1200}', 5, 5), 'Kingtest One', 5, 'kingdoms', 1, 1, array[]::bigint[]) $$,
+    pg_temp.with_kingdom('{"gold": 1200}', 5, 5), 'Kingtest One', 5, 'kingdoms', 1, 1,
+    (select id from pids where name = 'one-5-5'), array[]::bigint[]) $$,
   'MRARG', 'bad_arguments', 'release: p_data that still has a kingdom is refused (I-1)');
 select throws_ok($$ select public.kingdom_release('00000000-0000-4000-8000-00000000cb01', 4,
-    null, 'Kingtest One', 5, 'kingdoms', 1, 1, array[]::bigint[]) $$,
+    null, 'Kingtest One', 5, 'kingdoms', 1, 1, (select id from pids where name = 'one-5-5'), array[]::bigint[]) $$,
   'MRARG', 'bad_arguments', 'release: null p_data is refused');
+select throws_ok($$ select public.kingdom_release('00000000-0000-4000-8000-00000000cb01', 4,
+    '{"gold": 1200}', 'Kingtest One', 5, 'kingdoms', 1, 1, null, array[]::bigint[]) $$,
+  'MRARG', 'bad_arguments', 'release: a null plot id is refused');
 select throws_ok($$ select public.kingdom_release('00000000-0000-4000-8000-00000000cb02', 7,
-    '{"gold": 2000}', 'Kingtest Two', 5, 'kingdoms', 1, 1, array[]::bigint[]) $$,
-  'MRNOP', 'no_plot', 'release: a hero without a plot is refused (MRNOP)');
+    '{"gold": 2000}', 'Kingtest Two', 5, 'kingdoms', 1, 1, (select id from pids where name = 'one-5-5'), array[]::bigint[]) $$,
+  'MRNOP', 'no_plot', 'release: a hero without a plot is refused (MRNOP), even naming another hero''s plot');
+select throws_ok($$ select public.kingdom_release('00000000-0000-4000-8000-00000000cb01', 4,
+    '{"gold": 1200}', 'Kingtest One', 5, 'kingdoms', 1, 1, (select id from pids where name = 'one-5-5') + 1000, array[]::bigint[]) $$,
+  'MRSTL', 'plot_changed', 'release: naming a plot instance that isn''t the hero''s current one is refused (MRSTL)');
 select throws_ok($$ select public.kingdom_release('00000000-0000-4000-8000-00000000cb01', 3,
-    '{"gold": 1200}', 'Kingtest One', 5, 'kingdoms', 1, 1, array[]::bigint[]) $$,
+    '{"gold": 1200}', 'Kingtest One', 5, 'kingdoms', 1, 1, (select id from pids where name = 'one-5-5'), array[]::bigint[]) $$,
   'MRVER', 'version_conflict', 'release: a stale version is refused (MRVER)');
 select ok(exists (select 1 from public.kingdom_plots where x = 5 and y = 5 and character_id = '00000000-0000-4000-8000-00000000cb01')
           and (select version from public.characters where id = '00000000-0000-4000-8000-00000000cb01') = 4,
@@ -219,13 +243,15 @@ insert into public.pending_rewards (character_id, source, gold, note) values
   ('00000000-0000-4000-8000-00000000cb01', 'hunt', 50, 'kr-one-c');
 insert into ids select note, id from public.pending_rewards where note = 'kr-one-c';
 select throws_ok($$ select public.kingdom_release('00000000-0000-4000-8000-00000000cb01', 4,
-    '{"gold": 1250}', 'Kingtest One', 5, 'kingdoms', 1, 1, array[(select id from ids where note = 'kr-two-a')]) $$,
+    '{"gold": 1250}', 'Kingtest One', 5, 'kingdoms', 1, 1, (select id from pids where name = 'one-5-5'),
+    array[(select id from ids where note = 'kr-two-a')]) $$,
   'MRREW', 'rewards_conflict', 'release: another hero''s reward is refused (MRREW)');
 select ok(exists (select 1 from public.kingdom_plots where x = 5 and y = 5)
           and (select claimed_at from public.pending_rewards where note = 'kr-two-a') is null,
   'after it: the plot is kept, the other hero''s reward still pending');
 select is(public.kingdom_release('00000000-0000-4000-8000-00000000cb01', 4,
-    '{"gold": 1250}', 'Kingtest One', 5, 'kingdoms', 1, 1, array[(select id from ids where note = 'kr-one-c')]),
+    '{"gold": 1250}', 'Kingtest One', 5, 'kingdoms', 1, 1, (select id from pids where name = 'one-5-5'),
+    array[(select id from ids where note = 'kr-one-c')]),
   5, 'release: returns the new version');
 select ok(not exists (select 1 from public.kingdom_plots where x = 5 and y = 5)
           and (select version = 5 and data = '{"gold": 1250}' and updated_at = now()
@@ -233,28 +259,59 @@ select ok(not exists (select 1 from public.kingdom_plots where x = 5 and y = 5)
           and (select claimed_at from public.pending_rewards where note = 'kr-one-c') = now(),
   'release: the plot is free, the hero saved without a kingdom, the staged reward claimed');
 select throws_ok($$ select public.kingdom_release('00000000-0000-4000-8000-00000000cb01', 5,
-    '{"gold": 1250}', 'Kingtest One', 5, 'kingdoms', 1, 1, array[]::bigint[]) $$,
+    '{"gold": 1250}', 'Kingtest One', 5, 'kingdoms', 1, 1, (select id from pids where name = 'one-5-5'), array[]::bigint[]) $$,
   'MRNOP', 'no_plot', 'release: a retried release finds no plot and changes nothing');
+
+-- A stale release (K1-DB01): the hero confirmed releasing one Kingdom, but meanwhile released it
+-- and claimed another. The old confirmation names the old instance, so it can't release the new one.
+select is(public.kingdom_claim('00000000-0000-4000-8000-00000000cb01', 5,
+    pg_temp.with_kingdom('{"gold": 1250}', 6, 6), 'Kingtest One', 5, 'kingdoms', 1, 1, 6, 6, array[]::bigint[]),
+  6, 'the hero claims a new plot');
+select throws_ok($$ select public.kingdom_release('00000000-0000-4000-8000-00000000cb01', 6,
+    '{"gold": 1250}', 'Kingtest One', 5, 'kingdoms', 1, 1, (select id from pids where name = 'one-5-5'), array[]::bigint[]) $$,
+  'MRSTL', 'plot_changed', 'a stale release naming the old Kingdom is refused (MRSTL)');
+select ok(exists (select 1 from public.kingdom_plots where x = 6 and y = 6 and character_id = '00000000-0000-4000-8000-00000000cb01')
+          and (select version = 6 and data = pg_temp.with_kingdom('{"gold": 1250}', 6, 6)
+               from public.characters where id = '00000000-0000-4000-8000-00000000cb01'),
+  'after it: the new Kingdom and the hero are unchanged');
+select is(public.kingdom_release('00000000-0000-4000-8000-00000000cb01', 6,
+    '{"gold": 1250}', 'Kingtest One', 5, 'kingdoms', 1, 1,
+    (select id from public.kingdom_plots where x = 6 and y = 6), array[]::bigint[]),
+  7, 'a release naming the current instance succeeds');
 
 -- ------------------------------------------------------------ revoke: no construction
 -- Kingdom fixtures written directly, as the table owner: a claimed plot and its hero's kingdom.
 insert into public.kingdom_plots (x, y, status, character_id) values (10, 10, 'claimed', '00000000-0000-4000-8000-00000000cb01');
+insert into pids select 'one-10-10', id from public.kingdom_plots where x = 10 and y = 10;
 update public.characters set data = pg_temp.with_kingdom('{"gold": 1250}', 10, 10), version = 9
  where id = '00000000-0000-4000-8000-00000000cb01';
 
-select throws_ok($$ select public.kingdom_revoke(0, 10, null, 'staff', 'test') $$,
+select throws_ok($$ select public.kingdom_revoke(0, 10, (select id from pids where name = 'one-10-10'),
+    '00000000-0000-4000-8000-00000000cb01', null, 'staff', 'test') $$,
   'MRARG', 'bad_arguments', 'revoke: a plot outside 1 to 100 is refused');
-select throws_ok($$ select public.kingdom_revoke(11, 11, null, 'staff', 'test') $$,
+select throws_ok($$ select public.kingdom_revoke(10, 10, null, '00000000-0000-4000-8000-00000000cb01', null, 'staff', 'test') $$,
+  'MRARG', 'bad_arguments', 'revoke: a null plot id is refused');
+select throws_ok($$ select public.kingdom_revoke(10, 10, (select id from pids where name = 'one-10-10'), null, null, 'staff', 'test') $$,
+  'MRARG', 'bad_arguments', 'revoke: a null expected owner is refused');
+select throws_ok($$ select public.kingdom_revoke(11, 11, 1, '00000000-0000-4000-8000-00000000cb01', null, 'staff', 'test') $$,
   'MRNOP', 'no_plot', 'revoke: a free plot is refused (MRNOP)');
-select is(public.kingdom_revoke(10, 10, null, 'staff', 'test reason'), 0, 'revoke: no construction refunds 0');
+select throws_ok($$ select public.kingdom_revoke(10, 10, (select id from pids where name = 'one-10-10'),
+    '00000000-0000-4000-8000-00000000cb02', null, 'staff', 'test') $$,
+  'MRSTL', 'plot_changed', 'revoke: the right instance with the wrong expected owner is refused (MRSTL)');
+select ok(exists (select 1 from public.kingdom_plots where x = 10 and y = 10)
+          and (select version = 9 from public.characters where id = '00000000-0000-4000-8000-00000000cb01'),
+  'after the refused revokes: the plot and the hero are unchanged');
+select is(public.kingdom_revoke(10, 10, (select id from pids where name = 'one-10-10'),
+    '00000000-0000-4000-8000-00000000cb01', null, 'staff', 'test reason'), 0::bigint, 'revoke: no construction refunds 0');
 select ok(not exists (select 1 from public.kingdom_plots where x = 10 and y = 10)
           and (select data = '{"gold": 1250}' and version = 10 and updated_at = now()
                from public.characters where id = '00000000-0000-4000-8000-00000000cb01'),
   'revoke: the plot is free, the kingdom removed, the version raised by one from the current row (Q4)');
 select ok(exists (select 1 from public.admin_log where action = 'kingdom:revoke'
                     and target_id = '00000000-0000-4000-8000-00000000cb01' and target_name = 'Kingtest One'
-                    and details = jsonb_build_object('x', 10, 'y', 10, 'reason', 'test reason', 'refund', 0, 'at_ms', (select ms from nowms))),
-  'revoke: one audit entry, recording the plot, the reason, the refund and the time used');
+                    and details = jsonb_build_object('x', 10, 'y', 10, 'plot_id', (select id from pids where name = 'one-10-10'),
+                                                     'reason', 'test reason', 'refund', 0, 'at_ms', (select ms from nowms))),
+  'revoke: one audit entry, recording the plot, its instance, the reason, the refund and the time used');
 -- A `game` request that read the hero before the revoke (version 9) can't write the Kingdom back.
 insert into public.pending_rewards (character_id, source, gold, note) values
   ('00000000-0000-4000-8000-00000000cb01', 'hunt', 25, 'kr-one-d');
@@ -265,8 +322,49 @@ select throws_ok($$ select public.save_hero_with_rewards('00000000-0000-4000-800
   'MRVER', 'version_conflict', 'after a revoke, a save from a read before it fails with MRVER');
 select ok((select data = '{"gold": 1250}' from public.characters where id = '00000000-0000-4000-8000-00000000cb01'),
   'and the Kingdom isn''t written back');
-select throws_ok($$ select public.kingdom_revoke(10, 10, null, 'staff', 'test') $$,
-  'MRNOP', 'no_plot', 'revoke: a retried revoke finds no plot and refunds nothing');
+select throws_ok($$ select public.kingdom_revoke(10, 10, (select id from pids where name = 'one-10-10'),
+    '00000000-0000-4000-8000-00000000cb01', null, 'staff', 'test') $$,
+  'MRNOP', 'no_plot', 'revoke: a retried revoke on a still-free plot finds no plot and refunds nothing');
+
+-- ------------------------------------------------------------ revoke: stale requests (K1-DB01)
+-- 1. The plot changes owners before a previously prepared revoke: staff inspected (12, 12) held by
+--    hero one; hero one released it, and hero two claimed it. The old revoke must not touch hero two.
+insert into public.kingdom_plots (x, y, status, character_id) values (12, 12, 'claimed', '00000000-0000-4000-8000-00000000cb01');
+insert into pids select 'one-12-12', id from public.kingdom_plots where x = 12 and y = 12;
+delete from public.kingdom_plots where x = 12 and y = 12;
+select is(public.kingdom_claim('00000000-0000-4000-8000-00000000cb02', 7,
+    pg_temp.with_kingdom('{"gold": 2000}', 12, 12), 'Kingtest Two', 5, 'kingdoms', 1, 1, 12, 12, array[]::bigint[]),
+  8, 'hero two claims the plot hero one held');
+create temporary table before_two on commit drop as
+  select (select count(*) from public.admin_log where action = 'kingdom:revoke') as audits,
+         (select data from public.characters where id = '00000000-0000-4000-8000-00000000cb02') as data;
+select throws_ok($$ select public.kingdom_revoke(12, 12, (select id from pids where name = 'one-12-12'),
+    '00000000-0000-4000-8000-00000000cb01', null, 'staff', 'prepared for hero one') $$,
+  'MRSTL', 'plot_changed', 'a revoke prepared against the previous owner is refused (MRSTL)');
+select ok((select character_id = '00000000-0000-4000-8000-00000000cb02' from public.kingdom_plots where x = 12 and y = 12)
+          and (select version = 8 and data = (select data from before_two)
+               from public.characters where id = '00000000-0000-4000-8000-00000000cb02')
+          and (select count(*) from public.admin_log where action = 'kingdom:revoke') = (select audits from before_two),
+  'after it: hero two''s plot, hero state and gold are unchanged, and no audit entry is written');
+
+-- 2. A plot reacquired before a revoke retry: the first revoke succeeded, the same hero claimed the
+--    same plot again, and the retry arrives. It names the old instance, so it changes nothing.
+insert into pids select 'two-12-12', id from public.kingdom_plots where x = 12 and y = 12;
+select is(public.kingdom_revoke(12, 12, (select id from pids where name = 'two-12-12'),
+    '00000000-0000-4000-8000-00000000cb02', null, 'staff', 'first'), 0::bigint, 'the first revoke succeeds');
+select is(public.kingdom_claim('00000000-0000-4000-8000-00000000cb02', 9,
+    pg_temp.with_kingdom('{"gold": 2000}', 12, 12), 'Kingtest Two', 5, 'kingdoms', 1, 1, 12, 12, array[]::bigint[]),
+  10, 'hero two claims the same plot again');
+select ok((select id from public.kingdom_plots where x = 12 and y = 12) <> (select id from pids where name = 'two-12-12'),
+  'the new claim is a new ownership instance, with a new id');
+select throws_ok($$ select public.kingdom_revoke(12, 12, (select id from pids where name = 'two-12-12'),
+    '00000000-0000-4000-8000-00000000cb02', null, 'staff', 'first') $$,
+  'MRSTL', 'plot_changed', 'the retried revoke is refused (MRSTL): the same owner, but a newer instance');
+select ok((select version = 10 and data = pg_temp.with_kingdom('{"gold": 2000}', 12, 12)
+           from public.characters where id = '00000000-0000-4000-8000-00000000cb02')
+          and exists (select 1 from public.kingdom_plots where x = 12 and y = 12)
+          and (select count(*) from public.admin_log where action = 'kingdom:revoke' and details ->> 'reason' = 'first') = 1,
+  'after it: the new Kingdom is unchanged, and the first revoke''s single audit entry is the only one');
 
 -- ------------------------------------------------------------ revoke: the construction refund at its boundaries
 insert into public.kingdom_plots (x, y, status, character_id) values (20, 20, 'claimed', '00000000-0000-4000-8000-00000000cb01');
@@ -274,11 +372,12 @@ update public.characters
    set data = pg_temp.with_kingdom('{"gold": 1000}', 20, 20,
          jsonb_build_object('finishAt', (select ms from nowms) + 60000, 'paid', jsonb_build_object('gold', 500)))
  where id = '00000000-0000-4000-8000-00000000cb01';
-select is(public.kingdom_revoke(20, 20, null, 'staff', 'under way'), 500,
+select is(public.kingdom_revoke(20, 20, (select id from public.kingdom_plots where x = 20 and y = 20),
+    '00000000-0000-4000-8000-00000000cb01', null, 'staff', 'under way'), 500::bigint,
   'revoke before finishAt: returns the gold paid');
 select ok((select data = '{"gold": 1500}' from public.characters where id = '00000000-0000-4000-8000-00000000cb01')
           and exists (select 1 from public.admin_log where action = 'kingdom:revoke' and details ->> 'reason' = 'under way'
-                        and (details ->> 'refund')::int = 500),
+                        and (details ->> 'refund')::bigint = 500),
   'revoke before finishAt: the gold is added to the hero, the kingdom removed, the refund audited');
 
 insert into public.kingdom_plots (x, y, status, character_id) values (20, 20, 'claimed', '00000000-0000-4000-8000-00000000cb01');
@@ -286,9 +385,11 @@ update public.characters
    set data = pg_temp.with_kingdom('{"gold": 1000}', 20, 20,
          jsonb_build_object('finishAt', (select ms from nowms), 'paid', jsonb_build_object('gold', 500)))
  where id = '00000000-0000-4000-8000-00000000cb01';
-select is(public.kingdom_revoke(20, 20, null, 'staff', 'at finish'), 0, 'revoke exactly at finishAt: it has finished, so 0');
+select is(public.kingdom_revoke(20, 20, (select id from public.kingdom_plots where x = 20 and y = 20),
+    '00000000-0000-4000-8000-00000000cb01', null, 'staff', 'at finish'), 0::bigint,
+  'revoke exactly at finishAt: it has finished, so 0');
 select ok((select data = '{"gold": 1000}' from public.characters where id = '00000000-0000-4000-8000-00000000cb01')
-          and exists (select 1 from public.admin_log where details ->> 'reason' = 'at finish' and (details ->> 'refund')::int = 0),
+          and exists (select 1 from public.admin_log where details ->> 'reason' = 'at finish' and (details ->> 'refund')::bigint = 0),
   'revoke exactly at finishAt: no gold added, refund 0 audited');
 
 insert into public.kingdom_plots (x, y, status, character_id) values (20, 20, 'claimed', '00000000-0000-4000-8000-00000000cb01');
@@ -296,32 +397,81 @@ update public.characters
    set data = pg_temp.with_kingdom('{"gold": 1000}', 20, 20,
          jsonb_build_object('finishAt', (select ms from nowms) - 1, 'paid', jsonb_build_object('gold', 500)))
  where id = '00000000-0000-4000-8000-00000000cb01';
-select is(public.kingdom_revoke(20, 20, null, 'staff', 'after finish'), 0,
+select is(public.kingdom_revoke(20, 20, (select id from public.kingdom_plots where x = 20 and y = 20),
+    '00000000-0000-4000-8000-00000000cb01', null, 'staff', 'after finish'), 0::bigint,
   'revoke after finishAt, the record not yet cleared: 0');
 select ok((select data = '{"gold": 1000}' from public.characters where id = '00000000-0000-4000-8000-00000000cb01'),
   'revoke after finishAt: no gold added');
 
+-- K1-DB02: a refund above the 32-bit integer range is exact.
 insert into public.kingdom_plots (x, y, status, character_id) values (20, 20, 'claimed', '00000000-0000-4000-8000-00000000cb01');
 update public.characters
-   set data = pg_temp.with_kingdom('{"gold": 1000}', 20, 20, '{"finishAt": "soon", "paid": {"gold": 500}}'), version = 20
+   set data = pg_temp.with_kingdom('{"gold": 1000}', 20, 20,
+         jsonb_build_object('finishAt', (select ms from nowms) + 60000, 'paid', jsonb_build_object('gold', 3000000007)))
  where id = '00000000-0000-4000-8000-00000000cb01';
-select throws_ok($$ select public.kingdom_revoke(20, 20, null, 'staff', 'malformed') $$,
+select is(public.kingdom_revoke(20, 20, (select id from public.kingdom_plots where x = 20 and y = 20),
+    '00000000-0000-4000-8000-00000000cb01', null, 'staff', 'large'), 3000000007::bigint,
+  'revoke: a refund above 2,147,483,647 is returned exactly (K1-DB02)');
+select ok((select data = '{"gold": 3000001007}' from public.characters where id = '00000000-0000-4000-8000-00000000cb01')
+          and exists (select 1 from public.admin_log where details ->> 'reason' = 'large' and (details ->> 'refund')::bigint = 3000000007),
+  'and added and audited exactly');
+
+-- The largest exact refund (JavaScript's Number.MAX_SAFE_INTEGER) is accepted; one more is refused.
+insert into public.kingdom_plots (x, y, status, character_id) values (20, 20, 'claimed', '00000000-0000-4000-8000-00000000cb01');
+update public.characters
+   set data = pg_temp.with_kingdom('{"gold": 0}', 20, 20,
+         jsonb_build_object('finishAt', (select ms from nowms) + 60000, 'paid', jsonb_build_object('gold', 9007199254740991)))
+ where id = '00000000-0000-4000-8000-00000000cb01';
+select is(public.kingdom_revoke(20, 20, (select id from public.kingdom_plots where x = 20 and y = 20),
+    '00000000-0000-4000-8000-00000000cb01', null, 'staff', 'max'), 9007199254740991::bigint,
+  'revoke: a refund of exactly 9,007,199,254,740,991 is exact');
+
+insert into public.kingdom_plots (x, y, status, character_id) values (20, 20, 'claimed', '00000000-0000-4000-8000-00000000cb01');
+update public.characters
+   set data = pg_temp.with_kingdom('{"gold": 0}', 20, 20,
+         jsonb_build_object('finishAt', (select ms from nowms) + 60000, 'paid', jsonb_build_object('gold', 9007199254740992))),
+       version = 20
+ where id = '00000000-0000-4000-8000-00000000cb01';
+select throws_ok($$ select public.kingdom_revoke(20, 20, (select id from public.kingdom_plots where x = 20 and y = 20),
+    '00000000-0000-4000-8000-00000000cb01', null, 'staff', 'too large') $$,
+  'MRARG', 'bad_arguments', 'revoke: a paid gold above the exact range is refused, not rounded');
+update public.characters
+   set data = pg_temp.with_kingdom('{"gold": 9007199254740000}', 20, 20,
+         jsonb_build_object('finishAt', (select ms from nowms) + 60000, 'paid', jsonb_build_object('gold', 5000)))
+ where id = '00000000-0000-4000-8000-00000000cb01';
+select throws_ok($$ select public.kingdom_revoke(20, 20, (select id from public.kingdom_plots where x = 20 and y = 20),
+    '00000000-0000-4000-8000-00000000cb01', null, 'staff', 'sum too large') $$,
+  'MRARG', 'bad_arguments', 'revoke: a refund that would take the hero''s gold above the exact range is refused');
+update public.characters
+   set data = pg_temp.with_kingdom('{"gold": 1000}', 20, 20, '{"finishAt": 1, "paid": {"gold": 500.5}}')
+ where id = '00000000-0000-4000-8000-00000000cb01';
+select throws_ok($$ select public.kingdom_revoke(20, 20, (select id from public.kingdom_plots where x = 20 and y = 20),
+    '00000000-0000-4000-8000-00000000cb01', null, 'staff', 'fraction') $$,
+  'MRARG', 'bad_arguments', 'revoke: a fractional paid gold is refused');
+
+update public.characters
+   set data = pg_temp.with_kingdom('{"gold": 1000}', 20, 20, '{"finishAt": "soon", "paid": {"gold": 500}}')
+ where id = '00000000-0000-4000-8000-00000000cb01';
+select throws_ok($$ select public.kingdom_revoke(20, 20, (select id from public.kingdom_plots where x = 20 and y = 20),
+    '00000000-0000-4000-8000-00000000cb01', null, 'staff', 'malformed') $$,
   'MRARG', 'bad_arguments', 'revoke: a malformed construction is refused rather than guessed');
 select ok(exists (select 1 from public.kingdom_plots where x = 20 and y = 20)
           and (select version = 20 and data ? 'kingdom' from public.characters where id = '00000000-0000-4000-8000-00000000cb01')
-          and not exists (select 1 from public.admin_log where details ->> 'reason' = 'malformed'),
-  'after it: the plot, the kingdom and the version unchanged, and no audit entry');
+          and not exists (select 1 from public.admin_log where details ->> 'reason' in ('malformed', 'too large', 'sum too large', 'fraction')),
+  'after the refused revokes: the plot, the kingdom and the version unchanged, and no audit entry');
 update public.characters
    set data = pg_temp.with_kingdom('{"gold": 1000}', 20, 20, '{"finishAt": 1, "paid": {"gold": -5}}')
  where id = '00000000-0000-4000-8000-00000000cb01';
-select throws_ok($$ select public.kingdom_revoke(20, 20, null, 'staff', 'negative') $$,
+select throws_ok($$ select public.kingdom_revoke(20, 20, (select id from public.kingdom_plots where x = 20 and y = 20),
+    '00000000-0000-4000-8000-00000000cb01', null, 'staff', 'negative') $$,
   'MRARG', 'bad_arguments', 'revoke: a negative paid gold is refused');
 
 -- ------------------------------------------------------------ revoke: a failed audit insert changes nothing
 update public.characters set data = pg_temp.with_kingdom('{"gold": 1000}', 20, 20) where id = '00000000-0000-4000-8000-00000000cb01';
 create trigger kingdom_test_refuse_audit before insert on public.admin_log
   for each row execute function public.kingdom_test_refuse_audit();
-select throws_ok($$ select public.kingdom_revoke(20, 20, null, 'staff', 'audit fails') $$,
+select throws_ok($$ select public.kingdom_revoke(20, 20, (select id from public.kingdom_plots where x = 20 and y = 20),
+    '00000000-0000-4000-8000-00000000cb01', null, 'staff', 'audit fails') $$,
   'P0001', 'audit refused (test)', 'revoke: a failed audit insert fails the revoke');
 select ok(exists (select 1 from public.kingdom_plots where x = 20 and y = 20)
           and (select version = 20 and data ? 'kingdom' from public.characters where id = '00000000-0000-4000-8000-00000000cb01'),
@@ -332,7 +482,8 @@ select throws_ok($$ select public.kingdom_reserve(30, 30, null, 'staff', 'audit 
   'P0001', 'audit refused (test)', 'reserve: a failed audit insert fails the reserve');
 select ok(not exists (select 1 from public.kingdom_plots where x = 30 and y = 30), 'after it: the plot is still free');
 insert into public.kingdom_plots (x, y, status) values (31, 31, 'reserved');
-select throws_ok($$ select public.kingdom_unreserve(31, 31, null, 'staff', 'audit fails') $$,
+select throws_ok($$ select public.kingdom_unreserve(31, 31, (select id from public.kingdom_plots where x = 31 and y = 31),
+    null, 'staff', 'audit fails') $$,
   'P0001', 'audit refused (test)', 'unreserve: a failed audit insert fails the unreserve');
 select ok(exists (select 1 from public.kingdom_plots where x = 31 and y = 31 and status = 'reserved'),
   'after it: the plot is still reserved');
@@ -341,33 +492,55 @@ delete from public.kingdom_plots where x = 31 and y = 31;
 
 select throws_ok($$ select public.kingdom_reserve(101, 30, null, 'staff', 'test') $$,
   'MRARG', 'bad_arguments', 'reserve: a plot outside 1 to 100 is refused');
-select lives_ok($$ select public.kingdom_reserve(30, 30, null, 'staff', 'keep back') $$, 'reserve: a free plot can be reserved');
+insert into pids values ('reserve-30-30', public.kingdom_reserve(30, 30, null, 'staff', 'keep back'));
+select is((select id from pids where name = 'reserve-30-30'), (select id from public.kingdom_plots where x = 30 and y = 30),
+  'reserve: returns the new reservation''s id');
 select ok(exists (select 1 from public.kingdom_plots where x = 30 and y = 30 and status = 'reserved' and character_id is null)
           and exists (select 1 from public.admin_log where action = 'kingdom:reserve'
-                        and details = '{"x": 30, "y": 30, "reason": "keep back"}'),
+                        and details = jsonb_build_object('x', 30, 'y', 30, 'plot_id', (select id from pids where name = 'reserve-30-30'),
+                                                         'reason', 'keep back')),
   'reserve: the plot is reserved, with one audit entry');
 select throws_ok($$ select public.kingdom_reserve(30, 30, null, 'staff', 'again') $$,
   'MRPLT', 'plot_taken', 'reserve: a reserved plot is refused (MRPLT)');
 select throws_ok($$ select public.kingdom_reserve(20, 20, null, 'staff', 'claimed') $$,
   'MRPLT', 'plot_taken', 'reserve: a claimed plot is refused (MRPLT); staff revoke it first');
-select throws_ok($$ select public.kingdom_claim('00000000-0000-4000-8000-00000000cb02', 7,
-    pg_temp.with_kingdom('{"gold": 1500}', 30, 30), 'Kingtest Two', 5, 'kingdoms', 1, 1, 30, 30, array[]::bigint[]) $$,
+select throws_ok($$ select public.kingdom_claim('00000000-0000-4000-8000-00000000cb03', 0,
+    pg_temp.with_kingdom('{"gold": 3000}', 30, 30), 'Kingtest Three', 5, 'kingdoms', 1, 1, 30, 30, array[]::bigint[]) $$,
   'MRPLT', 'plot_taken', 'claim: a reserved plot is refused (MRPLT)');
-select throws_ok($$ select public.kingdom_unreserve(20, 20, null, 'staff', 'claimed') $$,
-  'MRNOP', 'no_plot', 'unreserve: a claimed plot is refused (MRNOP)');
+select throws_ok($$ select public.kingdom_unreserve(20, 20, (select id from public.kingdom_plots where x = 20 and y = 20),
+    null, 'staff', 'claimed') $$,
+  'MRSTL', 'plot_changed', 'unreserve: naming a claimed plot is refused (MRSTL)');
 select ok(exists (select 1 from public.kingdom_plots where x = 20 and y = 20 and status = 'claimed'),
   'after it: the claimed plot is untouched');
-select throws_ok($$ select public.kingdom_revoke(30, 30, null, 'staff', 'reserved') $$,
-  'MRNOP', 'no_plot', 'revoke: a reserved plot is refused (MRNOP)');
-select lives_ok($$ select public.kingdom_unreserve(30, 30, null, 'staff', 'release it') $$, 'unreserve: a reserved plot can be freed');
+select throws_ok($$ select public.kingdom_revoke(30, 30, (select id from pids where name = 'reserve-30-30'),
+    '00000000-0000-4000-8000-00000000cb01', null, 'staff', 'reserved') $$,
+  'MRSTL', 'plot_changed', 'revoke: a reserved plot is refused (MRSTL): there is a plot, but no such claim');
+select lives_ok($$ select public.kingdom_unreserve(30, 30, (select id from pids where name = 'reserve-30-30'), null, 'staff', 'release it') $$,
+  'unreserve: a reserved plot can be freed');
 select ok(not exists (select 1 from public.kingdom_plots where x = 30 and y = 30)
           and exists (select 1 from public.admin_log where action = 'kingdom:unreserve'
-                        and details = '{"x": 30, "y": 30, "reason": "release it"}'),
+                        and details = jsonb_build_object('x', 30, 'y', 30, 'plot_id', (select id from pids where name = 'reserve-30-30'),
+                                                         'reason', 'release it')),
   'unreserve: the plot is free, with one audit entry');
-select throws_ok($$ select public.kingdom_unreserve(30, 30, null, 'staff', 'again') $$,
-  'MRNOP', 'no_plot', 'unreserve: a retried unreserve finds no plot');
-select throws_ok($$ select public.kingdom_unreserve(30, null, null, 'staff', 'test') $$,
+select throws_ok($$ select public.kingdom_unreserve(30, 30, (select id from pids where name = 'reserve-30-30'), null, 'staff', 'again') $$,
+  'MRNOP', 'no_plot', 'unreserve: a retried unreserve on a still-free plot finds no plot');
+select throws_ok($$ select public.kingdom_unreserve(30, null, 1, null, 'staff', 'test') $$,
   'MRARG', 'bad_arguments', 'unreserve: a null coordinate is refused');
+select throws_ok($$ select public.kingdom_unreserve(30, 30, null, null, 'staff', 'test') $$,
+  'MRARG', 'bad_arguments', 'unreserve: a null reservation id is refused');
+
+-- 3. A reservation replaced before an old unreserve request (K1-DB01): the old request names the
+--    first reservation; the plot was unreserved and reserved again since.
+insert into pids values ('reserve-30-30-b', public.kingdom_reserve(30, 30, null, 'staff', 'kept back again'));
+create temporary table before_unreserve on commit drop as
+  select count(*) as audits from public.admin_log where action = 'kingdom:unreserve';
+select throws_ok($$ select public.kingdom_unreserve(30, 30, (select id from pids where name = 'reserve-30-30'), null, 'staff', 'old request') $$,
+  'MRSTL', 'plot_changed', 'an unreserve naming the replaced reservation is refused (MRSTL)');
+select ok(exists (select 1 from public.kingdom_plots where x = 30 and y = 30 and status = 'reserved'
+                    and id = (select id from pids where name = 'reserve-30-30-b'))
+          and (select count(*) from public.admin_log where action = 'kingdom:unreserve') = (select audits from before_unreserve),
+  'after it: the new reservation is unchanged, and no audit entry is written');
+
 
 -- ------------------------------------------------------------ deleting a hero frees the plot (K-D7)
 insert into public.kingdom_plots (x, y, status, character_id) values (40, 40, 'claimed', '00000000-0000-4000-8000-00000000cb03');

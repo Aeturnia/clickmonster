@@ -234,9 +234,10 @@ Read these first:
 - **Kingdoms, K-1** (#83; `docs/kingdoms-scope.md`, `docs/kingdoms-k1-plan.md`, `docs/kingdoms-k1-report.md`). K1-1 adds the database only (`20261125120000_kingdoms.sql`). Nothing calls it yet, and nothing is in production:
   - **The table and functions:** `kingdom_plots`, and five `security definer` functions (claim, release, revoke, reserve, unreserve), each one transaction, executable by the service role only.
   - **Claim and release** claim the request's staged reward ids through a private helper (R-1) and save with `version = p_version + 1`.
-  - **The revoke** uses `version = version + 1` on the locked current row, so an in-flight save can't write a revoked Kingdom back. It returns the gold refunded.
+  - **The revoke** uses `version = version + 1` on the locked current row, so an in-flight save can't write a revoked Kingdom back. It returns the gold refunded, as `bigint` (exact up to `Number.MAX_SAFE_INTEGER`).
+  - **Each plot has an ownership instance id** (`kingdom_plots.id`, never reused). Release, revoke and unreserve name the instance they were prepared against. A stale request (the plot changed hands, or was taken or reserved again) raises `MRSTL` and changes nothing (K1-DB01).
   - **The finder,** `kingdom_free_plot()`, is `volatile` and `security invoker`, for signed-in players.
-  - **The invariant I-1:** a hero has `data.kingdom` if and only if a claimed plot is theirs. `supabase/checks/kingdom_verify.sql` must return no rows.
+  - **The invariant I-1:** a hero has `data.kingdom` if and only if a claimed plot is theirs. `supabase/checks/kingdom_verify.sql` must return no rows. `tests/db/kingdom-checks.test.mjs` runs the check files against fixtures, because pgTAP can't read `supabase/checks/`.
   - **`save_hero_with_rewards()` is never changed** for Kingdoms.
 - **Signing out and refused sessions** (`net.js`; `docs/sign-out-report.md`):
   - **`signOut()` and `endSession()`** end this device's session only (`scope: 'local'`), with a 5 s limit. If the library errs, runs out of time or leaves a session saved, they remove `clickmonster.auth` themselves (only if it is still the session being ended), keep the message in `sessionStorage` (`clickmonster.note`) and reload. `signOut()` is the player's own; `endSession()` says "Your session has ended".
@@ -336,7 +337,7 @@ Read these first:
 ```
 npm test                 # engine, entrance file checks, the first-paint tripwire, the public pages, news rules, the news page handler, the town rule, the log rules, the session rule and the pending-rewards staging rule (90)
 npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (315)
-npm run test:db          # database (pgTAP, 186: news 42, pending rewards 40, Kingdoms 104) and API/function/recovery/session/pending-rewards tests (39, plus 1 opt-in) on the LOCAL Supabase stack, with Mailpit
+npm run test:db          # database (pgTAP, 215: news 42, pending rewards 40, Kingdoms 133) and API/function/recovery/session/pending-rewards/Kingdom-check tests (43, plus 1 opt-in) on the LOCAL Supabase stack, with Mailpit
 npx playwright install chromium   # once
 ```
 

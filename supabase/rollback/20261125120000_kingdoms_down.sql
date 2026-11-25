@@ -10,10 +10,10 @@
 --
 -- It changes no other table: heroes, rewards and the audit log stay as they are.
 drop function if exists public.kingdom_free_plot(int, int, boolean);
-drop function if exists public.kingdom_unreserve(int, int, uuid, text, text);
+drop function if exists public.kingdom_unreserve(int, int, bigint, uuid, text, text);
 drop function if exists public.kingdom_reserve(int, int, uuid, text, text);
-drop function if exists public.kingdom_revoke(int, int, uuid, text, text);
-drop function if exists public.kingdom_release(uuid, int, jsonb, text, int, text, int, int, bigint[]);
+drop function if exists public.kingdom_revoke(int, int, bigint, uuid, uuid, text, text);
+drop function if exists public.kingdom_release(uuid, int, jsonb, text, int, text, int, int, bigint, bigint[]);
 drop function if exists public.kingdom_claim(uuid, int, jsonb, text, int, text, int, int, int, int, bigint[]);
 drop function if exists public.kingdom_claim_staged_rewards(uuid, bigint[]);
 drop table if exists public.kingdom_plots;

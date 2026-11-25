@@ -3,8 +3,9 @@
 --   - Rows 2 and 3 must be "none": anything else means a table or function of those names already
 --     exists, and the migration must not be applied until that is understood.
 --   - Rows 4 and 5 must match their "expected" text: the functions rely on those columns.
---   - Row 6 must be "none": a database zone with the reserved id `kingdoms` or a path into it, or
---     an Overworld path at its town cell, would break the Kingdom portal's integrity (K1-B03).
+--   - Row 6 must be "none": a database zone with the reserved id `kingdoms` or a path into it, an
+--     Overworld path at its town cell, or a zone placed on the Overworld at that cell, would break
+--     the Kingdom portal's integrity (K1-B03, K1-DB03).
 --   - Rows 7 and 8 show the migration history, which decides how the migration is applied
 --     (docs/landing-l3-report.md, section 4).
 with cols(tbl, col) as (
@@ -22,6 +23,12 @@ types as (
 ow as (
   select data from public.zones where id = 'overworld'
 ),
+-- The Overworld's town cell, where the Kingdom portal goes. Without an Overworld row the game uses
+-- the built-in Overworld, whose town (the Crossroads) is (4, 4) in public/js/data/zones.js.
+town as (
+  select coalesce((select data -> 'town' ->> 'x' from ow), '4') as x,
+         coalesce((select data -> 'town' ->> 'y' from ow), '4') as y
+),
 zone_problems as (
   select string_agg(problem, '; ' order by problem) as v from (
     select 'a zone with the id kingdoms' as problem from public.zones where id = 'kingdoms'
@@ -29,8 +36,13 @@ zone_problems as (
     select 'a path into kingdoms in ' || z.id from public.zones z, jsonb_array_elements(coalesce(z.data -> 'portals', '[]')) p
      where p ->> 'to' = 'kingdoms'
     union all
-    select 'an Overworld path at its town cell' from ow, jsonb_array_elements(coalesce(ow.data -> 'portals', '[]')) p
-     where (p ->> 'x') = (ow.data -> 'town' ->> 'x') and (p ->> 'y') = (ow.data -> 'town' ->> 'y')
+    select 'an Overworld path at its town cell' from ow, town, jsonb_array_elements(coalesce(ow.data -> 'portals', '[]')) p
+     where (p ->> 'x') = town.x and (p ->> 'y') = town.y
+    union all
+    -- compileZone() turns each zone's Overworld placement into a path at that cell (K1-DB03).
+    select 'a zone placed on the Overworld town cell: ' || z.id from public.zones z, town
+     where z.id <> 'overworld' and jsonb_typeof(z.data -> 'overworld') = 'array'
+       and (z.data -> 'overworld' ->> 0) = town.x and (z.data -> 'overworld' ->> 1) = town.y
   ) t
 )
 select n, item, value from (values
