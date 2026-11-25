@@ -198,7 +198,7 @@ end $$;
 -- The construction record is K-2's. Its refund reads construction.paid.gold and
 -- construction.finishAt (milliseconds since the epoch). The refund is exact (K1-DB02): paid.gold
 -- must be a whole number from 0 to 9,007,199,254,740,991 (JavaScript's Number.MAX_SAFE_INTEGER, the
--- engine's largest exact integer), and so must the hero's gold after the refund. Anything else, or
+-- engine's largest exact integer), and so must the hero's gold before and after the refund. Anything else, or
 -- a construction that is present but malformed, raises MRARG rather than guess or round. Values
 -- are checked as numeric before any conversion. "Under way" is
 -- finishAt > floor(extract(epoch from now()) * 1000): at or after finishAt it has finished.
@@ -256,8 +256,14 @@ begin
 
   v_data := v_data - 'kingdom';
   if v_refund > 0 then
+    -- The hero's gold, which the refund changes, must already be a whole number from 0 to the
+    -- exact range (or absent, meaning 0), and so must the result. A balance that isn't (a string,
+    -- a fraction, a negative) is refused rather than carried into the result (K1-DB02).
+    if (v_data ? 'gold') and jsonb_typeof(v_data -> 'gold') is distinct from 'number' then
+      raise exception 'bad_arguments' using errcode = 'MRARG';
+    end if;
     v_gold := coalesce((v_data ->> 'gold')::numeric, 0);
-    if v_gold + v_refund > c_max_exact then
+    if v_gold < 0 or v_gold <> trunc(v_gold) or v_gold > c_max_exact or v_gold + v_refund > c_max_exact then
       raise exception 'bad_arguments' using errcode = 'MRARG';
     end if;
     v_data := jsonb_set(v_data, '{gold}', to_jsonb(v_gold + v_refund));

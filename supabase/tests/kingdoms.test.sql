@@ -8,7 +8,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set search_path = public, extensions;
 
-select plan(133);
+select plan(140);
 
 -- ------------------------------------------------------------ fixtures (as the table owner)
 insert into auth.users (id, email) values
@@ -448,6 +448,50 @@ update public.characters
 select throws_ok($$ select public.kingdom_revoke(20, 20, (select id from public.kingdom_plots where x = 20 and y = 20),
     '00000000-0000-4000-8000-00000000cb01', null, 'staff', 'fraction') $$,
   'MRARG', 'bad_arguments', 'revoke: a fractional paid gold is refused');
+
+-- The hero's balance the refund changes must itself be a whole number from 0 to the exact range
+-- (K1-DB02, re-review): a valid refund mustn't carry an invalid balance into the result.
+update public.characters
+   set data = pg_temp.with_kingdom('{"gold": 1000.5}', 20, 20,
+         jsonb_build_object('finishAt', (select ms from nowms) + 60000, 'paid', jsonb_build_object('gold', 500)))
+ where id = '00000000-0000-4000-8000-00000000cb01';
+select throws_ok($$ select public.kingdom_revoke(20, 20, (select id from public.kingdom_plots where x = 20 and y = 20),
+    '00000000-0000-4000-8000-00000000cb01', null, 'staff', 'fractional balance') $$,
+  'MRARG', 'bad_arguments', 'revoke: a fractional existing balance is refused (1,000.5 + 500)');
+select ok((select data -> 'gold' = '1000.5'::jsonb and data ? 'kingdom' and version = 20
+           from public.characters where id = '00000000-0000-4000-8000-00000000cb01')
+          and exists (select 1 from public.kingdom_plots where x = 20 and y = 20),
+  'after it: the balance, the kingdom, the version and the plot unchanged');
+update public.characters
+   set data = pg_temp.with_kingdom('{"gold": -1000}', 20, 20,
+         jsonb_build_object('finishAt', (select ms from nowms) + 60000, 'paid', jsonb_build_object('gold', 500)))
+ where id = '00000000-0000-4000-8000-00000000cb01';
+select throws_ok($$ select public.kingdom_revoke(20, 20, (select id from public.kingdom_plots where x = 20 and y = 20),
+    '00000000-0000-4000-8000-00000000cb01', null, 'staff', 'negative balance') $$,
+  'MRARG', 'bad_arguments', 'revoke: a negative existing balance is refused (-1,000 + 500)');
+select ok((select data -> 'gold' = '-1000'::jsonb and data ? 'kingdom' and version = 20
+           from public.characters where id = '00000000-0000-4000-8000-00000000cb01')
+          and exists (select 1 from public.kingdom_plots where x = 20 and y = 20),
+  'after it: the balance, the kingdom, the version and the plot unchanged');
+update public.characters
+   set data = pg_temp.with_kingdom('{"gold": "1000"}', 20, 20,
+         jsonb_build_object('finishAt', (select ms from nowms) + 60000, 'paid', jsonb_build_object('gold', 500)))
+ where id = '00000000-0000-4000-8000-00000000cb01';
+select throws_ok($$ select public.kingdom_revoke(20, 20, (select id from public.kingdom_plots where x = 20 and y = 20),
+    '00000000-0000-4000-8000-00000000cb01', null, 'staff', 'string balance') $$,
+  'MRARG', 'bad_arguments', 'revoke: a balance that isn''t a number is refused');
+update public.characters
+   set data = pg_temp.with_kingdom('{"gold": 9007199254740992}', 20, 20,
+         jsonb_build_object('finishAt', (select ms from nowms) + 60000, 'paid', jsonb_build_object('gold', 1)))
+ where id = '00000000-0000-4000-8000-00000000cb01';
+select throws_ok($$ select public.kingdom_revoke(20, 20, (select id from public.kingdom_plots where x = 20 and y = 20),
+    '00000000-0000-4000-8000-00000000cb01', null, 'staff', 'balance above range') $$,
+  'MRARG', 'bad_arguments', 'revoke: an existing balance already above the exact range is refused');
+select ok((select data -> 'gold' = '9007199254740992'::jsonb and version = 20
+           from public.characters where id = '00000000-0000-4000-8000-00000000cb01')
+          and not exists (select 1 from public.admin_log where details ->> 'reason' in
+                            ('fractional balance', 'negative balance', 'string balance', 'balance above range')),
+  'after the refused balances: no audit entry for any of them, and nothing written');
 
 update public.characters
    set data = pg_temp.with_kingdom('{"gold": 1000}', 20, 20, '{"finishAt": "soon", "paid": {"gold": 500}}')

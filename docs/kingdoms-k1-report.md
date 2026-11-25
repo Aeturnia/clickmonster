@@ -50,7 +50,7 @@
 
 **The construction record, as the revoke reads it.** It's K-2's to write, so K1-1 fixes the shape the refund reads:
 - **`data.kingdom.construction.finishAt`:** milliseconds since the epoch;
-- **`data.kingdom.construction.paid.gold`:** a whole number from 0 to 9,007,199,254,740,991 (JavaScript's `Number.MAX_SAFE_INTEGER`, the engine's largest exact integer; K1-DB02). The hero's gold after the refund must stay within the same range.
+- **`data.kingdom.construction.paid.gold`:** a whole number from 0 to 9,007,199,254,740,991 (JavaScript's `Number.MAX_SAFE_INTEGER`, the engine's largest exact integer; K1-DB02). **The hero's gold, before and after the refund,** must be a whole number in the same range; absent means 0 (1.8).
 
 "Under way" means `finishAt > floor(extract(epoch from now()) * 1000)`. A construction that is present but malformed, out of range or fractional raises `MRARG`, rather than refunding a guessed or rounded amount. Values are checked as `numeric` before any conversion. **K-2 must write this shape.**
 
@@ -216,3 +216,52 @@ The review accepted the core architecture: the transactions, the private reward 
 - **Reproduced locally.** The CLI prints the bare array when it is run without the AI-agent environment variables (`AI_AGENT`, `CLAUDECODE` and the other `CLAUDE_CODE_*` ones). In that mode, `ab87580`'s parser failed all four tests, and the new one passed all four. With the variables set, it also passes all four.
 - **The parser, checked directly** against both shapes, an empty result and a command tag.
 - **Cleanup:** the fixtures were removed each time, with no zones, plots or test heroes left.
+
+### 1.8 Re-review correction (the re-review of `4504c47`, 2026-11-25)
+
+**The re-review accepted K1-DB01 and K1-DB03, and the parser investigation.** It found one remaining gap in K1-DB02, and the owner authorized its correction.
+
+**The gap:** the revoke checked only that the hero's gold plus the refund stayed within the range. It didn't check that the existing balance, and so the result, was a whole number and not negative. For example:
+- 1,000.5 + 500 gave 1,500.5;
+- −1,000 + 500 gave −500.
+
+**The correction** applies when there is a refund to add.
+- **The hero's `gold`, if present, must be a JSON number.** Absent means 0.
+- **It must be a whole number from 0 to 9,007,199,254,740,991,** and so must the result.
+- **Anything else is `MRARG`,** raised before anything is written.
+- **The rest of the revoke is unchanged:**
+  - with no refund, the balance is never read or changed;
+  - the 3,000,000,007 and maximum-refund tests still pass.
+
+**The tests (pgTAP, 140, up from 133):**
+- **Four refusals:**
+  - a fractional balance (1,000.5 + 500);
+  - a negative balance (−1,000 + 500);
+  - a balance that isn't a number (`"1000"`);
+  - a balance already above the range.
+- **After each:** the balance, the Kingdom, the version and the plot are unchanged.
+- **No audit entry** was written for any of them.
+- **On the previous code:**
+  - **M13**, the previous upper-bound-only check, fails 14 tests, starting with the fractional-balance refusal;
+  - the restored migration passes.
+
+**The test harness** (`kingdom-checks.test.mjs`): the database URL is checked as local before it is kept. The cleanup hook runs only when it is set, so it can never target a database that failed the check.
+
+**Carried into K1-2 to K1-4** (the re-review's requirements, not done here):
+- **A destructive request passes the ownership id that was inspected and confirmed.** It is never silently replaced by the current id.
+- **`MRSTL` refreshes the state,** and asks for a new confirmation where one applies.
+- **The refund keeps the exact range** through the RPC response and the ledger entry after the commit.
+
+**Evidence for the corrected head** (local, the owner's laptop, 2026-11-25):
+- **pgTAP, alone:** 140 of 140 for Kingdoms.
+- **`npm run test:db`, three times:** pgTAP **222 of 222** (news 42, pending rewards 40, Kingdoms 140), and API and check tests **43 passed** with 1 opt-in skipped.
+- **The check tests:** `kingdom-checks.test.mjs` passes 4 of 4 in both output shapes, with and without the AI-agent environment.
+- **The checks:**
+  - `kingdom_verify.sql`: no rows;
+  - `kingdoms_state.sql`: 7 functions, 0 plots, **definitions md5 `afac33eeb3fb45123b4d18eb5300673b`**, measured on the LF migration. The previous value was `a0c2fb6a…`.
+- **Mutation checks:** all 14 (M1 to M13, with M9b) are caught, and the restored migration passes.
+- **Engine:** 90 of 90, three times.
+- **The browser suite was not completed locally.** Claude Code stopped the background run because the laptop was critically low on memory.
+  - The first run was cut off, and its partial count isn't a result.
+  - The run wasn't restarted. K1-1 changes no browser code.
+  - **For this head, the browser evidence is CI's browser job.**

@@ -78,8 +78,10 @@ const kingdom = (x, y) => JSON.stringify({ gold: 10, kingdom: { plot: { x, y }, 
 before(() => {
   const out = execFileSync(npx, ['--no-install', 'supabase', 'status', '-o', 'json'], { encoding: 'utf8', shell: process.platform === 'win32' });
   const s = JSON.parse(out.slice(out.indexOf('{'), out.lastIndexOf('}') + 1));
+  // Checked before it is kept: the cleanup hook runs only when DB_URL is set, so it can never
+  // target a database that failed this check.
+  assert.match(s.DB_URL, /@127\.0\.0\.1:\d+\//, 'local database only');
   DB_URL = s.DB_URL;
-  assert.match(DB_URL, /@127\.0\.0\.1:\d+\//, 'local database only');
 });
 
 after(() => {
