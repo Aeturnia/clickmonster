@@ -311,12 +311,20 @@ A separate staging Supabase project is dropped. The live sign-in session above c
   - Add a test that signs out while effects are queued.
 
 - **Pending rewards can be marked claimed but never delivered** (found while writing the Kingdoms scope, 2026-11-23). **Tracked in #102.**
-  - **Status (2026-11-24): fixed and deployed. The owner's live checks are pending, and the issue stays open.**
+  - **Status (2026-11-24, closed): resolved, and closed as completed** (22:52:14 UTC) on the owner's authorization, after PR #115's review.
+    - **What was kept:** its milestone, Public Launch Readiness.
+    - **#83's K-1 implementation prerequisite is satisfied.** K-1 stays unauthorized.
+  - **Status (2026-11-24, later): fixed, deployed, and the live checks accepted in independent review.** The issue stayed open until the owner authorized closing it.
     - **The scope:** `docs/pending-rewards-scope.md` (PR #104).
     - **The implementation:** stage 1, PR #107; stage 2, PR #108.
     - **The production rollout:** migration `20261123120000` applied and verified, and `game` **v15** deployed. See `docs/pending-rewards-report.md`, sections 3 and 4.
-    - **Remaining:** the owner's smoke check, a hunt reward delivered exactly once, and a pending reward surviving a refused action.
-    - **Tracking:** milestone Public Launch Readiness. It blocks #83 (a K-1 implementation prerequisite).
+    - **The owner's live checks** (report 4.4):
+      - the smoke check: passed;
+      - a hunt reward delivered exactly once: passed;
+      - a pending reward surviving a refused action: **not done in production.** The owner chose the real-stack integration tests (PR-1 to PR-4b, PR-6, NB-02) instead, and the review accepted that.
+    - **Findings from the play test,** non-blocking and tracked separately: #113 and #114 (below).
+    - **Tracking:** milestone Public Launch Readiness. It blocks #83, as a K-1 implementation prerequisite that is met once #102 is closed. K-1 stays unauthorized.
+  - **Status (2026-11-24, earlier):** fixed and deployed, with the owner's live checks pending.
   - **As found:**
     - in `supabase/functions/game/index.ts` (read at `2a43a12`), `claimRewards()` marked pending rewards claimed before the rest of the request ran, so a request that was then refused, or whose save failed, lost them;
     - an item that didn't fit in a full pack was discarded.
@@ -327,6 +335,21 @@ A separate staging Supabase project is dropped. The live sign-in session above c
   - **#102 is separate:** #102 moved the quest's ledger entry after the save, but not the completion itself.
   - **Tracking:** milestone Public Launch Readiness. The milestone doesn't make it a launch blocker or set its priority; those are the owner's decisions.
   - **Not authorized.** The details are in the issue.
+
+- **A world-boss hunt replays every earlier hit and miss after each attack** (found in #102's live play test, 2026-11-24). **Tracked in #113.**
+  - **What happens:** after a battle action, `main.js` plays and announces only the new log lines, but only if it's still the same fight. It recognises the same fight by `monsterId`, and a hunt battle has none; it is identified by `hunt`. So each hunt attack replays, and announces, the whole log.
+  - **Cosmetic:** the server resolves one exchange per attack, and damage, HP and rewards are correct. It dates from hunts (PR #6, 2026-11-12), not from #102.
+  - **The review's condition for the fix** (2026-11-24): compare typed battle identities, so a hunt and an ordinary fight can never count as the same fight. Test the effects and the announcements.
+  - **Scheduling:** after the Kingdoms work (the owner). No milestone.
+  - **Not authorized.**
+
+- **A hunt's reward notices are hidden behind the finished battle screen** (found in #102's live play test, 2026-11-24). **Tracked in #114.**
+  - **What happens:**
+    - the notices show only in the Explore screen's notice box, and the finished battle screen replaces it until Continue;
+    - no floating cue shows the reward's gold, which goes to the bank, nor its XP across a level-up.
+  - **A usability gap, not a data problem:** the rewards are delivered and saved exactly once.
+  - **The review's qualification** (2026-11-24): naming the item, or giving exact XP across a level-up, may need more reward information from the server. The scope must establish whether the current response is enough before committing to a client-only fix.
+  - **Not authorized, and not scheduled.** No milestone.
 
 ## Desktop layout (done)
 
