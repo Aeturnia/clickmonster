@@ -31,6 +31,13 @@ export function validateZone(def, allDefs) {
   if (def.town && !inBounds(def.town)) errors.push('The town is outside the zone.');
   if (def.town && !String(def.town.name || '').trim()) errors.push('Give the town a name.');
   if (!def.town && (def.starter || def.id === OVERWORLD_ID)) errors.push('Starter zones and the Overworld need a town.');
+  // The reverse of the placement check below (K1-ENG01): the Overworld's town, where the path to the
+  // Kingdom Lands goes, can't be moved onto a cell where another zone is placed. Editing and
+  // restoring the Overworld both come through here.
+  if (def.id === OVERWORLD_ID && def.town) {
+    const onTown = others.find((z) => Array.isArray(z.overworld) && z.overworld[0] === def.town.x && z.overworld[1] === def.town.y);
+    if (onTown) errors.push(`${onTown.name} is placed on that Overworld cell. The Overworld town is where the path to the Kingdom Lands goes, so it needs a cell of its own.`);
+  }
   if (!def.town && def.shop) errors.push('A shop needs a town.');
   if (def.shop) {
     const s = def.shop;

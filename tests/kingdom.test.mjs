@@ -14,6 +14,7 @@ import { createCharacter, ensureCharacter } from '../public/js/engine/character.
 import { move, walkTo, usePortal, monstersHere, featuresAt, KINGDOM_NO_WALKING } from '../public/js/engine/world.js';
 import { claimKingdom, releaseKingdom, KINGDOMS_CLOSED, KINGDOM_ELSEWHERE } from '../public/js/engine/kingdom.js';
 import { startBattle } from '../public/js/engine/battle.js';
+import { startHuntBattle } from '../public/js/engine/hunt.js';
 import { buy, deposit, withdraw } from '../public/js/engine/inventory.js';
 import { spendLevel, applyRegen } from '../public/js/engine/character.js';
 
@@ -152,6 +153,25 @@ test('validateZone refuses the reserved id, a path into the Kingdom Lands, and a
   for (const d of defs) assert.deepEqual(validateZone(d, defs), [], `the built-in ${d.id} is still valid`);
 });
 
+test('validateZone refuses moving the Overworld town onto a cell where another zone is placed (K1-ENG01)', () => {
+  const defs = DEFAULT_ZONES;
+  const ow = defs.find((d) => d.id === OVERWORLD_ID);
+  const ashford = defs.find((d) => d.id === 'ashford');
+  const [ax, ay] = ashford.overworld;
+  const moved = { ...ow, town: { ...ow.town, x: ax, y: ay } };
+  const errors = validateZone(moved, defs);
+  assert.ok(errors.some((e) => e.includes(`${ashford.name} is placed on that Overworld cell`)), JSON.stringify(errors));
+  // A restore validates the built-in Overworld against the current rows: the same check applies.
+  const rowsWithZoneOnTown = [...defs.filter((d) => d.id !== 'ashford'), { ...ashford, overworld: [ow.town.x, ow.town.y] }];
+  assert.ok(validateZone(ow, rowsWithZoneOnTown).some((e) => /is placed on that Overworld cell/.test(e)),
+    'restoring the Overworld over a zone placed on its town is refused');
+  // A free cell is fine, and the original direction is still refused.
+  const free = { ...ow, town: { ...ow.town, x: 3, y: 3 } };
+  assert.ok(!defs.some((d) => Array.isArray(d.overworld) && d.overworld[0] === 3 && d.overworld[1] === 3), 'the fixture cell is free');
+  assert.deepEqual(validateZone(free, defs).filter((e) => /placed on that Overworld cell/.test(e)), []);
+  assert.ok(validateZone({ ...ashford, overworld: [ow.town.x, ow.town.y] }, defs).some((e) => /Overworld town/.test(e)));
+});
+
 // ------------------------------------------------------------ the gate and the closed state (ensureCharacter)
 test('closed: a hero found in the Kingdom Zone is moved to the Crossroads, not to their home', () => {
   const c = atGate(hero());
@@ -192,6 +212,10 @@ test('in the Kingdom Zone: no walking, no monsters, and the gate leads back to t
   assert.deepEqual(c.loc, { zone: KINGDOM_ZONE_ID, x: 1, y: 1 });
   assert.deepEqual(monstersHere(c), []);
   assert.throws(() => startBattle(c, 'ashford:anything'));
+  const hunt = { id: 'h1', name: 'Placed directly', level: 1, hp: 10, max_hp: 10, zone: KINGDOM_ZONE_ID };
+  assert.throws(() => startHuntBattle(c, hunt), /No hunt can be fought in the Kingdom Lands/, 'even a hunt row placed there');
+  assert.throws(() => startHuntBattle(c, { ...hunt, zone: 'ashford' }), /not in this zone/);
+  assert.equal(c.battle, null);
   usePortal(c);
   const t = crossroads();
   assert.deepEqual(c.loc, { zone: OVERWORLD_ID, x: t.x, y: t.y });

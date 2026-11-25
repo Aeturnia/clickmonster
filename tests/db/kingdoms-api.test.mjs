@@ -281,11 +281,15 @@ test('K-6 a claim refused by the database leaves staged rewards pending, deliver
   assert.equal((state.body.char.gold || 0) + (state.body.char.bank || 0), 1055);
 });
 
-test('K-7 claiming and releasing are refused outside the Kingdom Zone; walking in it is refused', { skip: SKIP }, async () => {
+test('K-7 walking in the Kingdom Zone is refused; a claim from outside it is refused', { skip: SKIP }, async () => {
   await toGate('d', 1000);
   const walk = await game('d', 'walk', { x: 5, y: 5 });
   assert.equal(walk.status, 400);
   assert.match(walk.body.error, /plot map/);
+  const step = await game('d', 'move', { dir: 's' });
+  assert.equal(step.status, 400);
+  assert.match(step.body.error, /plot map/);
+  assert.deepEqual((await heroRow('d')).data.loc, { zone: KINGDOM_ZONE_ID, x: KINGDOM_GATE.x, y: KINGDOM_GATE.y }, 'still at the gate');
   await setHero('d', (c) => { c.loc = { zone: 'overworld', x: 4, y: 4 }; c.lastActionAt = 0; });
   const [x, y] = P(6);
   const res = await game('d', 'kingdomClaim', { x, y });
@@ -294,6 +298,77 @@ test('K-7 claiming and releasing are refused outside the Kingdom Zone; walking i
   assert.equal(await plotAt(x, y), null);
 });
 
+test('K-7b an unaffordable claim changes neither the plot, the hero\'s gold nor the ledger', { skip: SKIP }, async () => {
+  const [x, y] = P(11);
+  await clearPlots([x, y]);
+  // Banked gold doesn't pay: the claim is paid from carried gold (ratified by the owner, 2026-11-25).
+  await toGate('d', TEST_CONFIG.cost - 1);
+  await setHero('d', (c) => { c.bank = 100000; });
+  const before = await heroRow('d');
+  const ledger = await ledgerOf('kingdom');
+  const res = await game('d', 'kingdomClaim', { x, y });
+  assert.equal(res.status, 400, JSON.stringify(res.body));
+  assert.match(res.body.error, /costs 100 gold/);
+  assert.equal(await plotAt(x, y), null, 'no plot');
+  const after = await heroRow('d');
+  assert.equal(after.data.gold, TEST_CONFIG.cost - 1, 'carried gold unchanged');
+  assert.equal(after.data.bank, 100000, 'banked gold unchanged');
+  assert.equal(after.data.kingdom, undefined);
+  assert.equal(after.version, before.version, 'nothing saved');
+  assert.deepEqual(await ledgerOf('kingdom'), ledger, 'no ledger entry');
+});
+
+test('K-7c a plot owner cannot release from outside the Kingdom Zone', { skip: SKIP }, async () => {
+  // Hero a holds P(0) from K-1.
+  const [x, y] = P(0);
+  const plot = await plotAt(x, y);
+  assert.equal(plot?.character_id, users.a.charId, 'hero a holds the plot');
+  await setHero('a', (c) => { c.loc = { zone: 'overworld', x: 4, y: 4 }; c.lastActionAt = 0; });
+  const before = await heroRow('a');
+  const res = await game('a', 'kingdomRelease', { plotId: plot.id });
+  assert.equal(res.status, 400, JSON.stringify(res.body));
+  assert.match(res.body.error, /Travel to the Kingdom Lands/);
+  assert.equal((await plotAt(x, y))?.id, plot.id, 'the plot is still theirs');
+  const after = await heroRow('a');
+  assert.deepEqual(after.data.kingdom.plot, { x, y }, 'the Kingdom is intact');
+  assert.equal(after.version, before.version, 'nothing saved');
+});
+
+test('K-7d in the Kingdom Zone, direct requests can\'t start a fight, a duel or a hunt', { skip: SKIP }, async () => {
+  await toGate('b', 1000);
+  await toGate('d', 1000);
+  // An ordinary fight: no monster is there.
+  const fight = await game('b', 'fight', { monsterId: 'ashford:field-rat' });
+  assert.equal(fight.status, 400, JSON.stringify(fight.body));
+  // A duel with another hero at the gate: the Kingdom Zone isn't a PvP zone.
+  const duel = await game('b', 'attack', { targetId: users.d.charId });
+  assert.equal(duel.status, 400, JSON.stringify(duel.body));
+  assert.match(duel.body.error, /not a PvP zone/);
+  // A hunt: one in another zone can't be joined from here, and neither can a hunt row placed in the
+  // Kingdom Zone directly (the admin console refuses to start one there, K-16).
+  const ends = new Date(Date.now() + 3600000).toISOString();
+  const made = await (await service('/rest/v1/hunts', {
+    method: 'POST', headers: { Prefer: 'return=representation' },
+    body: JSON.stringify([
+      { zone: 'ashford', name: `Elsewhere ${RUN}`, level: 1, max_hp: 1000, hp: 1000, reward: { gold: 1, xp: 1, relic: false }, ends_at: ends },
+      { zone: KINGDOM_ZONE_ID, name: `Placed ${RUN}`, level: 1, max_hp: 1000, hp: 1000, reward: { gold: 1, xp: 1, relic: false }, ends_at: ends },
+    ]),
+  })).json();
+  assert.equal(made.length, 2, JSON.stringify(made).slice(0, 200));
+  try {
+    for (const h of made) {
+      const join = await game('b', 'hunt', { huntId: h.id });
+      assert.equal(join.status, 400, `${h.zone}: ${JSON.stringify(join.body)}`);
+    }
+  } finally {
+    for (const h of made) await service(`/rest/v1/hunts?id=eq.${h.id}`, { method: 'DELETE' });
+  }
+  for (const who of ['b', 'd']) {
+    const row = await heroRow(who);
+    assert.equal(row.data.battle, null, `${who} has no fight`);
+    assert.deepEqual(row.data.loc, { zone: KINGDOM_ZONE_ID, x: KINGDOM_GATE.x, y: KINGDOM_GATE.y });
+  }
+});
 // ------------------------------------------------------------ release
 test('K-8 release: the plot named is freed; a stale release naming an older Kingdom is refused (MRSTL)', { skip: SKIP }, async () => {
   const [x1, y1] = P(7), [x2, y2] = P(8);
