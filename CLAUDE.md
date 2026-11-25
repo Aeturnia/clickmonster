@@ -64,7 +64,8 @@ Read these first:
   - `docs/kingdoms-scope.md`, PR #101 (`707eabc`), with amendment 1 in PR #106 (`3bd6116`);
   - the owner's decisions K-D1 to K-D20 and eight follow-ups;
   - **K-1 and K-2 implementation are not authorized.** K-1's prerequisite, #102, is satisfied.
-  - **K-1 implementation planning is authorized** (2026-11-24): `docs/kingdoms-k1-plan.md`. Its revision 1 (2026-11-25) is at its review gate. The four owner decisions in its section 9 were ratified on 2026-11-25.
+  - **The K-1 plan is accepted:** `docs/kingdoms-k1-plan.md`, revision 1, merged as PR #116 (`55e41f7`, 2026-11-25), with the four owner decisions ratified and qualifications Q1 to Q4 (recorded on #83).
+  - **K1-1, the database, is authorized** (2026-11-25) and at its review gate. See `docs/kingdoms-k1-report.md`. **K1-2 to K1-5 are not authorized.**
 - **#102, pending rewards delivered exactly once: fixed, deployed, accepted in independent review, and closed as completed** (2026-11-24, on the owner's authorization).
   - **The scope and reports:** `docs/pending-rewards-scope.md` and `docs/pending-rewards-report.md`.
   - **The implementation:** stage 1, PR #107; stage 2, PR #108. The rollout procedure is PR #109.
@@ -230,6 +231,13 @@ Read these first:
   - **The ledger:** entries that depend on a hero's save are queued on its row (`queueLedger()`) and written only after it commits. They stay best effort.
   - **Tests:** a failing save is made deterministic with a test-only trigger on the local stack (`tests/db/pending-rewards-api.test.mjs`).
   - **Production:** the migration (`20261123120000`) and the `game` redeploy each need the owner's authorization, migration first.
+- **Kingdoms, K-1** (#83; `docs/kingdoms-scope.md`, `docs/kingdoms-k1-plan.md`, `docs/kingdoms-k1-report.md`). K1-1 adds the database only (`20261125120000_kingdoms.sql`). Nothing calls it yet, and nothing is in production:
+  - **The table and functions:** `kingdom_plots`, and five `security definer` functions (claim, release, revoke, reserve, unreserve), each one transaction, executable by the service role only.
+  - **Claim and release** claim the request's staged reward ids through a private helper (R-1) and save with `version = p_version + 1`.
+  - **The revoke** uses `version = version + 1` on the locked current row, so an in-flight save can't write a revoked Kingdom back. It returns the gold refunded.
+  - **The finder,** `kingdom_free_plot()`, is `volatile` and `security invoker`, for signed-in players.
+  - **The invariant I-1:** a hero has `data.kingdom` if and only if a claimed plot is theirs. `supabase/checks/kingdom_verify.sql` must return no rows.
+  - **`save_hero_with_rewards()` is never changed** for Kingdoms.
 - **Signing out and refused sessions** (`net.js`; `docs/sign-out-report.md`):
   - **`signOut()` and `endSession()`** end this device's session only (`scope: 'local'`), with a 5 s limit. If the library errs, runs out of time or leaves a session saved, they remove `clickmonster.auth` themselves (only if it is still the session being ended), keep the message in `sessionStorage` (`clickmonster.note`) and reload. `signOut()` is the player's own; `endSession()` says "Your session has ended".
   - **Other tabs** follow a removed session through a `storage` listener.
@@ -328,7 +336,7 @@ Read these first:
 ```
 npm test                 # engine, entrance file checks, the first-paint tripwire, the public pages, news rules, the news page handler, the town rule, the log rules, the session rule and the pending-rewards staging rule (90)
 npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (315)
-npm run test:db          # database (pgTAP, 82: news 42, pending rewards 40) and API/function/recovery/session/pending-rewards tests (39, plus 1 opt-in) on the LOCAL Supabase stack, with Mailpit
+npm run test:db          # database (pgTAP, 186: news 42, pending rewards 40, Kingdoms 104) and API/function/recovery/session/pending-rewards tests (39, plus 1 opt-in) on the LOCAL Supabase stack, with Mailpit
 npx playwright install chromium   # once
 ```
 
