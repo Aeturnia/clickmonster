@@ -30,7 +30,9 @@ function query({ sql, file }) {
     const out = execFileSync(npx, ['--no-install', 'supabase', 'db', 'query', '--db-url', DB_URL,
       '--output-format', 'json', '--file', tmp || file],
       { encoding: 'utf8', shell: process.platform === 'win32', stdio: ['ignore', 'pipe', 'pipe'] });
-    const result = jsonObjects(out).find((o) => Array.isArray(o.rows));
+    // Two shapes seen from the same CLI version: a bare array of rows (on CI), or an object with a
+    // `rows` array (on the laptop, where the CLI wraps results it prints for an AI agent).
+    const result = jsonValues(out).map((v) => (Array.isArray(v) ? { rows: v } : v)).find((o) => Array.isArray(o?.rows));
     // An insert, update or delete prints only its command tag ("INSERT 0 5"). A query, and every
     // check file, must print its rows.
     const wantsRows = file !== undefined || /^\s*select\b/i.test(sql);
@@ -39,9 +41,9 @@ function query({ sql, file }) {
   } finally { if (tmp) fs.rmSync(tmp, { force: true }); }
 }
 
-// Every top-level JSON object in the CLI's output. The CLI can print more than one (CI printed a
-// second object after the result), so the output is scanned, not sliced from first { to last }.
-function jsonObjects(text) {
+// Every top-level JSON object or array in the CLI's output, which may also hold other text, so the
+// output is scanned rather than sliced from its first bracket to its last.
+function jsonValues(text) {
   const found = [];
   let depth = 0, start = -1, inString = false, escaped = false;
   for (let i = 0; i < text.length; i++) {
@@ -53,8 +55,8 @@ function jsonObjects(text) {
       continue;
     }
     if (c === '"' && depth > 0) inString = true;
-    else if (c === '{') { if (depth++ === 0) start = i; }
-    else if (c === '}' && depth > 0 && --depth === 0) {
+    else if (c === '{' || c === '[') { if (depth++ === 0) start = i; }
+    else if ((c === '}' || c === ']') && depth > 0 && --depth === 0) {
       try { found.push(JSON.parse(text.slice(start, i + 1))); } catch { /* not JSON: skip it */ }
     }
   }

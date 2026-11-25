@@ -201,10 +201,18 @@ The review accepted the core architecture: the transactions, the private reward 
 - **Engine:** 90 of 90, three times.
 - **Browser:** 315 of 315, three times, with the stack stopped.
 
-**CI on `bf0b504` (run 45643786524) failed in the database job:** all four tests in `kingdom-checks.test.mjs` failed. pgTAP passed (215 of 215), as did the other API tests.
-- **The cause was the test's own parsing.** It read the result by slicing from the CLI output's first `{` to its last `}`. On CI's runner the output had more after the result object, so `JSON.parse` failed ("Unexpected non-whitespace character after JSON"). On the laptop it had passed.
+**CI on `bf0b504` (run 45643786524) and on `ab87580` (run 45647032736) failed in the database job:** all four tests in `kingdom-checks.test.mjs` failed. pgTAP passed (215 of 215), as did the other API tests.
+- **The cause was the test's own parsing.** It read the result by slicing from the CLI output's first `{` to its last `}`, so `JSON.parse` failed ("Unexpected non-whitespace character after JSON"). On the laptop it had passed.
+- **A first fix, `ab87580`, misread the cause.** It scanned for a JSON object with a `rows` key. CI run 45647032736 failed the same four tests, and **its error message, which now includes the raw output, showed the real cause.**
+- **The real cause:** the same CLI version (2.122.0) prints two shapes:
+  - **on CI, a bare JSON array of rows.** Slicing from the first `{` to the last `}` of an array of objects gives `{…},{…}`;
+  - **on the laptop, an object with a `rows` array,** with a boundary and a warning. The CLI wraps results this way when an AI agent runs it.
 - **The fix:**
-  - the test now scans the output for each top-level JSON object and takes the one with `rows`;
-  - a query or check file that prints no rows fails, with the raw output in the message. An insert, update or delete prints only its command tag, so those return no rows.
+  - the test scans the output for every top-level JSON object or array, and accepts either shape;
+  - a query or check file that prints no rows still fails, with the raw output in the message;
+  - an insert, update or delete prints only its command tag, so it returns no rows.
+- **The CI run's output also shows the checks themselves working on CI.** The I-1 check reported the fixture heroes `kingdom_malformed`, `kingdom_without_plot` and `plot_mismatch`, at (93, 93).
 - **Nothing in the checks or the migration changed.**
-- **Locally, the four tests pass again,** and the fixtures were removed (no zones, plots or test heroes left).
+- **Reproduced locally.** The CLI prints the bare array when it is run without the AI-agent environment variables (`AI_AGENT`, `CLAUDECODE` and the other `CLAUDE_CODE_*` ones). In that mode, `ab87580`'s parser failed all four tests, and the new one passed all four. With the variables set, it also passes all four.
+- **The parser, checked directly** against both shapes, an empty result and a command tag.
+- **Cleanup:** the fixtures were removed each time, with no zones, plots or test heroes left.
