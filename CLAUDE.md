@@ -64,6 +64,7 @@ Read these first:
   - `docs/kingdoms-scope.md`, PR #101 (`707eabc`), with amendment 1 in PR #106 (`3bd6116`);
   - the owner's decisions K-D1 to K-D20 and eight follow-ups;
   - **K-1 and K-2 implementation are not authorized.** K-1's prerequisite, #102, is satisfied.
+  - **K-1 implementation planning is authorized** (2026-11-24): `docs/kingdoms-k1-plan.md`. Its revision 1 (2026-11-25) is at its review gate. The four owner decisions in its section 9 were ratified on 2026-11-25.
 - **#102, pending rewards delivered exactly once: fixed, deployed, accepted in independent review, and closed as completed** (2026-11-24, on the owner's authorization).
   - **The scope and reports:** `docs/pending-rewards-scope.md` and `docs/pending-rewards-report.md`.
   - **The implementation:** stage 1, PR #107; stage 2, PR #108. The rollout procedure is PR #109.
