@@ -122,7 +122,9 @@
   - **In a rolled-back transaction,** zone rows were inserted with three problems: a `kingdoms` zone, a path into it, and an Overworld path at its town cell. Row 6 listed all three.
   - **A harmless path elsewhere wasn't flagged.**
   - The local `zones` table was empty before and after.
-- **Engine and browser suites:** section 1.4.
+- **Engine and browser suites,** unaffected by K1-1, run three times each on the laptop, with the stack stopped for the browser runs:
+  - engine **90 of 90**;
+  - browser **315 of 315**.
 
 ### 1.4 Not done in K1-1
 
