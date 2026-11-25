@@ -65,7 +65,9 @@ Read these first:
   - the owner's decisions K-D1 to K-D20 and eight follow-ups;
   - **K-1 and K-2 implementation are not authorized.** K-1's prerequisite, #102, is satisfied.
   - **The K-1 plan is accepted:** `docs/kingdoms-k1-plan.md`, revision 1, merged as PR #116 (`55e41f7`, 2026-11-25), with the four owner decisions ratified and qualifications Q1 to Q4 (recorded on #83).
-  - **K1-1, the database, is authorized** (2026-11-25) and at its review gate. See `docs/kingdoms-k1-report.md`. **K1-2 to K1-5 are not authorized.**
+  - **K1-1, the database, is accepted and merged:** PR #117 (`0b9b4ab`, 2026-11-25).
+  - **K1-2, the engine and the `game` and `admin` functions, is authorized** (2026-11-25) and at its review gate. See `docs/kingdoms-k1-report.md`, section 2. Nothing is deployed.
+  - **K1-3 to K1-5 are not authorized.**
 - **#102, pending rewards delivered exactly once: fixed, deployed, accepted in independent review, and closed as completed** (2026-11-24, on the owner's authorization).
   - **The scope and reports:** `docs/pending-rewards-scope.md` and `docs/pending-rewards-report.md`.
   - **The implementation:** stage 1, PR #107; stage 2, PR #108. The rollout procedure is PR #109.
@@ -239,6 +241,14 @@ Read these first:
   - **The finder,** `kingdom_free_plot()`, is `volatile` and `security invoker`, for signed-in players.
   - **The invariant I-1:** a hero has `data.kingdom` if and only if a claimed plot is theirs. `supabase/checks/kingdom_verify.sql` must return no rows. `tests/db/kingdom-checks.test.mjs` runs the check files against fixtures, because pgTAP can't read `supabase/checks/`.
   - **`save_hero_with_rewards()` is never changed** for Kingdoms.
+  - **K1-2, the shared code and the functions:**
+    - **The switch and values:** in `public/js/data/kingdoms.js`, closed as shipped. `kingdomsOpen()` is the one predicate.
+    - **The Kingdom Zone** (`kingdoms`) is registered only while open, last, with one path in at the Overworld town cell.
+    - **The rules:** `public/js/engine/kingdom.js`.
+    - **The `game` function commits every save through `commitRow()`:** staging, the right RPC, the refusal mapping (`reason` codes such as `plot_changed`), the version, and the ledger after the commit.
+    - **A release takes the plot instance id from the request,** never from a lookup.
+    - **A `state` read saves a location correction.**
+    - **The `admin` function's `meta`** reports `kingdoms: { version, open }`. The Kingdom changes are admin only and refused while closed.
 - **Signing out and refused sessions** (`net.js`; `docs/sign-out-report.md`):
   - **`signOut()` and `endSession()`** end this device's session only (`scope: 'local'`), with a 5 s limit. If the library errs, runs out of time or leaves a session saved, they remove `clickmonster.auth` themselves (only if it is still the session being ended), keep the message in `sessionStorage` (`clickmonster.note`) and reload. `signOut()` is the player's own; `endSession()` says "Your session has ended".
   - **Other tabs** follow a removed session through a `storage` listener.
@@ -335,9 +345,9 @@ Read these first:
 ## Testing
 
 ```
-npm test                 # engine, entrance file checks, the first-paint tripwire, the public pages, news rules, the news page handler, the town rule, the log rules, the session rule and the pending-rewards staging rule (90)
+npm test                 # engine, entrance file checks, the first-paint tripwire, the public pages, news rules, the news page handler, the town rule, the log rules, the session rule, the pending-rewards staging rule and the Kingdom rules (109)
 npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (315)
-npm run test:db          # database (pgTAP, 222: news 42, pending rewards 40, Kingdoms 140) and API/function/recovery/session/pending-rewards/Kingdom-check tests (43, plus 1 opt-in) on the LOCAL Supabase stack, with Mailpit
+npm run test:db          # database (pgTAP, 222: news 42, pending rewards 40, Kingdoms 140) and API/function/recovery/session/pending-rewards/Kingdom-check/Kingdom tests (60, plus 4 opt-in: 1, and the 3 closed-state checks) on the LOCAL Supabase stack, with Mailpit
 npx playwright install chromium   # once
 ```
 
@@ -377,6 +387,12 @@ npx playwright install chromium   # once
 - **The first paint** is a test (`tests/entrance-budget.test.mjs`): the document plus every stylesheet and script `index.html` loads, counted as LF. At most 48,000 bytes (MR-B2's tripwire); above 40,000 is reported.
 
 **The local Supabase stack** (landing L-3) runs in Docker Desktop. The pinned CLI is a dev dependency.
+- **The Kingdoms test configuration** (K-1, decision 9.1). The Kingdom API tests need the local functions to run with Kingdoms open on fixed test values.
+  - **Before `supabase start`,** write `supabase/functions/.env` with `KINGDOMS_TEST=1`: `printf 'KINGDOMS_TEST=1\n' > supabase/functions/.env`. CI's database job does this.
+  - **The file is ignored by Git.** Never commit it.
+  - **The values apply only together with the local gateway (`kong`)** as `SUPABASE_URL`, which production can't have (`public/js/data/kingdoms.js`, `testConfigFrom()`).
+  - **Without the file, `tests/db/kingdoms-api.test.mjs` fails, saying so.**
+  - **The closed-state check:** start the stack without the file, then run `KINGDOMS_EXPECT_CLOSED=1 npm run test:db`. This runs the opt-in `tests/db/kingdoms-closed.test.mjs` and skips the open-state tests.
 - **Start it:**
   ```
   npx supabase start -x studio,imgproxy,storage-api,logflare,vector,supavisor,realtime,postgres-meta

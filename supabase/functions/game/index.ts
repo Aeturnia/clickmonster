@@ -14,12 +14,22 @@ import { duel } from './js/engine/pvp.js';
 import { hourBucket, generateQuests, accept, questMatches, grantQuestReward, questTitle } from './js/engine/quests.js';
 import { sessionFailure } from './js/engine/session.js';
 import { stagePending, settleWaiting } from './js/engine/rewards.js';
+import { setKingdomConfig, testConfigFrom, kingdomConfig } from './js/data/kingdoms.js';
+import { reloadZones } from './js/data/zones.js';
+import { claimKingdom, releaseKingdom } from './js/engine/kingdom.js';
 
 const admin = createClient(
   Deno.env.get('SUPABASE_URL')!,
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
   { auth: { persistSession: false, autoRefreshToken: false } },
 );
+
+// Kingdoms K-1 (docs/kingdoms-k1-plan.md 2.2; decision 9.1). The shipped configuration keeps
+// Kingdoms closed. The local test configuration applies only with KINGDOMS_TEST=1 AND the local
+// stack's gateway (`kong`) as SUPABASE_URL, which production can't have; never from a request.
+// The zones are registered again under it: the import-time registry was built before it.
+setKingdomConfig(testConfigFrom(Deno.env.get('KINGDOMS_TEST'), Deno.env.get('SUPABASE_URL')));
+reloadZones();
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -29,9 +39,11 @@ const CORS = {
 
 class GameError extends Error {
   status: number;
-  constructor(message: string, status = 400) {
+  reason?: string; // a stable code for the client, where it must act on the kind of refusal
+  constructor(message: string, status = 400, reason?: string) {
     super(message);
     this.status = status;
+    this.reason = reason;
   }
 }
 
@@ -52,6 +64,7 @@ type Row = {
   banned_until?: string | null; jailed_until?: string | null; muted_until?: string | null; sanction_reason?: string | null;
   staging?: Staging;
   pendingLedger?: Array<[string, number]>; // written only after this row's save commits
+  locMoved?: boolean; // ensureCharacter() moved the hero on load: the correction must be saved (K1-B04)
 };
 
 async function loadRow(filter: { user_id?: string; id?: string }): Promise<Row | null> {
@@ -60,7 +73,14 @@ async function loadRow(filter: { user_id?: string; id?: string }): Promise<Row |
   if (filter.id) q = q.eq('id', filter.id);
   const { data, error } = await q.maybeSingle();
   if (error) throw error;
-  if (data) ensureCharacter((data as Row).data);
+  if (data) {
+    // Only the location is compared: ensureCharacter() also fills defaults into older heroes,
+    // which mustn't make every read of them save.
+    const row = data as Row;
+    const before = JSON.stringify(row.data?.loc ?? null);
+    ensureCharacter(row.data);
+    row.locMoved = JSON.stringify(row.data.loc) !== before;
+  }
   return data as Row | null;
 }
 
@@ -68,29 +88,52 @@ function publicColumns(char: any) {
   return { name: char.name, level: char.level, zone: char.loc.zone, x: char.loc.x, y: char.loc.y };
 }
 
-// Optimistic locking: only save if nobody else changed the row since we read it.
-// With staged rewards, the save and their claims commit together in save_hero_with_rewards()
-// (#102; supabase/migrations/20261123120000_save_hero_with_rewards.sql), or neither does. Every
-// other way of writing a hero's data must keep that rule (docs/pending-rewards-scope.md, R-1).
-// The row's queued ledger entries are written only after the commit.
-async function saveRow(row: Row, char: any) {
+// The answers to a refused commit. A reward conflict or a changed hero is the same answer as a busy
+// hero (#102). The Kingdom codes are the database's error contract (docs/kingdoms-k1-report.md
+// 1.1); `reason` lets the client act on the kind of refusal: on plot_changed it reloads the state
+// and asks again, never retrying with another plot (the K1-1 review's carry-forward).
+const COMMIT_REFUSALS: Record<string, [string, number, string?]> = {
+  MRREW: ['Your hero was busy — try again.', 409],
+  MRVER: ['Your hero was busy — try again.', 409],
+  MRPLT: ['That plot was just taken.', 409, 'plot_taken'],
+  MRHAS: ['You already have a Kingdom.', 409, 'has_kingdom'],
+  MRNOP: ['You don’t have a Kingdom.', 409, 'no_plot'],
+  MRSTL: ['Your Kingdom has changed since you looked. Check it and try again.', 409, 'plot_changed'],
+};
+
+// A Kingdom change commits through its own function, with the hero's save (5.3.1).
+type KingdomCommit =
+  | { fn: 'kingdom_claim'; plotX: number; plotY: number }
+  | { fn: 'kingdom_release'; plotId: number };
+
+// The one commit path (docs/kingdoms-k1-plan.md 2.2), used by every save: finish staging; commit
+// through the right function; map its refusals; take the new version; and only then write the
+// queued ledger entries. Optimistic locking throughout: the hero is saved only if nobody changed
+// it since it was read. With staged rewards, the save and their claims commit together, or neither
+// does (#102, R-1); a Kingdom claim or release passes the same staged ids to its own function.
+async function commitRow(row: Row, char: any, kingdom?: KingdomCommit) {
   if (row.staging) await finishStaging(row, char, Date.now());
   const ids = row.staging?.ids || [];
-  if (ids.length) {
-    const pub = publicColumns(char);
-    const { data, error } = await admin.rpc('save_hero_with_rewards', {
-      p_char: row.id, p_version: row.version, p_data: char,
-      p_name: pub.name, p_level: pub.level, p_zone: pub.zone, p_x: pub.x, p_y: pub.y,
-      p_reward_ids: ids,
-    });
+  const pub = publicColumns(char);
+  const hero = {
+    p_char: row.id, p_version: row.version, p_data: char,
+    p_name: pub.name, p_level: pub.level, p_zone: pub.zone, p_x: pub.x, p_y: pub.y,
+  };
+  let call: [string, Record<string, unknown>] | null = null;
+  if (kingdom?.fn === 'kingdom_claim') call = ['kingdom_claim', { ...hero, p_plot_x: kingdom.plotX, p_plot_y: kingdom.plotY, p_reward_ids: ids }];
+  else if (kingdom?.fn === 'kingdom_release') call = ['kingdom_release', { ...hero, p_plot_id: kingdom.plotId, p_reward_ids: ids }];
+  else if (ids.length) call = ['save_hero_with_rewards', { ...hero, p_reward_ids: ids }];
+
+  if (call) {
+    const { data, error } = await admin.rpc(call[0], call[1]);
     if (error) {
-      // A reward claimed elsewhere, or the hero changed: the same answer as a busy hero. Nothing
-      // was written, so the rewards stay pending. Anything else (MRARG) is a server error.
-      if (error.code === 'MRREW' || error.code === 'MRVER') throw new GameError('Your hero was busy — try again.', 409);
+      // Nothing was written, so staged rewards stay pending. Anything unmapped (MRARG) is a server error.
+      const refusal = COMMIT_REFUSALS[String(error.code)];
+      if (refusal) throw new GameError(refusal[0], refusal[1], refusal[2]);
       throw error;
     }
     row.version = Number(data);
-    row.staging!.ids = [];
+    if (row.staging) row.staging.ids = [];
   } else {
     const { data, error } = await admin.from('characters')
       .update({ data: char, ...publicColumns(char), version: row.version + 1, updated_at: new Date().toISOString() })
@@ -100,6 +143,12 @@ async function saveRow(row: Row, char: any) {
     row.version += 1;
   }
   await flushLedger(row);
+}
+
+// Every ordinary save. Every other way of writing a hero's data must keep R-1
+// (docs/pending-rewards-scope.md): here, through commitRow().
+async function saveRow(row: Row, char: any) {
+  await commitRow(row, char);
 }
 
 async function announce(kind: string, text: string) {
@@ -433,7 +482,7 @@ async function tryCompleteQuest(row: Row, char: any, now: number) {
 }
 
 // ---------------------------------------------------------------- actions
-const FAST_ACTIONS = new Set(['melee', 'cast', 'flee', 'fight', 'again', 'move', 'walk', 'hunt']);
+const FAST_ACTIONS = new Set(['melee', 'cast', 'flee', 'fight', 'again', 'move', 'walk', 'hunt', 'kingdomClaim', 'kingdomRelease']);
 const MIN_ACTION_MS = 150;
 
 const ACTIONS: Record<string, (c: any, a: any) => unknown> = {
@@ -478,7 +527,7 @@ async function handle(userId: string, action: string, args: any) {
     applyRegen(row.data, now);
     const notice = await checkQuestStillOpen(row.data, now);
     const before = JSON.stringify(row.data.notices || []);
-    let changed = false;
+    let changed = !!row.locMoved; // a location correction on load is saved (K1-B04)
     const hb = row.data.battle;
     if (hb?.hunt && !hb.over && !(await activeHunt(hb.hunt))) {
       hb.over = 'ended';
@@ -534,6 +583,25 @@ async function handle(userId: string, action: string, args: any) {
     char.lastActionAt = now;
   }
   applyRegen(char, now);
+
+  // Kingdoms K-1 (docs/kingdoms-k1-plan.md 2.2). Each commits through its own database function,
+  // with the request's staged rewards (R-1), and is refused while Kingdoms are closed. They come
+  // before the generic actions, so the claim's gold is ledgered once, under `kingdom`.
+  if (action === 'kingdomClaim') {
+    const spent = claimKingdom(char, args?.x, args?.y, now, kingdomConfig());
+    queueLedger(row, 'kingdom', -spent);
+    await commitRow(row, char, { fn: 'kingdom_claim', plotX: char.kingdom.plot.x, plotY: char.kingdom.plot.y });
+    return { char, sanctions: sanctionsOf(row) };
+  }
+  if (action === 'kingdomRelease') {
+    releaseKingdom(char, kingdomConfig());
+    // The plot instance the player confirmed releasing, exactly as sent: never looked up, so a
+    // stale confirmation can't release a newer Kingdom (K1-DB01). The database refuses a mismatch.
+    const plotId = Number(args?.plotId);
+    if (!Number.isSafeInteger(plotId) || plotId < 1) throw new GameError('Choose your Kingdom again.', 400);
+    await commitRow(row, char, { fn: 'kingdom_release', plotId });
+    return { char, sanctions: sanctionsOf(row) };
+  }
 
   if (action === 'accept') {
     await ensureQuests(now);
@@ -613,7 +681,7 @@ Deno.serve(async (req) => {
   try {
     return json(await handle(auth.user.id, String(body?.action || ''), body?.args || {}));
   } catch (err) {
-    if (err instanceof GameError) return json({ error: err.message }, err.status);
+    if (err instanceof GameError) return json(err.reason ? { error: err.message, reason: err.reason } : { error: err.message }, err.status);
     // Engine rule violations ("Not enough gold.") are plain Errors with player-safe messages.
     if (err instanceof Error && !('code' in err)) return json({ error: err.message }, 400);
     console.error(err);

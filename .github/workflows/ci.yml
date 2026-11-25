@@ -228,6 +228,11 @@ jobs:
             echo "- runner: $RUNNER_OS, image $ImageOS $ImageVersion"
           } >> "$GITHUB_STEP_SUMMARY"
       - run: npm ci
+      - name: The local Kingdoms test configuration (decision 9.1)
+        # The local stack's functions read supabase/functions/.env at start. KINGDOMS_TEST=1 applies
+        # only together with the local gateway (`kong`), which production can't have
+        # (docs/kingdoms-k1-plan.md 2.2, section 10). Never a secret: a fixed local test value.
+        run: printf 'KINGDOMS_TEST=1\n' > supabase/functions/.env
       - name: Start the local Supabase stack (the same services as CLAUDE.md)
         # Mailpit stays on: the password-recovery tests read the reset email from it (R-1).
         run: npx supabase start -x studio,imgproxy,storage-api,logflare,vector,supavisor,realtime,postgres-meta

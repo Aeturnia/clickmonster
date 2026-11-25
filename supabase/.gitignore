@@ -6,3 +6,7 @@
 .env.keys
 .env.local
 .env.*.local
+
+# The local stack's function environment (Kingdoms K-1, decision 9.1): KINGDOMS_TEST=1 for
+# test:db. Local only; never committed.
+functions/.env

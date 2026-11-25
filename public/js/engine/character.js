@@ -2,7 +2,8 @@
 import { STATS, BASE_STAT, POINTS_PER_LEVEL } from '../data/stats.js';
 import { RACES } from '../data/races.js';
 import { ITEMS, WEAPON_TYPES, SLOTS, itemDef } from '../data/items.js';
-import { ZONES } from '../data/zones.js';
+import { ZONES, OVERWORLD_ID } from '../data/zones.js';
+import { KINGDOM_ZONE_ID, KINGDOM_GATE } from '../data/kingdoms.js';
 import { parseGem } from '../data/gems.js';
 import {
   MASTERIES, masteryStart, masteryCap, masteryArmor, masteryGainChance,
@@ -65,12 +66,26 @@ export function ensureCharacter(char) {
   if (char.quest === undefined) char.quest = null;
   // The zone may have been deleted or resized by an admin: move the hero somewhere safe.
   const z = char.loc && ZONES[char.loc.zone];
-  if (!z) {
+  if (char.loc?.zone === KINGDOM_ZONE_ID) {
+    // Kingdoms K-1 (5.1.1): in the Kingdom Zone a hero stands at the gate. While Kingdoms are
+    // closed the zone isn't registered, and a hero found there goes to the Crossroads, the
+    // Overworld's town, rather than to their race's home as from any other missing zone.
+    const ow = ZONES[OVERWORLD_ID];
+    if (!z && ow?.town) {
+      char.loc = { zone: ow.id, x: ow.town.x, y: ow.town.y };
+      char.battle = null;
+    } else if (z && (char.loc.x !== KINGDOM_GATE.x || char.loc.y !== KINGDOM_GATE.y)) {
+      char.loc = { zone: z.id, x: KINGDOM_GATE.x, y: KINGDOM_GATE.y };
+      char.battle = null;
+    }
+  }
+  const zz = char.loc && ZONES[char.loc.zone];
+  if (!zz) {
     const home = ZONES[RACES[char.race]?.startZone] || Object.values(ZONES)[0];
     char.loc = { zone: home.id, x: home.town?.x || 1, y: home.town?.y || 1 };
     char.battle = null;
-  } else if (char.loc.x > z.size || char.loc.y > z.size) {
-    char.loc = { zone: z.id, x: Math.min(char.loc.x, z.size), y: Math.min(char.loc.y, z.size) };
+  } else if (char.loc.x > zz.size || char.loc.y > zz.size) {
+    char.loc = { zone: zz.id, x: Math.min(char.loc.x, zz.size), y: Math.min(char.loc.y, zz.size) };
     char.battle = null;
   }
   if (char.questCooldownUntil == null) char.questCooldownUntil = 0;

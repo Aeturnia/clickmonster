@@ -10,6 +10,7 @@ import { GEM_TYPES, GEM_TIERS } from './data/gems.js';
 import { ITEMS, itemDef, SLOT_LABEL } from './data/items.js';
 import { ZONES } from './data/zones.js';
 import { RACES } from './data/races.js';
+import { KINGDOM_ZONE_ID } from './data/kingdoms.js';
 import { MULT_KEYS, MULT_LABEL, MULT_MAX } from './engine/world-config.js';
 import { ask, setConfirmFallback } from './confirm.js';
 // The one Supabase client (net.js), from our own copy of supabase-js. If it can't load, say so.
@@ -430,7 +431,8 @@ function viewHunts() {
   if (!h) return '<p class="note">Loading.</p>';
   const now = Date.now();
   const status = (x) => (x.status === 'active' && new Date(x.ends_at).getTime() < now ? 'expired' : x.status);
-  const zoneOpts = Object.values(ZONES).map((z) => opt(z.id, `${z.name} (level ${z.levelRange[0]} to ${z.levelRange[1]})`)).join('');
+  // World-boss hunts can't run in the Kingdom Lands (K-1, 5.1.1); the server refuses them too.
+  const zoneOpts = Object.values(ZONES).filter((z) => z.id !== KINGDOM_ZONE_ID).map((z) => opt(z.id, `${z.name} (level ${z.levelRange[0]} to ${z.levelRange[1]})`)).join('');
   const admin = isAdmin();
   return `${admin ? `<form id="hunt" class="box" novalidate><h2>Start a hunt</h2>
       <p class="note">A world boss with one shared health pool. Everyone who hits it shares the gold and XP by damage done (2% minimum); the killing blow also earns a relic and 25% extra gold. Rewards arrive in players' banks.</p>

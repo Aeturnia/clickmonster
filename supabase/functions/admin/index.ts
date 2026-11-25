@@ -14,12 +14,18 @@ import { parseGem } from './js/data/gems.js';
 import { MULT_KEYS, MULT_MAX } from './js/engine/world-config.js';
 import { suggestedHuntHp } from './js/engine/hunt.js';
 import { checkNews, canDeleteNews } from './js/data/news.js';
+import { setKingdomConfig, testConfigFrom, kingdomsOpen, KINGDOM_ZONE_ID, KINGDOM_GATE, KINGDOM_SIZE } from './js/data/kingdoms.js';
+import { reloadZones } from './js/data/zones.js';
 
 const db = createClient(
   Deno.env.get('SUPABASE_URL')!,
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
   { auth: { persistSession: false, autoRefreshToken: false } },
 );
+
+// Kingdoms K-1: the same configuration rule as the `game` function (docs/kingdoms-k1-plan.md 2.2).
+setKingdomConfig(testConfigFrom(Deno.env.get('KINGDOMS_TEST'), Deno.env.get('SUPABASE_URL')));
+reloadZones();
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -157,6 +163,10 @@ async function updatePlayer(staff: Staff, id: string, patch: any) {
     const z = ZONES[patch.loc.zone];
     const x = num(patch.loc.x, 1), y = num(patch.loc.y, 1);
     if (!z || x > z.size || y > z.size) throw new AdminError('Invalid location.');
+    // The Kingdom Zone (registered only while Kingdoms are open): its gate only (5.1.1).
+    if (z.id === KINGDOM_ZONE_ID && (x !== KINGDOM_GATE.x || y !== KINGDOM_GATE.y)) {
+      throw new AdminError(`In the Kingdom Lands a hero can only stand at the gate (${KINGDOM_GATE.x}, ${KINGDOM_GATE.y}).`);
+    }
     changes.loc = [c.loc, { zone: z.id, x, y }];
     c.loc = { zone: z.id, x, y };
     c.battle = null;
@@ -304,6 +314,7 @@ async function listHunts() {
 async function startHunt(staff: Staff, a: any) {
   const zone = ZONES[a.zone];
   if (!zone) throw new AdminError('Pick a zone.');
+  if (zone.id === KINGDOM_ZONE_ID) throw new AdminError('Hunts can’t run in the Kingdom Lands.');
   const name = String(a.name || '').trim().slice(0, 60);
   if (!name) throw new AdminError('Name the boss.');
   const level = Math.max(1, Math.min(10000, Math.floor(Number(a.level) || 1)));
@@ -574,6 +585,125 @@ async function deleteNews(staff: Staff, id: number) {
 }
 
 // ---------------------------------------------------------------- dispatch
+// ---------------------------------------------------------------- Kingdoms (K-1)
+// docs/kingdoms-k1-plan.md 2.2 and section 3. Reads work for any staff member whether Kingdoms are
+// open or not (while closed there's nothing to find). The three changes are admin-only, refused
+// while Kingdoms are closed, and each runs through its database function, which writes its own
+// audit entry in the same transaction (5.11: guaranteed). A destructive change names the exact
+// ownership instance the staff member inspected (K1-DB01): it is taken from the request, never
+// looked up, and a mismatch is refused by the database.
+const PLOT_COLS = 'id, x, y, status, character_id, claimed_at';
+const plotCoord = (v: any) => {
+  const n = Number(v);
+  if (!Number.isInteger(n) || n < 1 || n > KINGDOM_SIZE) throw new AdminError(`Plot coordinates are 1 to ${KINGDOM_SIZE}.`);
+  return n;
+};
+const instanceId = (v: any) => {
+  const n = Number(v);
+  if (!Number.isSafeInteger(n) || n < 1) throw new AdminError('Reload the plot and try again.');
+  return n;
+};
+const reasonOf = (v: any) => {
+  const text = String(v || '').trim().slice(0, 300);
+  if (!text) throw new AdminError('Give a reason.');
+  return text;
+};
+function requireKingdomsOpen() {
+  if (!kingdomsOpen()) throw new AdminError('Kingdoms aren’t open yet.', 409);
+}
+// The database's error contract (docs/kingdoms-k1-report.md 1.1), for staff.
+function kingdomRefusal(error: any, notFound: string): never {
+  if (error?.code === 'MRSTL') throw new AdminError('That plot has changed since you looked. Reload it and check again.', 409);
+  if (error?.code === 'MRNOP') throw new AdminError(notFound, 409);
+  if (error?.code === 'MRPLT') throw new AdminError('That plot is already taken or reserved.', 409);
+  if (error?.code === 'MRARG') throw new AdminError('That Kingdom’s stored data is malformed, so nothing was changed.', 400);
+  throw error;
+}
+
+async function plotOwners(plots: any[]) {
+  const ids = [...new Set(plots.map((p) => p.character_id).filter(Boolean))];
+  if (!ids.length) return {};
+  const { data, error } = await db.from('characters').select('id, name, level').in('id', ids);
+  if (error) throw error;
+  return Object.fromEntries((data || []).map((c: any) => [c.id, { id: c.id, name: c.name, level: c.level }]));
+}
+
+async function kingdomPlot(x: number, y: number) {
+  const { data: plot, error } = await db.from('kingdom_plots').select(PLOT_COLS).eq('x', x).eq('y', y).maybeSingle();
+  if (error) throw error;
+  if (!plot) return { plot: null };
+  let owner = null, kingdom = null;
+  if (plot.character_id) {
+    const { data: hero, error: e2 } = await db.from('characters').select('id, name, level, data').eq('id', plot.character_id).maybeSingle();
+    if (e2) throw e2;
+    if (hero) { owner = { id: hero.id, name: hero.name, level: hero.level }; kingdom = hero.data?.kingdom ?? null; }
+  }
+  return { plot, owner, kingdom };
+}
+
+async function kingdomSearch(q: string) {
+  const term = String(q || '').trim().replace(/[%_]/g, '');
+  let plots: any[];
+  if (term) {
+    const { data: heroes, error } = await db.from('characters').select('id').ilike('name', `%${term}%`).limit(50);
+    if (error) throw error;
+    const ids = (heroes || []).map((h: any) => h.id);
+    if (!ids.length) return { plots: [] };
+    const res = await db.from('kingdom_plots').select(PLOT_COLS).in('character_id', ids).limit(50);
+    if (res.error) throw res.error;
+    plots = res.data || [];
+  } else {
+    const res = await db.from('kingdom_plots').select(PLOT_COLS).order('claimed_at', { ascending: false }).limit(50);
+    if (res.error) throw res.error;
+    plots = res.data || [];
+  }
+  const owners = await plotOwners(plots);
+  return { plots: plots.map((p) => ({ ...p, owner: owners[p.character_id] || null })) };
+}
+
+async function kingdomRevoke(staff: Staff, a: any) {
+  requireAdmin(staff);
+  requireKingdomsOpen();
+  const x = plotCoord(a.x), y = plotCoord(a.y), plotId = instanceId(a.plotId);
+  const characterId = String(a.characterId || '');
+  if (!characterId) throw new AdminError('Reload the plot and try again.');
+  const { data, error } = await db.rpc('kingdom_revoke', {
+    p_x: x, p_y: y, p_plot_id: plotId, p_character_id: characterId,
+    p_staff: staff.id, p_staff_name: staff.email, p_reason: reasonOf(a.reason),
+  });
+  if (error) kingdomRefusal(error, 'That plot isn’t claimed.');
+  // The refund is exact (K1-DB02): a whole number of gold within JavaScript's exact range, as the
+  // database guarantees. It is ledgered only after the revoke has committed, best effort (5.11).
+  const refund = Number(data);
+  if (!Number.isSafeInteger(refund) || refund < 0) throw new Error(`kingdom_revoke returned an unexpected refund: ${data}`);
+  if (refund > 0) {
+    const { error: e2 } = await db.rpc('ledger_add', { p_source: 'kingdom', p_amount: refund });
+    if (e2) console.error('ledger failed', e2);
+  }
+  return { refund };
+}
+
+async function kingdomReserve(staff: Staff, a: any) {
+  requireAdmin(staff);
+  requireKingdomsOpen();
+  const { data, error } = await db.rpc('kingdom_reserve', {
+    p_x: plotCoord(a.x), p_y: plotCoord(a.y), p_staff: staff.id, p_staff_name: staff.email, p_reason: reasonOf(a.reason),
+  });
+  if (error) kingdomRefusal(error, 'That plot can’t be reserved.');
+  return { plotId: Number(data) };
+}
+
+async function kingdomUnreserve(staff: Staff, a: any) {
+  requireAdmin(staff);
+  requireKingdomsOpen();
+  const { error } = await db.rpc('kingdom_unreserve', {
+    p_x: plotCoord(a.x), p_y: plotCoord(a.y), p_plot_id: instanceId(a.plotId),
+    p_staff: staff.id, p_staff_name: staff.email, p_reason: reasonOf(a.reason),
+  });
+  if (error) kingdomRefusal(error, 'That plot isn’t reserved.');
+  return { ok: true };
+}
+
 async function handle(staff: Staff, action: string, a: any) {
   switch (action) {
     case 'whoami': return { role: staff.role, email: staff.email };
@@ -657,9 +787,17 @@ async function handle(staff: Staff, action: string, a: any) {
     case 'newsPublish': requireAdmin(staff); return await setNewsStatus(staff, Number(a.id), 'published');
     case 'newsUnpublish': requireAdmin(staff); return await setNewsStatus(staff, Number(a.id), 'unpublished');
     case 'newsDelete': requireAdmin(staff); return await deleteNews(staff, Number(a.id));
+    case 'kingdomPlot': return await kingdomPlot(plotCoord(a.x), plotCoord(a.y));
+    case 'kingdomSearch': return await kingdomSearch(a.q);
+    case 'kingdomRevoke': return await kingdomRevoke(staff, a);
+    case 'kingdomReserve': return await kingdomReserve(staff, a);
+    case 'kingdomUnreserve': return await kingdomUnreserve(staff, a);
     case 'meta': return {
       zones: Object.values(ZONES).map((z: any) => ({ id: z.id, name: z.name, size: z.size })),
       items: Object.values(ITEMS).map((i: any) => ({ id: i.id, name: i.name, tier: i.tier, slot: i.slot })),
+      // The Kingdoms capability (Q3): the console asks for Kingdom data only when this is present.
+      // Older functions (admin v8) have no such key.
+      kingdoms: { version: 1, open: kingdomsOpen() },
     };
     default: throw new AdminError('Unknown action.');
   }
