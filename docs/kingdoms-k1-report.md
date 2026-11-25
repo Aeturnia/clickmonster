@@ -200,3 +200,11 @@ The review accepted the core architecture: the transactions, the private reward 
   - API and check tests **43 passed**, 1 opt-in skipped. That's 39 before, plus the 4 in `kingdom-checks.test.mjs`.
 - **Engine:** 90 of 90, three times.
 - **Browser:** 315 of 315, three times, with the stack stopped.
+
+**CI on `bf0b504` (run 45643786524) failed in the database job:** all four tests in `kingdom-checks.test.mjs` failed. pgTAP passed (215 of 215), as did the other API tests.
+- **The cause was the test's own parsing.** It read the result by slicing from the CLI output's first `{` to its last `}`. On CI's runner the output had more after the result object, so `JSON.parse` failed ("Unexpected non-whitespace character after JSON"). On the laptop it had passed.
+- **The fix:**
+  - the test now scans the output for each top-level JSON object and takes the one with `rows`;
+  - a query or check file that prints no rows fails, with the raw output in the message. An insert, update or delete prints only its command tag, so those return no rows.
+- **Nothing in the checks or the migration changed.**
+- **Locally, the four tests pass again,** and the fixtures were removed (no zones, plots or test heroes left).
