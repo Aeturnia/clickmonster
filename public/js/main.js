@@ -1459,21 +1459,22 @@ const BATTLE_ACTIONS = new Set(['melee', 'cast', 'flee', 'again', 'fight', 'atta
 function handleLocal(a, v) {
   switch (a) {
     case 'race': ui.draftName = $('#name')?.value || ''; ui.race = v; return true;
-    case 'tab': ui.tab = v; ui.sheet = null; if (v === 'explore') refreshPlayers(); return true;
+    case 'tab': ui.tab = v; ui.sheet = null; dropFinder(); if (v === 'explore') refreshPlayers(); return true;
     case 'list': ui.list = v; refreshPlayers(); return true;
     // The plot map (K1-3): moving the view and selecting send nothing to the game.
-    case 'kplot': { if (!inKingdoms()) return true; const [x, y] = v.split(',').map(Number); showPlot(x, y); ui.kingdom.note = null; return true; }
+    case 'kplot': { if (!inKingdoms()) return true; const [x, y] = v.split(',').map(Number); dropFinder(); showPlot(x, y); ui.kingdom.note = null; return true; }
     case 'kwin': {
       if (!inKingdoms()) return true;
       const k = ui.kingdom;
       const d = { n: [0, -PLOT_WINDOW], s: [0, PLOT_WINDOW], w: [-PLOT_WINDOW, 0], e: [PLOT_WINDOW, 0] }[v];
       if (!d) return true;
+      dropFinder();
       k.win = shiftWindow(kingdomWindow(), d[0], d[1]);
       k.cursor = null;
       announce(`Plots ${k.win.x} to ${k.win.x + PLOT_WINDOW - 1} across, ${k.win.y} to ${k.win.y + PLOT_WINDOW - 1} down.`);
       return true;
     }
-    case 'kmine': { const p = char?.kingdom?.plot; if (inKingdoms() && p) showPlot(p.x, p.y); return true; }
+    case 'kmine': { const p = char?.kingdom?.plot; if (inKingdoms() && p) { dropFinder(); showPlot(p.x, p.y); } return true; }
     case 'kfind': if (inKingdoms() && !ui.kingdom.finding) findPlot(v === 'random'); return true;
     case 'kjump': {
       if (!inKingdoms()) return true;
@@ -1485,6 +1486,7 @@ function handleLocal(a, v) {
         k.note = 'Plots are numbered 1 to 100, across and down.';
         return true;
       }
+      dropFinder();
       showPlot(x, y);
       k.note = null;
       requestAnimationFrame(() => $(`.plots [data-a="kplot"][data-v="${x},${y}"]`)?.focus());
@@ -1775,6 +1777,7 @@ function refreshKingdom(recheck = false) {
   const k = ui.kingdom;
   k.stale = true; k.mineStale = true; k.errorKey = null; k.mineErrorKey = null; k.mineProblem = null;
   k.plotsSeq++; k.mineSeq++; k.loadingKey = null; k.mineLoading = null;
+  dropFinder(); // a finder answer on its way is dropped too (K1-UI03a)
   if (recheck) k.recheck = true;
 }
 
@@ -1873,27 +1876,31 @@ function showPlot(x, y) {
 }
 
 // The finders are advisory: they move the view and select a plot, nothing else. The claim decides.
-// If the player has moved the view, selected another plot or left the plot map meanwhile, the answer
-// is dropped: it never moves a view the player has moved on from (K1-UI03).
+// Any navigation (moving the view, selecting a plot, changing tab) and any refresh drops a finder
+// answer still on its way, even if the view later comes back to where it was (K1-UI03, and the
+// re-review's K1-UI03a): it never moves a view the player has moved on from. The buttons come back.
+function dropFinder() {
+  const k = ui.kingdom;
+  k.findSeq++;
+  k.finding = false;
+}
 async function findPlot(random) {
   const g = gameGen;
   const k = ui.kingdom;
   const win = kingdomWindow();
   const from = k.selected || { x: win.x + Math.floor(PLOT_WINDOW / 2), y: win.y + Math.floor(PLOT_WINDOW / 2) };
   const seq = ++k.findSeq;
-  const current = () => live(g) && ui.kingdom === k && k.findSeq === seq;
-  const view = () => `${windowKey(k.win)}|${k.selected ? `${k.selected.x},${k.selected.y}` : ''}|${ui.tab}|${inKingdoms()}`;
-  const asked = view();
+  const current = () => live(g) && ui.kingdom === k && k.findSeq === seq && inKingdoms();
   k.finding = true;
   k.note = null;
   render();
   try {
     const p = await kingdomFreePlot(from.x, from.y, random);
-    if (!current() || view() !== asked) return;
+    if (!current()) return;
     if (!p) k.note = 'No free plots are left.';
     else { showPlot(p.x, p.y); k.note = `Plot ${p.x}, ${p.y} was free just now.`; }
   } catch (err) {
-    if (current() && view() === asked) k.note = err.message;
+    if (current()) k.note = err.message;
   } finally {
     if (current()) { k.finding = false; render(); announce(k.note || ''); }
   }
@@ -1954,6 +1961,7 @@ function plotKeys(e) {
   const k = ui.kingdom;
   k.cursor = { x: nx, y: ny };
   if (!inWindow(k.win, nx, ny)) {
+    dropFinder();
     k.win = shiftWindow(k.win, d[0], d[1]);
     render();
     announce(`Plots ${k.win.x} to ${k.win.x + PLOT_WINDOW - 1} across, ${k.win.y} to ${k.win.y + PLOT_WINDOW - 1} down.`);

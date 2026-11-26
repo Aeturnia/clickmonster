@@ -657,3 +657,67 @@ test('K3-26 a read on its way when the plots are refreshed is dropped: the refre
   clean(ctx);
   await ctx.context.close();
 });
+
+// ------------------------------------------------------------ re-review corrections (the K1-3 re-review)
+// K1-UI01a
+test('K3-27 a refused claim whose plot refresh fails: the cached plots stay, with Try again; Claim waits, and nothing is sent again', async () => {
+  const ctx = await game();
+  const { page, backend } = ctx;
+  await openMap(page);
+  await page.click('.plots [data-v="7,7"]'); await settle(page);
+  backend.plots.push({ id: 999, x: 7, y: 7, status: 'claimed', character_id: 'char-rival', claimed_at: '' });
+  backend.ownerNames['char-rival'] = 'Rival';
+  backend.failRead('window'); // the plots' refresh after the refusal fails; the hero's read succeeds
+  await page.click('[data-a="kclaim"]');
+  await page.waitForSelector('#confirm[open]');
+  await page.click('#confirm [data-r="ok"]'); await settle(page);
+  await page.waitForSelector('#main [data-a="kretry"]');
+  assert.match(await page.textContent('#main'), /Couldn’t check these plots again/);
+  assert.equal(await page.$('#main [data-a="kresync"]'), null, 'the hero was read again');
+  assert.match(await cellLabel(page, 7, 7), /Free/, 'the plots read before stay on screen');
+  assert.match(await page.textContent('#alerts'), /That plot was just taken/, 'the refusal stays on screen');
+  await page.click('.plots [data-v="8,8"]'); await settle(page);
+  assert.equal(await claimOff(page), true, 'Claim waits for the plots');
+  assert.match(await page.textContent('.plot-sel'), /The plots couldn’t be checked again/);
+  await noViolations(page, 'the plots not checked again');
+  await page.click('#main [data-a="kretry"]'); await settle(page);
+  assert.equal(await page.$('#main [data-a="kretry"]'), null);
+  assert.match(await cellLabel(page, 7, 7), /Claimed by Rival/);
+  assert.equal(await claimOff(page), false, 'Claim is offered again');
+  assert.equal(gameCalls(backend, 'kingdomClaim').length, 1, 'the claim was sent once');
+  clean(ctx);
+  await ctx.context.close();
+});
+
+// K1-UI03a
+test('K3-28 a slow finder answer is dropped after the view moves away and comes back to where it was', async () => {
+  const ctx = await game();
+  const { page, backend } = ctx;
+  await openMap(page);
+  await page.click('.plots [data-v="5,5"]'); await settle(page);
+  const release = backend.holdRead('finder');
+  await page.click('[data-a="kfind"][data-v="near"]');
+  await until(release.arrived, 'the finder');
+  await page.click('[data-a="kwin"][data-v="e"]'); await settle(page);
+  await page.click('[data-a="kwin"][data-v="w"]'); await settle(page);
+  assert.match(await page.textContent('#plot-range'), /Plots 1 to 10 across/, 'back where it was');
+  assert.equal(!!(await page.$('[data-a="kfind"][disabled]')), false, 'the finder buttons are back');
+  release(); // the old answer (plot 4, 4) arrives now
+  await page.waitForTimeout(400); await settle(page);
+  assert.match(await page.textContent('.plot-sel'), /Plot 5, 5/, 'the selection is unchanged');
+  assert.ok(!(await page.textContent('#main')).includes('was free just now'));
+  // A refresh (here, after claiming plot 5, 5) drops a finder answer on its way, with no navigation.
+  const again = backend.holdRead('finder');
+  await page.click('[data-a="kfind"][data-v="near"]');
+  await until(again.arrived, 'the second finder');
+  await page.click('[data-a="kclaim"]');
+  await page.waitForSelector('#confirm[open]');
+  await page.click('#confirm [data-r="ok"]'); await settle(page);
+  assert.equal(!!(await page.$('[data-a="kfind"][disabled]')), false, 'the finder buttons are back after the refresh');
+  again();
+  await page.waitForTimeout(400); await settle(page);
+  assert.match(await page.textContent('.plot-sel'), /Plot 5, 5/, 'still the claimed plot');
+  assert.ok(!(await page.textContent('#main')).includes('was free just now'));
+  clean(ctx);
+  await ctx.context.close();
+});

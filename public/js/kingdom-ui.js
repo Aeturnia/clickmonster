@@ -89,11 +89,13 @@ export function viewPlotMap({ char, k, cfg, esc, btn, fmt }) {
   const win = k.win;
   const cur = k.cursor && inWindow(win, k.cursor.x, k.cursor.y) ? k.cursor : { x: win.x, y: win.y };
   const loaded = k.cells && k.cellsKey === windowKey(win);
-  const failed = !loaded && k.errorKey === windowKey(win);
+  // A failed read is shown even when the plots read before it stay on screen (the K1-3 re-review,
+  // K1-UI01a): they may be out of date, and Try again reads them again.
+  const failed = k.errorKey === windowKey(win);
   const cells = [];
   for (let y = win.y; y < win.y + PLOT_WINDOW; y++) {
     for (let x = win.x; x < win.x + PLOT_WINDOW; x++) {
-      const s = failed ? { kind: 'loading', text: 'Not loaded' } : plotStatus(k, x, y, char);
+      const s = failed && !loaded ? { kind: 'loading', text: 'Not loaded' } : plotStatus(k, x, y, char);
       const sel = k.selected && k.selected.x === x && k.selected.y === y;
       const label = `Plot ${x}, ${y}. ${s.text}${sel ? '. Selected' : ''}`;
       cells.push(`<button class="${s.kind}${sel ? ' sel' : ''}" data-a="kplot" data-v="${x},${y}" tabindex="${x === cur.x && y === cur.y ? '0' : '-1'}" aria-label="${esc(label)}"${sel ? ' aria-pressed="true"' : ' aria-pressed="false"'}>${MARK[s.kind]}</button>`);
@@ -102,7 +104,7 @@ export function viewPlotMap({ char, k, cfg, esc, btn, fmt }) {
   const last = { x: win.x + PLOT_WINDOW - 1, y: win.y + PLOT_WINDOW - 1 };
   const range = `Plots ${win.x} to ${last.x} across, ${win.y} to ${last.y} down`;
   const status = failed
-    ? `<div class="notice bad" role="alert"><p class="small" style="margin:0">Couldn’t load these plots.</p>${btn('kretry', null, 'Try again', 'sm')}</div>`
+    ? `<div class="notice bad" role="alert"><p class="small" style="margin:0">${loaded ? 'Couldn’t check these plots again. They may be out of date.' : 'Couldn’t load these plots.'}</p>${btn('kretry', null, 'Try again', 'sm')}</div>`
     : loaded ? '' : '<p class="small muted" aria-busy="true">Loading plots…</p>';
   const others = loaded ? Object.values(k.cells).sort((a, b) => a.y - b.y || a.x - b.x) : [];
   const free = loaded ? PLOT_WINDOW * PLOT_WINDOW - others.length : null;
@@ -148,7 +150,9 @@ function viewSelected({ char, k, cfg, esc, btn, fmt }) {
   if (s.kind === 'free') {
     // After a refusal, Claim waits until the hero and the plots are read again (K1-UI01).
     const why = claimBlock(char, cfg)
-      || (k.hero === 'failed' ? 'Your hero couldn’t be checked. Try again above.' : k.hero || k.recheck ? 'Checking the plots again…' : null);
+      || (k.hero === 'failed' ? 'Your hero couldn’t be checked. Try again above.'
+        : k.recheck && k.errorKey === windowKey(k.win) ? 'The plots couldn’t be checked again. Try again above.'
+          : k.hero || k.recheck ? 'Checking the plots again…' : null);
     act = `${btn('kclaim', `${x},${y}`, `Claim for ${fmt(cfg.cost)} gold`, 'primary', !!why)}${why ? `<p class="small muted">${esc(why)}</p>` : ''}`;
   } else if (s.kind === 'mine') {
     act = btn('kmanage', null, 'Manage my Kingdom', 'primary');

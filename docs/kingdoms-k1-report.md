@@ -465,7 +465,7 @@ It asked for two corrections. **The owner authorized them, and ratified two thin
 
 ## 3. K1-3: the player's interface (authorized by the owner, 2026-11-26)
 
-**Status: implemented, with the review corrections K1-UI01 to K1-UI03 (3.6), at its re-review gate.**
+**Status: implemented, with the review corrections K1-UI01 to K1-UI03 (3.6) and the re-review corrections K1-UI01a and K1-UI03a (3.7), at its final review gate.**
 - **Kingdoms stay closed as shipped.** With the shipped constants, nothing of Kingdoms is drawn, and no Kingdom request leaves the browser. Production has no Kingdom table yet (the rollout is K1-5), and `game` is still v15.
 - **No server change,** and no deploy.
 
@@ -643,3 +643,47 @@ It asked for three corrections, all about asynchronous state. **The owner author
 - **The 120-second zone-edit read** (`api('state')` after a zone edit removes the hero's zone) existed before K1-3 and isn't serialized with actions. It now counts toward `heroSeq`, so a slower recovery read can't overwrite it, but it can still replace a newer action's answer, as before K1-3. It is outside these findings and unchanged otherwise.
 - **`heroSeq`'s guard** has no browser test of its own. With `ui.busy` held, the only other replacement in that window is the 120-second read above.
 - **Real devices and screen readers** remain pre-activation work, as the review says.
+
+### 3.7 Re-review corrections (the re-review of `2bec33d`, 2026-11-26)
+
+**The re-review accepted:**
+- the serialized hero recovery;
+- ownership by character id, and the missing and mismatched rows: **K1-UI02 is resolved**;
+- the account checks before the dependent reads;
+- the read numbers, and a refresh dropping reads in flight;
+- the version-conflict coverage;
+- the mutation method and its time limit;
+- removing the duplicate ownership check.
+
+It asked for two narrow corrections. **The owner authorized them** (2026-11-26), and **asked for the 120-second race to be tracked separately** (#120, below). They are client only: no server or database change, and Kingdoms stay closed.
+
+| Finding | What changed | Its test |
+|---|---|---|
+| **K1-UI01a:** a failed refresh with plots already on screen showed no error | **`viewPlotMap()`** now shows a failed read even when the plots read before it stay on screen: "Couldn't check these plots again. They may be out of date.", with Try again. **Claim stays disabled after a refusal until the plots are read successfully,** and it says why: "The plots couldn't be checked again. Try again above." Before, it said "Checking the plots again…" with no way to retry | **K3-27:** the map is loaded, and a claim is refused (`plot_taken`). The hero's read succeeds and the plots' refresh fails. The cached plots stay, with Try again, and Claim is disabled with the reason. Try again then shows the new owner and offers Claim again. The claim was sent once |
+| **K1-UI03a:** a finder answer was accepted after leaving the view and coming back to it | **The finder relies on its number alone** (`findSeq`), not on comparing the view. **`dropFinder()`** advances that number and re-enables the finder buttons. It runs on every navigation (moving the window, by button or by arrow key past the edge; selecting a plot; "My Kingdom"; showing a plot by its coordinates; changing tab) and on every refresh (`refreshKingdom()`, which also covers leaving the Kingdom Zone) | **K3-28:** a finder answer held while the view moves east and back. The buttons are enabled again, and when the answer lands, the selection is unchanged. Then a second answer is held across a successful claim, which refreshes: the buttons are enabled again, and the answer is dropped |
+
+**The harness:** `backend.failRead(kind)` fails the next Kingdom read of a kind (the kinds `holdRead()` takes) with a 500, once.
+
+**Negative controls (targeted, as the re-review asked; the ten earlier mutations weren't repeated):**
+- **On `2bec33d`** (a temporary worktree, with the new harness and tests): **both new tests fail.**
+  - **K3-27:** no Try again appears.
+  - **K3-28:** the finder buttons stay disabled while the old answer is on its way. That assertion comes first, so the test stops there.
+- **Mutations** (each with a 4-minute limit; the files restored, checked by md5):
+
+| Mutation | Caught by |
+|---|---|
+| R1: the map's error hidden when cached plots exist (the old condition) | K3-27 |
+| R2: moving the window doesn't drop the finder | K3-28: "the finder buttons are back" |
+| R3: a refresh doesn't drop the finder | K3-28: "the finder buttons are back after the refresh" |
+
+- **A test-code fix found on the way:** K3-28 first compared a Playwright element handle with `null`. When the mutation made the handle exist, Node's assert tried to render it and failed with "Array buffer allocation failed", which didn't say what had failed. The assertion now compares booleans, and the mutations fail with their messages.
+
+**Evidence (local, the owner's laptop, 2026-11-26):**
+- **`tests/ui/kingdoms.test.mjs`:** 28 of 28 (the 26, plus K3-27 and K3-28).
+- **Engine:** 110 of 110.
+- **The full browser suite** is CI's, on this head, as the re-review allowed.
+- **No new screens:** only the text of a notice and of Claim's reason changed. axe ran on that state in K3-27: 0 violations of any impact.
+
+**Tracked separately:**
+- **The 120-second zone-edit read** (3.6, Not covered) is now **#120**, with a backlog entry in `docs/backlog.md`.
+- **The owner's instruction (2026-11-26):** track it only. **Not authorized, and not scheduled.** K1-3 doesn't change it.

@@ -30,12 +30,12 @@ Read these first:
   - World & Zone Expansion Research;
   - Monstra Regna — Identity & Homepage;
   - Public Launch Readiness.
-- **Issues #76 to #99, plus #105, #113 and #114,** mirror the open work. **#102 is closed** (completed, 2026-11-24). Each entry in `docs/backlog.md` names its issue. The backlog lists the issues whose source is a design note or scope instead.
-- **Milestones:** 20 of the 27 open issues have one.
+- **Issues #76 to #99, plus #105, #113, #114 and #120,** mirror the open work. **#102 is closed** (completed, 2026-11-24). Each entry in `docs/backlog.md` names its issue. The backlog lists the issues whose source is a design note or scope instead.
+- **Milestones:** 20 of the 28 open issues have one.
   - **Public Launch Readiness:** 6 open, 1 closed.
     - **#102** is closed, and keeps the milestone.
     - **#105** is open in it. That doesn't make #105 a launch blocker or set its priority.
-  - **#85, #96 to #99, #113 and #114** are deliberately unassigned.
+  - **#85, #96 to #99, #113, #114 and #120** are deliberately unassigned.
 - **Dependencies** use GitHub's native "blocked by". There is one: **#83 (Kingdoms K-1) is blocked by #102.** It's a K-1 implementation prerequisite, **satisfied since #102 was closed** (2026-11-24). The link is kept for traceability. K-0, the design, stays accepted. Add one only when it's established, not for sequencing that is still conceptual.
 - **The Project is issue-only:** PRs aren't added. While a PR is in review, its issue keeps its real status.
 - **The rules:**
@@ -67,7 +67,7 @@ Read these first:
   - **The K-1 plan is accepted:** `docs/kingdoms-k1-plan.md`, revision 1, merged as PR #116 (`55e41f7`, 2026-11-25), with the four owner decisions ratified and qualifications Q1 to Q4 (recorded on #83).
   - **K1-1, the database, is accepted and merged:** PR #117 (`0b9b4ab`, 2026-11-25).
   - **K1-2, the engine and the `game` and `admin` functions, is accepted and merged:** PR #118 (`6b19337`, 2026-11-26).
-  - **K1-3, the player's interface, is authorized** (2026-11-26). Its review corrections, K1-UI01 to K1-UI03, are at the re-review gate. See `docs/kingdoms-k1-report.md`, section 3. Kingdoms stay closed, and nothing is deployed.
+  - **K1-3, the player's interface, is authorized** (2026-11-26). Its review corrections (K1-UI01 to K1-UI03) and re-review corrections (K1-UI01a, K1-UI03a) are at the final review gate. See `docs/kingdoms-k1-report.md`, section 3. Kingdoms stay closed, and nothing is deployed.
   - **K1-4 and K1-5 are not authorized.**
 - **#102, pending rewards delivered exactly once: fixed, deployed, accepted in independent review, and closed as completed** (2026-11-24, on the owner's authorization).
   - **The scope and reports:** `docs/pending-rewards-scope.md` and `docs/pending-rewards-report.md`.
@@ -357,7 +357,7 @@ Read these first:
 
 ```
 npm test                 # engine, entrance file checks, the first-paint tripwire, the public pages, news rules, the news page handler, the town rule, the log rules, the session rule, the pending-rewards staging rule and the Kingdom rules (110)
-npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (341)
+npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (343)
 npm run test:db          # database (pgTAP, 222: news 42, pending rewards 40, Kingdoms 140) and API/function/recovery/session/pending-rewards/Kingdom-check/Kingdom tests (63, plus 4 opt-in: 1, and the 3 closed-state checks) on the LOCAL Supabase stack, with Mailpit
 npx playwright install chromium   # once
 ```

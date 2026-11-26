@@ -313,6 +313,14 @@ export class FakeBackend {
     h.used = true;
     await h.done;
   }
+  // The next Kingdom read of a kind (as holdRead()) fails with a 500, once (the K1-3 re-review).
+  failRead(kind) { (this.readFails ||= []).push(kind); }
+  readFailed(kind) {
+    const i = kind ? (this.readFails || []).indexOf(kind) : -1;
+    if (i < 0) return false;
+    this.readFails.splice(i, 1);
+    return true;
+  }
   static readKind(table, params) {
     if (table === 'kingdom_plots') {
       const [lo, hi] = params.getAll('x').map((f) => f.split('.')[1]);
@@ -941,7 +949,9 @@ export async function attach(context, backend, baseUrl) {
         const table = p.split('/').pop();
         const single = /vnd\.pgrst\.object/.test(req.headers().accept || '');
         const out = backend.rest(user, table, url.searchParams, single);
-        await backend.heldRead(FakeBackend.readKind(table, url.searchParams));
+        const readKind = FakeBackend.readKind(table, url.searchParams);
+        await backend.heldRead(readKind);
+        if (backend.readFailed(readKind)) return json(route, 500, { message: 'internal error' });
         if (out?.__status) return json(route, out.__status, out.body);
         if (single && out == null) return json(route, 406, { message: 'no rows' });
         return json(route, 200, out);
