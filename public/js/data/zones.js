@@ -4,6 +4,7 @@
 // Monster archetypes control how a monster's stat budget is spread:
 //   brute (hits hard), quick (dodgy, accurate), tank (lots of HP),
 //   caster (casts spells), balanced.
+import { KINGDOM_ZONE_ID, KINGDOM_GATE, kingdomsOpen, kingdomConfig, kingdomZoneDef } from './kingdoms.js';
 
 function m(name, level, arch, verb, opts = {}) {
   return { name, level, arch, verb, ...opts };
@@ -268,7 +269,14 @@ export const MONSTERS = {};
 export let ZONE_DEFS = [];
 
 export function loadZones(defs) {
-  const list = defs && defs.length ? defs : DEFAULT_ZONES;
+  // The Kingdom Zone's id is reserved, and the only way into it is the Crossroads portal added
+  // below (K1-B03). A database zone with that id, or a path into it, is ignored even if it got past
+  // validateZone(). ZONE_DEFS never holds the Kingdom Zone: the zone editor never sees it.
+  const list = (defs && defs.length ? defs : DEFAULT_ZONES)
+    .filter((def) => def.id !== KINGDOM_ZONE_ID)
+    .map((def) => ((def.portals || []).some((p) => p.to === KINGDOM_ZONE_ID)
+      ? { ...def, portals: def.portals.filter((p) => p.to !== KINGDOM_ZONE_ID) }
+      : def));
   for (const k of Object.keys(ZONES)) delete ZONES[k];
   for (const k of Object.keys(MONSTERS)) delete MONSTERS[k];
   ZONE_DEFS = list;
@@ -278,6 +286,31 @@ export function loadZones(defs) {
     for (const mon of z.monsters) MONSTERS[mon.id] = mon;
     if (z.boss) MONSTERS[z.boss.id] = z.boss;
   }
+  registerKingdomZone(list);
+}
+
+// Kingdoms K-1 (docs/kingdoms-k1-plan.md 2.2, section 3). Only while Kingdoms are open: the
+// Kingdom Zone is registered last (so no fallback ever picks it), and the Overworld gains its one
+// path in, at the Overworld's town cell, needing the claim level. Nothing else may use that cell,
+// so any other path there is removed. While closed, neither exists, and every reader of ZONES
+// behaves as before.
+function registerKingdomZone(list) {
+  if (!kingdomsOpen()) return;
+  const ow = ZONES[OVERWORLD_ID];
+  if (!ow?.town) return;
+  const z = compileZone(kingdomZoneDef(ow.town), list);
+  ZONES[z.id] = z;
+  ow.features = ow.features.filter((f) => !(f.type === 'portal' && f.x === ow.town.x && f.y === ow.town.y));
+  ow.features.push({
+    type: 'portal', x: ow.town.x, y: ow.town.y, to: KINGDOM_ZONE_ID, tx: KINGDOM_GATE.x, ty: KINGDOM_GATE.y,
+    minLevel: kingdomConfig().minLevel, label: 'Enter the Kingdom Lands',
+  });
+}
+
+// Register the zones again with the current Kingdom configuration. The edge functions call this
+// once at start-up, after setKingdomConfig(): the import-time registry was built before it.
+export function reloadZones() {
+  loadZones(ZONE_DEFS);
 }
 
 loadZones(DEFAULT_ZONES);

@@ -2,6 +2,10 @@
 import { ZONES } from '../data/zones.js';
 import { RACES } from '../data/races.js';
 import { healCost, maxHp } from './character.js';
+import { KINGDOM_ZONE_ID } from '../data/kingdoms.js';
+
+// In the Kingdom Zone the hero stays at the gate; plots are chosen on the plot map (5.1.1).
+export const KINGDOM_NO_WALKING = 'Choose plots on the plot map.';
 
 export const DIRS = { n: [0, -1], s: [0, 1], e: [1, 0], w: [-1, 0] };
 
@@ -36,6 +40,7 @@ export function move(char, dir) {
   if (char.battle && !char.battle.over) throw new Error('You can’t leave in the middle of a fight!');
   const d = DIRS[dir];
   if (!d) throw new Error('Bad direction');
+  if (char.loc.zone === KINGDOM_ZONE_ID) throw new Error(KINGDOM_NO_WALKING);
   const zone = currentZone(char);
   const x = char.loc.x + d[0];
   const y = char.loc.y + d[1];
@@ -49,6 +54,7 @@ export function move(char, dir) {
 // the same as stepping there one square at a time.
 export function walkTo(char, x, y) {
   if (char.battle && !char.battle.over) throw new Error('You can’t leave in the middle of a fight!');
+  if (char.loc.zone === KINGDOM_ZONE_ID) throw new Error(KINGDOM_NO_WALKING);
   const zone = currentZone(char);
   x = Number(x);
   y = Number(y);

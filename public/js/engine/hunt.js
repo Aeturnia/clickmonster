@@ -6,6 +6,7 @@ import { resolveAttack } from './combat.js';
 import { respawnPoint } from './world.js';
 import { SPELL_NAME } from '../data/elements.js';
 import { clamp } from './util.js';
+import { KINGDOM_ZONE_ID } from '../data/kingdoms.js';
 
 export const HUNT_COUNTER_LEVEL_GAP = 5; // the boss fights back as if at most this far above you
 
@@ -37,6 +38,9 @@ export function startHuntBattle(char, hunt) {
   if (char.battle && !char.battle.over) throw new Error('You are already fighting!');
   if (char.hp <= 0) throw new Error('You are too weak to fight. Rest or visit a healer.');
   if (hunt.zone !== char.loc.zone) throw new Error('That hunt is not in this zone.');
+  // No hunt runs in the Kingdom Lands (5.1.1): the admin console can't start one there, and a hunt
+  // row placed there some other way still can't be joined (K1-ENG02).
+  if (char.loc.zone === KINGDOM_ZONE_ID) throw new Error('No hunt can be fought in the Kingdom Lands.');
   char.battle = {
     hunt: hunt.id, name: hunt.name, level: hunt.level, hp: hunt.hp, maxHp: hunt.max_hp ?? hunt.maxHp,
     myDamage: 0, turn: 0, over: null, masteryUps: {},

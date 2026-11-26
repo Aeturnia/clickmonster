@@ -3,6 +3,7 @@ import { ELEMENTS } from '../data/elements.js';
 import { WEAPON_TYPES, MAX_TIER } from '../data/items.js';
 import { RACES } from '../data/races.js';
 import { OVERWORLD_ID, slug } from '../data/zones.js';
+import { KINGDOM_ZONE_ID } from '../data/kingdoms.js';
 
 export const ARCHETYPES = ['brute', 'quick', 'tank', 'caster', 'balanced'];
 export const ZONE_SIZE = [3, 40];
@@ -18,6 +19,8 @@ export function validateZone(def, allDefs) {
   byId[def.id] = def;
 
   if (!/^[a-z][a-z0-9-]{1,30}$/.test(def.id || '')) errors.push('Id must be 2 to 31 lowercase letters, numbers or dashes, starting with a letter.');
+  // The Kingdom Zone is defined in code, and the Crossroads is its only way in (K1-B03).
+  if (def.id === KINGDOM_ZONE_ID) errors.push(`The id "${KINGDOM_ZONE_ID}" is reserved for the Kingdom Lands.`);
   if (!String(def.name || '').trim()) errors.push('Give the zone a name.');
   if (!isInt(def.size) || def.size < ZONE_SIZE[0] || def.size > ZONE_SIZE[1]) errors.push(`Size must be ${ZONE_SIZE[0]} to ${ZONE_SIZE[1]}.`);
   const inBounds = (p) => p && isInt(p.x) && isInt(p.y) && p.x >= 1 && p.y >= 1 && p.x <= def.size && p.y <= def.size;
@@ -28,6 +31,13 @@ export function validateZone(def, allDefs) {
   if (def.town && !inBounds(def.town)) errors.push('The town is outside the zone.');
   if (def.town && !String(def.town.name || '').trim()) errors.push('Give the town a name.');
   if (!def.town && (def.starter || def.id === OVERWORLD_ID)) errors.push('Starter zones and the Overworld need a town.');
+  // The reverse of the placement check below (K1-ENG01): the Overworld's town, where the path to the
+  // Kingdom Lands goes, can't be moved onto a cell where another zone is placed. Editing and
+  // restoring the Overworld both come through here.
+  if (def.id === OVERWORLD_ID && def.town) {
+    const onTown = others.find((z) => Array.isArray(z.overworld) && z.overworld[0] === def.town.x && z.overworld[1] === def.town.y);
+    if (onTown) errors.push(`${onTown.name} is placed on that Overworld cell. The Overworld town is where the path to the Kingdom Lands goes, so it needs a cell of its own.`);
+  }
   if (!def.town && def.shop) errors.push('A shop needs a town.');
   if (def.shop) {
     const s = def.shop;
@@ -53,6 +63,10 @@ export function validateZone(def, allDefs) {
   if ((def.lairs || []).length && !def.boss) errors.push('Boss lairs need a boss.');
   for (const p of def.portals || []) {
     if (!inBounds(p)) errors.push(`The path "${p.label || p.to}" is outside the zone.`);
+    if (p.to === KINGDOM_ZONE_ID) { errors.push('Only the Crossroads leads to the Kingdom Lands.'); continue; }
+    if (def.id === OVERWORLD_ID && def.town && p.x === def.town.x && p.y === def.town.y) {
+      errors.push('The Overworld town is where the path to the Kingdom Lands goes. Put this path elsewhere.');
+    }
     const target = byId[p.to];
     if (!target) errors.push(`A path leads to a zone that doesn't exist (${p.to}).`);
     else if (!isInt(p.tx) || !isInt(p.ty) || p.tx < 1 || p.ty < 1 || p.tx > target.size || p.ty > target.size) {

@@ -7,7 +7,7 @@
 
 ## 1. K1-1: the database foundation (authorized by the owner, 2026-11-25)
 
-**Status: implemented, with the review corrections K1-DB01 to K1-DB03 (1.6), at its re-review gate.**
+**Status: accepted and merged** as PR #117 (`0b9b4ab`, 2026-11-25), after its final independent review at `7c6c7f1`. `main`'s CI run 45673059067 passed. The review corrections are in 1.6 to 1.8.
 - **Nothing calls the new functions** until K1-2.
 - **Local only:** applied to the local stack, and run in CI. No production migration and no deploy.
 
@@ -265,3 +265,200 @@ The review accepted the core architecture: the transactions, the private reward 
   - The first run was cut off, and its partial count isn't a result.
   - The run wasn't restarted. K1-1 changes no browser code.
   - **For this head, the browser evidence is CI's browser job.**
+
+## 2. K1-2: the engine and the game and admin functions (authorized by the owner, 2026-11-25)
+
+**Status: implemented, with the review corrections K1-ENG01 and K1-ENG02 (2.6), at its re-review gate.**
+- **Kingdoms stay closed:** the shipped configuration is closed, so nothing of Kingdoms is reachable in production or on the site.
+- **No production access, and no deploy.**
+- **The authorization:** the owner's "Next stage owner authorized", given with K1-1's final review, read as authorizing PR #117's merge and K1-2. Both were recorded on #83.
+
+### 2.1 What it changes
+
+**The shared code** (published to the site on merge; inert while closed):
+- **`public/js/data/kingdoms.js`, new:**
+  - **the shipped switch and values:** `KINGDOMS_OPEN = false`, `CLAIM_MIN_LEVEL = null`, `CLAIM_COST = null`;
+  - **the constants:** `KINGDOM_SIZE` 100, `PLOT_WINDOW` 10 (decision 9.4), and the gate `(1, 1)`;
+  - **`kingdomsOpen()`, the one predicate:** the switch on and both values set. Unset values mean closed, never unrestricted;
+  - **the test configuration's guard, `testConfigFrom()`:** `KINGDOMS_TEST` exactly `1` **and** `SUPABASE_URL`'s host exactly `kong`. Anything missing or malformed is closed. The test values are fixed in code: open, level 1, cost 100;
+  - **the Kingdom Zone's definition,** built for the current Overworld town.
+- **`public/js/data/zones.js`:**
+  - **`loadZones()` always ignores a zone with the id `kingdoms`,** and drops any path into it;
+  - **while open, it registers the Kingdom Zone last,** and adds the one path in: at the Overworld's town cell, needing `CLAIM_MIN_LEVEL`. Any other path at that cell is removed;
+  - **`ZONE_DEFS` never holds the Kingdom Zone;**
+  - **`reloadZones()`** re-registers under the current configuration.
+- **`public/js/engine/zone-validate.js`** refuses:
+  - the id `kingdoms`;
+  - any path into it;
+  - an Overworld path at its town cell.
+- **`public/js/engine/world.js`:** `move()` and `walkTo()` are refused in the Kingdom Zone ("Choose plots on the plot map.").
+- **`public/js/engine/character.js`, `ensureCharacter()`:**
+  - in the Kingdom Zone, away from the gate: to the gate;
+  - while closed: to the Crossroads, not to the race's home;
+  - **it never touches `data.kingdom`.**
+- **`public/js/engine/kingdom.js`, new:** `claimKingdom()` and `releaseKingdom()`.
+  - **Refused:** while closed; outside the Kingdom Zone (K-D12); in a fight; on a plot outside 1 to 100; with a Kingdom already, or without one.
+  - **The level and the cost** are checked. **The cost is paid from carried gold,** as every other purchase is.
+- **`public/js/admin.js`:** the world-boss hunt's zone list leaves out the Kingdom Zone.
+
+**The `game` function:**
+- **The configuration:** set once at start-up, followed by `reloadZones()`.
+- **One commit path, `commitRow()`,** used by every save:
+  - finish staging;
+  - commit through `save_hero_with_rewards()`, `kingdom_claim()`, `kingdom_release()` or the plain versioned update;
+  - map the refusals;
+  - take the new version;
+  - and only then flush the ledger.
+
+  **`saveRow()` calls it.** The #102 API tests (22) pass unchanged through it.
+- **The refusals:** `MRPLT`, `MRHAS`, `MRNOP` and `MRSTL` answer 409 with a `reason` field (`plot_taken`, `has_kingdom`, `no_plot`, `plot_changed`). `MRREW` and `MRVER` remain "busy" (409).
+- **`kingdomClaim` and `kingdomRelease`:**
+  - they come before the generic actions, so the claim's gold is ledgered once, under `kingdom`, and only after the commit;
+  - **the release takes the plot instance's id from the request,** checked as a positive safe integer. It is never looked up, so a stale confirmation can't release a newer Kingdom;
+  - **both join `FAST_ACTIONS`.**
+- **Location corrections are saved** (K1-B04).
+  - `loadRow()` compares only `loc` before and after `ensureCharacter()`.
+  - A `state` read with a correction saves it through `commitRow()`, versioned, public columns included.
+  - This also applies to a hero in a deleted or resized zone.
+
+**The `admin` function:**
+- **The same configuration rule.**
+- **`meta`** reports `kingdoms: { version: 1, open }`. This is the capability that K1-4's console needs before asking for Kingdom data (Q3). `admin` v8 has no such key.
+- **The hero editor:** a move into the Kingdom Zone is possible only while open (otherwise the zone is unknown), and only to the gate.
+- **`startHunt()`** refuses the Kingdom Zone.
+- **The reads, `kingdomPlot` and `kingdomSearch`,** are for any staff member, open or closed.
+- **The changes, `kingdomRevoke`, `kingdomReserve` and `kingdomUnreserve`,** are admin only, and refused while closed (409).
+  - **Revoke and unreserve take the instance id,** and revoke also the owner, from the request.
+  - **The revoke's refund** is checked as a non-negative safe integer, then ledgered under `kingdom` after the commit, if it's above 0.
+
+**CI and the local stack:**
+- **CI's database job** writes `supabase/functions/.env` (`KINGDOMS_TEST=1`) before `supabase start`.
+- **`supabase/.gitignore`** ignores `functions/.env`, confirmed with `git check-ignore`.
+- **`CLAUDE.md`** says how to run the open and the closed tests locally.
+
+### 2.2 The tests
+
+- **Engine, `tests/kingdom.test.mjs` (20 after 2.6; 19 at first):**
+  - the shipped configuration;
+  - `kingdomsOpen()`, including unset values meaning closed;
+  - **the guard:** every non-`kong` host, every flag but `1`, and missing values;
+  - registration closed and open, the one way in, and the portal's level;
+  - a rogue database zone and path are ignored;
+  - the collision at the town cell is removed;
+  - the portal follows a moved town;
+  - the validation refusals, with every built-in zone still valid;
+  - the gate and the closed move to the Crossroads;
+  - no walking or monsters in the Kingdom Zone;
+  - the claim and release rules;
+  - no ordinary action changes `data.kingdom`.
+- **API, `tests/db/kingdoms-api.test.mjs` (20 after 2.6; 17 at first),** through the real functions in the test configuration:
+
+  | Test | What it proves |
+  |---|---|
+  | K-1 | A claim takes the plot and records the Kingdom; the cost is ledgered once; a retried claim changes nothing |
+  | K-2 | Two heroes claiming one plot at once: exactly one wins; the other gets 409 `plot_taken`, pays nothing, and has no Kingdom |
+  | K-3 | One hero claiming twice at once: one plot, charged once |
+  | K-4 | A conflicting save: no plot, no charge, **no ledger entry** |
+  | K-5 | Staged rewards are claimed in the claim's own transaction, and delivered once (#102's case 7) |
+  | K-6 | A claim refused by the database leaves the staged rewards pending, and they are delivered once later |
+  | K-7 | Walking and stepping in the Kingdom Zone are refused; a claim from outside it is refused (renamed in 2.6: it never sent a release) |
+  | K-7b | An unaffordable claim, with banked gold available: no plot, carried and banked gold unchanged, nothing saved, no ledger entry (2.6) |
+  | K-7c | A plot owner can't release from outside the Kingdom Zone: the plot and the Kingdom are intact, nothing saved (2.6) |
+  | K-7d | In the Kingdom Zone, no fight, no duel (not a PvP zone), and no hunt: neither one elsewhere, nor a hunt row placed in the Kingdom Zone directly (2.6) |
+  | K-8 | **A stale release naming an older Kingdom gets 409 `plot_changed`,** and the new Kingdom is intact. A release frees the plot named and claims its staged reward. Invalid ids are refused, never looked up |
+  | K-9 | A retried release saves nothing |
+  | K-10 | **A revoke between a `game` read and its save.** A test-only trigger makes the reward claim (the first step of `save_hero_with_rewards()`) wait, before the hero's row is locked. The revoke commits meanwhile. The save then fails with 409, the Kingdom isn't written back, and the reward stays pending |
+  | K-11 | A `state` read saves a location correction (the gate; a deleted zone), with one versioned save; a read with nothing to correct saves nothing |
+  | K-12 | The `meta` capability; a moderator can read and search, and is refused changes (403) |
+  | K-13 | The Kingdom RPCs are refused to a player and to `anon` through the REST API (`42501`) |
+  | K-14 | Reserve and unreserve write one audit entry each; an old unreserve after a re-reserve gets 409, with no audit entry; a missing id is refused |
+  | K-15 | **The refund:** 3,000,000,007 is returned, added and ledgered exactly, once. A stale revoke and a retried one leave the ledger and the audit log unchanged |
+  | K-16 | The hero editor moves a hero only to the gate; hunts in the Kingdom Lands are refused |
+  | K-17 | The I-1 check finds no exception among the file's heroes |
+
+- **The closed-state check, `tests/db/kingdoms-closed.test.mjs` (3, opt-in, Q2).** It runs with `KINGDOMS_EXPECT_CLOSED=1`, against a stack started without `.env`, and checks that:
+  - a hero placed in the Kingdom Zone is moved to the Crossroads, and saved;
+  - claim and release are refused by `game`;
+  - `meta` reports closed, and the Kingdom Zone isn't registered;
+  - all three admin changes, and a move into the Kingdom Zone, are refused by `admin`;
+  - reads still work.
+- **Without `.env` and without the flag,** the open-state file fails at once, naming the missing configuration.
+
+**Mutation checks on the server code** (local only; each file was restored byte for byte, checked by md5). The edge runtime was restarted after each edit: its hot reload had shown edits a run late, which made the first attempt's results unreliable, so they were discarded.
+
+| Mutation | Caught by |
+|---|---|
+| S2: the claim drops the staged reward ids | K-5 |
+| S3: the release looks up the current plot id | K-8, K-9 |
+| S4: the ledger is flushed before the commit | K-4 |
+| S5: a location correction isn't saved | K-11 |
+| S9: `MRSTL` isn't mapped | K-8 |
+| S6: the admin function ledgers before the revoke commits | K-15 |
+| S7: the hero editor allows any Kingdom cell | K-16 |
+| S8: hunts are allowed in the Kingdom Lands | K-16 |
+
+**The baseline before** and **the run after** had 0 failing.
+
+**A test-isolation fix found on the way:** K-14 and K-15 first counted audit entries for their plots from every run, so a second run failed. They now count only entries whose reason starts with the run's id.
+
+### 2.3 Evidence (local, the owner's laptop, 2026-11-25)
+
+- **Engine:** 109 of 109 (90 before, plus 19), three times.
+- **The #102 regression net:** `pending-rewards-api.test.mjs`, 22 of 22, unchanged, through the new commit path, in the test configuration.
+- **`kingdoms-api.test.mjs`:** 17 of 17, in the test configuration; also within the mutation runs (the baseline and the run after, each 0 failing).
+- **The closed-state check (Q2),** against a stack started without `.env`: 3 of 3. The 17 open-state tests skipped, with the flag. Without the flag, they failed at once, naming the missing configuration.
+- **`npm run test:db`, in the test configuration:** pgTAP **222 of 222**, and API tests **60 passed**, 4 skipped (the earlier opt-in, and the 3 closed-state checks).
+  - **Two runs completed.** Claude Code stopped the third because the laptop was critically low on memory, and it wasn't restarted.
+- **Browser:** **315 of 315, one run,** with the stack stopped.
+  - **Fewer than the usual three runs,** because of the same memory pressure.
+  - K1-2 changes shared code the browser loads, but closed, so nothing of Kingdoms is drawn and every reader of `ZONES` sees what it saw before. CI's browser job is the further evidence.
+- **`supabase/functions/.env`** is ignored by Git (`git check-ignore`). It was never staged.
+
+### 2.4 Deviations from the plan
+
+- **The Kingdom configuration lives in `public/js/data/kingdoms.js`,** not in `public/js/engine/kingdom.js` alone (the plan's 2.2). `data/zones.js` needs it, and `data/` mustn't import from `engine/`. The rules are in `engine/kingdom.js`.
+- **A `reason` code on some `game` refusals** (`plot_taken`, `has_kingdom`, `no_plot`, `plot_changed`). It is added to the JSON beside `error`, so K1-3 can tell a stale plot from a busy hero. Older clients ignore it.
+- **The claim's cost comes from carried gold.** The plan didn't say which. Every other purchase works this way.
+- **While Kingdoms are open, any other path at the Overworld town cell is removed** when the Kingdom portal is added. This is a second line behind validation, so the Crossroads can't lead anywhere else.
+- **The closed-state check** is a committed, opt-in test file, so it can be rerun. The review asked only for a bounded local check.
+
+### 2.5 Not done in K1-2
+
+- **The player's interface (K1-3) and the admin console's Kingdoms section (K1-4).** No client draws Kingdoms yet. The only client change is the hunt zone list.
+- **The production rollout (K1-5):** no precheck, migration or deploy. **`game` v15 and `admin` v8 are unchanged.**
+- **Activation:** no live values. Kingdoms stay closed.
+
+### 2.6 Review corrections (the review of `07f189f`, 2026-11-25)
+
+**The review accepted:**
+- the shared `commitRow()` and its guarantees;
+- the local test configuration;
+- Q2, and Q3's server side;
+- the documented local-testing deviation;
+- the mutation method.
+
+It asked for two corrections. **The owner authorized them, and ratified two things:**
+- **the claim is paid from carried gold** (banked gold doesn't pay);
+- **"Next stage owner authorized" as covering** PR #117's merge and K1-2.
+
+| Finding | What changed | Its tests |
+|---|---|---|
+| **K1-ENG01:** the reverse Overworld collision | **`validateZone()`** now also refuses an Overworld whose town is on a cell where another zone is placed. Editing and restoring the Overworld both validate through it (`saveZone()`, `resetZone()`), so neither can move the town onto an existing route. The other direction (a zone placed on the town) was already refused. **`registerKingdomZone()`'s removal of other paths at the town cell stays,** as a second line | **Engine:** moving the town onto Ashford Vale's cell is refused, by name; restoring the built-in Overworld over a zone placed on its town is refused; a free cell is fine; the other direction is still refused. **Fails on `07f189f`:** with the change undone, this test fails (19 pass, 1 fails) |
+| **K1-ENG02:** the real-stack acceptance evidence | **K-7 renamed** to what it does: walking and stepping refused, a claim from outside refused. **K-7b, K-7c and K-7d added.** **The engine** (`startHuntBattle()`) now refuses a hunt in the Kingdom Zone, so the accepted rule ("no hunt", 5.1.1) holds even for a hunt row placed there without the admin console. This is not a new gameplay rule | **K-7b:** an unaffordable claim, with banked gold available: no plot, gold and bank unchanged, nothing saved, no ledger entry. **K-7c:** a plot owner outside the Kingdom Zone can't release; the plot and the Kingdom are intact. **K-7d:** no fight; no duel; and no hunt, neither one elsewhere nor a row placed in the Kingdom Zone. **The guard was needed:** without it, the hero joined the placed hunt and K-7d failed (shown on the local stack, then the guard restored) |
+
+**Evidence (local, targeted, as the review allowed):**
+- **Engine:** 110 of 110: 109, plus the K1-ENG01 test. The hunt guard was added to an existing test.
+- **`kingdoms-api.test.mjs`:** 20 of 20, in the test configuration.
+- **The suites as a whole** are CI's, on this head.
+
+**Carried into K1-3 and K1-4** (the review's requirements, not done here):
+- **K1-3:**
+  - **`net.js`'s `call()` must keep the server's `reason`,** which it drops today, when it turns a refusal into an error;
+  - on `plot_changed`, refresh the state and ask for a new confirmation;
+  - keep the ownership id that was inspected.
+- **K1-4:**
+  - **the console's side of Q3:**
+    - with no `meta.kingdoms` (`admin` v8), it sends no Kingdom request;
+    - while closed, it is read-only;
+    - while open, it does what each role may;
+  - **a stale admin change (409)** either gets a reason code or refreshes the inspected plot. It is never retried with a replacement id.
