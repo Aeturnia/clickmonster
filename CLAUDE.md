@@ -67,7 +67,7 @@ Read these first:
   - **The K-1 plan is accepted:** `docs/kingdoms-k1-plan.md`, revision 1, merged as PR #116 (`55e41f7`, 2026-11-25), with the four owner decisions ratified and qualifications Q1 to Q4 (recorded on #83).
   - **K1-1, the database, is accepted and merged:** PR #117 (`0b9b4ab`, 2026-11-25).
   - **K1-2, the engine and the `game` and `admin` functions, is accepted and merged:** PR #118 (`6b19337`, 2026-11-26).
-  - **K1-3, the player's interface, is authorized** (2026-11-26) and at its review gate. See `docs/kingdoms-k1-report.md`, section 3. Kingdoms stay closed, and nothing is deployed.
+  - **K1-3, the player's interface, is authorized** (2026-11-26). Its review corrections, K1-UI01 to K1-UI03, are at the re-review gate. See `docs/kingdoms-k1-report.md`, section 3. Kingdoms stay closed, and nothing is deployed.
   - **K1-4 and K1-5 are not authorized.**
 - **#102, pending rewards delivered exactly once: fixed, deployed, accepted in independent review, and closed as completed** (2026-11-24, on the owner's authorization).
   - **The scope and reports:** `docs/pending-rewards-scope.md` and `docs/pending-rewards-report.md`.
@@ -252,11 +252,14 @@ Read these first:
     - **The `admin` function's `meta`** reports `kingdoms: { version, open }`. The Kingdom changes are admin only and refused while closed.
   - **K1-3, the player's interface:**
     - **`public/js/kingdom-ui.js`** holds the views: the plot map (a 10 × 10 window), the Kingdom Zone's Explore screen, the Hero tab's section, and the management view.
-    - **`main.js`** owns `ui.kingdom` and the reads (`syncKingdom()` after each render, checking `gameGen` and the window).
+    - **`main.js`** owns `ui.kingdom` and the reads (`syncKingdom()` after each render).
+      - **Each read is numbered** (`plotsSeq`, `mineSeq`, `findSeq`). Its answer is used only while it is still the latest of its kind, for the same account (`gameGen`) and the same window. This is checked before the dependent owners read as well as before anything is shown.
+      - **`refreshKingdom()`** drops the reads in flight and starts new ones.
     - **Nothing of Kingdoms, and no Kingdom request, while closed.** Nothing iterates the zone's 10,000 cells.
-    - **A Kingdom refusal (`reason`)** reloads the screen and sends nothing more.
+    - **A Kingdom refusal (`reason`)** reads the hero again through `resyncHero()`, still holding `ui.busy`, so no other action starts first. It sends nothing more. Until that read succeeds, Claim and Release are withheld; if it fails, the screen says so, with Try again.
+    - **The hero's own plot** is the one whose owner is the hero's character id (`my_character()`, `myCharacterId()` in `net.js`), never one matched by coordinates alone. A missing or someone else's row reads the hero again, once per mismatch, and shows Try again instead of Release.
     - **A release sends the instance id that was on screen.**
-    - **Tests:** `tests/ui/kingdoms.test.mjs`, with `kingdomsOn(page)` and `new FakeBackend({ kingdoms })` in the harness.
+    - **Tests:** `tests/ui/kingdoms.test.mjs`, with `kingdomsOn(page)` and `new FakeBackend({ kingdoms })` in the harness. `backend.holdRead(kind)` holds one Kingdom read with its answer as it was when asked.
 - **Signing out and refused sessions** (`net.js`; `docs/sign-out-report.md`):
   - **`signOut()` and `endSession()`** end this device's session only (`scope: 'local'`), with a 5 s limit. If the library errs, runs out of time or leaves a session saved, they remove `clickmonster.auth` themselves (only if it is still the session being ended), keep the message in `sessionStorage` (`clickmonster.note`) and reload. `signOut()` is the player's own; `endSession()` says "Your session has ended".
   - **Other tabs** follow a removed session through a `storage` listener.
@@ -354,7 +357,7 @@ Read these first:
 
 ```
 npm test                 # engine, entrance file checks, the first-paint tripwire, the public pages, news rules, the news page handler, the town rule, the log rules, the session rule, the pending-rewards staging rule and the Kingdom rules (110)
-npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (332)
+npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (340)
 npm run test:db          # database (pgTAP, 222: news 42, pending rewards 40, Kingdoms 140) and API/function/recovery/session/pending-rewards/Kingdom-check/Kingdom tests (63, plus 4 opt-in: 1, and the 3 closed-state checks) on the LOCAL Supabase stack, with Mailpit
 npx playwright install chromium   # once
 ```

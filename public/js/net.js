@@ -293,6 +293,14 @@ export async function kingdomOwners(ids) {
   return data || [];
 }
 
+// The signed-in hero's character id (my_character(), which chat also reads). A plot is shown as the
+// hero's own only when its owner is this id, never by its coordinates alone (K1-3 review, K1-UI02).
+export async function myCharacterId() {
+  const { data, error } = await sb.rpc('my_character');
+  if (error) throw new Error('Could not load your hero.');
+  return data?.[0]?.id || null;
+}
+
 // The free plot nearest (x, y), or a random one: at most one, or null when none is free. Advisory:
 // the claim decides (K1-B05).
 export async function kingdomFreePlot(x, y, random) {

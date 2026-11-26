@@ -19,7 +19,7 @@ import { monsterCombatant } from './engine/monster.js';
 import { meleeChance, spellChance, meleeBase, spellBase } from './engine/combat.js';
 import { shopItems, isEquipped, sellPrice } from './engine/inventory.js';
 import { PVP_LEVEL_GAP } from './engine/pvp.js';
-import { sb, api, playersAt, recentEvents, fetchZoneDefs, signOut, endSession, kingdomPlots, kingdomOwners, kingdomFreePlot } from './net.js';
+import { sb, api, playersAt, recentEvents, fetchZoneDefs, signOut, endSession, kingdomPlots, kingdomOwners, kingdomFreePlot, myCharacterId } from './net.js';
 import { setupChat } from './chat-ui.js';
 import { questTitle, canAccept } from './engine/quests.js';
 import { waitingReminder } from './engine/rewards.js';
@@ -55,6 +55,9 @@ function savePrefs() {
 
 let session = null;
 let char = null; // the server's copy of our hero
+// Counts every time char is replaced by a server answer. A read of the hero again after a Kingdom
+// refusal is used only if nothing newer replaced it meanwhile (the K1-3 review, K1-UI01).
+let heroSeq = 0;
 let layout = 'mobile'; // set by watchLayout(): mobile, wide or desktop (layout.js)
 // Per-account UI state. stop() replaces it with a fresh copy at every account boundary
 // (landing L-1 review, L1-02). Device-level settings live in prefs, not here.
@@ -1487,7 +1490,8 @@ function handleLocal(a, v) {
       requestAnimationFrame(() => $(`.plots [data-a="kplot"][data-v="${x},${y}"]`)?.focus());
       return true;
     }
-    case 'kretry': refreshKingdom(); return true;
+    case 'kretry': refreshKingdom(); ui.kingdom.resyncedFor = null; return true; // a mismatch may read the hero again
+    case 'kresync': if (inKingdoms() && !ui.busy) resyncHero(gameGen); return true;
     case 'kmanage': if (inKingdoms() && char?.kingdom) ui.sheet = { type: 'kingdom' }; return true;
     case 'mapcenter': {
       ui.mapCursor = null;
@@ -1657,16 +1661,20 @@ async function runRemote(a, v, el) {
     res = await api(action, args, () => live(g));
   } catch (err) {
     if (!live(g) || err.stale) return; // the account changed while this was on its way: not ours to report
-    ui.busy = false;
-    ui.pendingKey = null;
-    markPending();
+    // A Kingdom refusal means the screen was out of date: the hero is read again, still busy, so no
+    // other action starts before that answer is in (K1-UI01). Nothing is sent again by itself.
+    const recover = !err.ended && (action === 'kingdomClaim' || action === 'kingdomRelease') && KINGDOM_REFUSALS.has(err.reason);
+    if (!recover) {
+      ui.busy = false;
+      ui.pendingKey = null;
+      markPending();
+    }
     const message = err.message || 'Something went wrong.';
     if (action === 'create') ui.createError = message; // shown next to the name field
     else addError(err.status == null ? `Can't reach the game server. ${message}` : message, err.status == null ? 'connection' : action);
     render();
     if (err.ended) await endSession(err.session); // the server refused it even after a renewal (net.js api())
-    // A Kingdom refusal means the screen was out of date: read it again, and send nothing more.
-    else if ((action === 'kingdomClaim' || action === 'kingdomRelease') && KINGDOM_REFUSALS.has(err.reason)) await reloadAfterRefusal(g);
+    else if (recover) await resyncHero(g, true);
     return;
   }
   // The answer belongs to the session that asked. If that session has ended (signed out, or
@@ -1676,6 +1684,8 @@ async function runRemote(a, v, el) {
   ui.pendingKey = null;
   markPending();
   char = res.char;
+  heroSeq++;
+  if (ui.kingdom.hero === 'failed') ui.kingdom.hero = null; // this answer is the hero as the server has it
   trackChanges(action, before);
   if ('sanctions' in res) ui.sanctions = res.sanctions;
   resolveErrors(action);
@@ -1686,6 +1696,7 @@ async function runRemote(a, v, el) {
   if (action === 'sell' || action === 'buyequip') ui.sheet = null;
   if (action === 'kingdomClaim' || action === 'kingdomRelease') refreshKingdom();
   if (action === 'kingdomRelease') ui.sheet = null;
+  if (action === 'create' || action === 'delete') ui.kingdom = freshKingdomState(); // another hero, another id
   if (char && before && char.loc.zone !== before.zone) { refreshKingdom(); ui.kingdom.selected = null; ui.kingdom.note = null; }
   if (action === 'fight' || action === 'attack' || action === 'hunt') ui.tab = 'explore';
   if (char?.battle?.hunt && ['melee', 'cast'].includes(action)) {
@@ -1758,10 +1769,13 @@ function kingdomWindow() {
 
 // Read the plots and the hero's own plot again when next drawn (after a claim, a release, a refusal,
 // or now and then). What is shown stays until the new answer arrives. Release waits for it.
-function refreshKingdom() {
+// Reads already on their way predate this: they are dropped when they return, and new ones start
+// (the K1-3 review, K1-UI03). recheck: Claim waits for the new plots too (after a refusal).
+function refreshKingdom(recheck = false) {
   const k = ui.kingdom;
-  k.stale = true; k.mineStale = true; k.errorKey = null; k.mineErrorKey = null;
-  k.rev = (k.rev || 0) + 1; // a read already on its way may predate this, so it can't clear stale
+  k.stale = true; k.mineStale = true; k.errorKey = null; k.mineErrorKey = null; k.mineProblem = null;
+  k.plotsSeq++; k.mineSeq++; k.loadingKey = null; k.mineLoading = null;
+  if (recheck) k.recheck = true;
 }
 
 // Start the reads the screen needs, unless they are loaded, loading, or failed for the same window
@@ -1777,52 +1791,77 @@ function syncKingdom() {
   else if ((k.mineKey !== mk || k.mineStale) && k.mineLoading !== mk && k.mineErrorKey !== mk) loadMine(mk);
 }
 
+// Each read is numbered (K1-UI03). It is used only while it is the latest of its kind, for the same
+// account and, for the plots, the same window; that is checked before a read that depends on it
+// (the owners' names) as well as before anything is shown. A window left and come back to is a new
+// read: the old one's answer is dropped.
 async function loadPlots(key) {
   const g = gameGen;
   const k = ui.kingdom;
+  const seq = ++k.plotsSeq;
+  const current = () => live(g) && ui.kingdom === k && k.plotsSeq === seq && windowKey(k.win) === key;
   const [x, y] = key.split(',').map(Number);
-  const rev = k.rev;
   k.loadingKey = key;
   try {
-    const rows = await kingdomPlots(x, y, PLOT_WINDOW);
+    const [rows, myId] = await Promise.all([kingdomPlots(x, y, PLOT_WINDOW), k.myId || myCharacterId()]);
+    if (!current()) return; // another account, a newer read, or the view has moved on
     const missing = [...new Set(rows.map((r) => r.character_id).filter((id) => id && !(id in k.owners)))];
     const owners = await kingdomOwners(missing);
-    if (!live(g) || windowKey(k.win) !== key) return; // another account, or the view has moved on
+    if (!current()) return;
+    k.myId = myId;
     for (const o of owners) k.owners[o.id] = o.name;
     k.cells = Object.fromEntries(rows.map((r) => [`${r.x},${r.y}`, r]));
     k.cellsKey = key;
     k.errorKey = null;
-    if (k.rev === rev) k.stale = false;
+    k.stale = false;
+    k.recheck = false;
   } catch {
-    if (!live(g) || windowKey(k.win) !== key) return;
+    if (!current()) return;
     k.errorKey = key;
   } finally {
-    if (live(g) && k.loadingKey === key) k.loadingKey = null;
+    if (live(g) && ui.kingdom === k && k.plotsSeq === seq) k.loadingKey = null;
   }
-  if (live(g)) render();
+  render();
 }
 
-// The hero's own plot row, for its ownership instance id: a release names it (K1-DB01).
+// The hero's own plot row, for its ownership instance id: a release names it (K1-DB01). It is the
+// hero's only if its owner is the hero (K1-UI02). If the row is missing or someone else's, the hero
+// is read again, once for that mismatch, and Release stays withheld with a way to try again.
 async function loadMine(mk) {
   const g = gameGen;
   const k = ui.kingdom;
+  const seq = ++k.mineSeq;
+  const current = () => live(g) && ui.kingdom === k && k.mineSeq === seq;
   const [x, y] = mk.split(',').map(Number);
-  const rev = k.rev;
   k.mineLoading = mk;
+  let mismatch = null;
   try {
-    const [row] = await kingdomPlots(x, y, 1);
-    if (!live(g)) return;
-    k.mine = row && row.status === 'claimed' ? row : null;
+    const [[row], myId] = await Promise.all([kingdomPlots(x, y, 1), k.myId || myCharacterId()]);
+    if (!current()) return;
+    k.myId = myId;
     k.mineKey = mk;
-    k.mineErrorKey = null;
-    if (k.rev === rev) k.mineStale = false;
+    k.mineStale = false;
+    if (row && row.status === 'claimed' && myId && row.character_id === myId) {
+      k.mine = row;
+      k.mineErrorKey = null;
+      k.mineProblem = null;
+    } else {
+      k.mine = null;
+      k.mineErrorKey = mk;
+      k.mineProblem = 'mismatch';
+      mismatch = `${mk}:${row ? row.id : 'none'}`;
+    }
   } catch {
-    if (!live(g)) return;
+    if (!current()) return;
     k.mineErrorKey = mk;
+    k.mineProblem = 'error';
   } finally {
-    if (live(g) && k.mineLoading === mk) k.mineLoading = null;
+    if (current()) k.mineLoading = null;
   }
-  if (live(g)) render();
+  if (mismatch && k.resyncedFor !== mismatch && !ui.busy) {
+    k.resyncedFor = mismatch;
+    await resyncHero(g); // renders
+  } else render();
 }
 
 // Show a plot: move the view to it if needed, select it, and put it in the tab order.
@@ -1834,23 +1873,29 @@ function showPlot(x, y) {
 }
 
 // The finders are advisory: they move the view and select a plot, nothing else. The claim decides.
+// If the player has moved the view, selected another plot or left the plot map meanwhile, the answer
+// is dropped: it never moves a view the player has moved on from (K1-UI03).
 async function findPlot(random) {
   const g = gameGen;
   const k = ui.kingdom;
   const win = kingdomWindow();
   const from = k.selected || { x: win.x + Math.floor(PLOT_WINDOW / 2), y: win.y + Math.floor(PLOT_WINDOW / 2) };
+  const seq = ++k.findSeq;
+  const current = () => live(g) && ui.kingdom === k && k.findSeq === seq;
+  const view = () => `${windowKey(k.win)}|${k.selected ? `${k.selected.x},${k.selected.y}` : ''}|${ui.tab}|${inKingdoms()}`;
+  const asked = view();
   k.finding = true;
   k.note = null;
   render();
   try {
     const p = await kingdomFreePlot(from.x, from.y, random);
-    if (!live(g)) return;
+    if (!current() || view() !== asked) return;
     if (!p) k.note = 'No free plots are left.';
     else { showPlot(p.x, p.y); k.note = `Plot ${p.x}, ${p.y} was free just now.`; }
   } catch (err) {
-    if (live(g)) k.note = err.message;
+    if (current() && view() === asked) k.note = err.message;
   } finally {
-    if (live(g)) { k.finding = false; render(); announce(ui.kingdom.note || ''); }
+    if (current()) { k.finding = false; render(); announce(k.note || ''); }
   }
 }
 
@@ -1858,15 +1903,40 @@ async function findPlot(random) {
 // showed is out of date: read the hero and the plots again. Nothing is sent again by itself: the
 // player looks, and confirms again (the K1-2 review's carry-forward).
 const KINGDOM_REFUSALS = new Set(['plot_taken', 'plot_changed', 'has_kingdom', 'no_plot']);
-async function reloadAfterRefusal(g) {
-  refreshKingdom();
+
+// Read the hero again, after a Kingdom refusal or a plot that isn't the hero's (the K1-3 review,
+// K1-UI01 and K1-UI02). It holds ui.busy, so no other action starts until the answer is in, and the
+// answer is used only if nothing newer replaced the hero meanwhile (heroSeq). Claim and Release are
+// withheld until it succeeds; a failure says so, with Try again. Nothing is sent again by itself.
+// held: the caller (runRemote, after a refusal) is already busy and hands that over.
+async function resyncHero(g, held = false) {
+  if (!live(g)) return;
+  if (!held) {
+    if (ui.busy) return;
+    ui.busy = true;
+    markPending();
+  }
+  ui.kingdom.hero = 'loading';
+  refreshKingdom(true);
+  render();
+  const seq = heroSeq;
   try {
     const res = await api('state', {}, () => live(g));
     if (!live(g)) return;
-    char = res.char;
-    if ('sanctions' in res) ui.sanctions = res.sanctions;
-  } catch { /* the next action reloads it */ }
-  if (live(g)) render();
+    if (heroSeq === seq) {
+      char = res.char;
+      heroSeq++;
+      if ('sanctions' in res) ui.sanctions = res.sanctions;
+    }
+    ui.kingdom.hero = null;
+  } catch (err) {
+    if (!live(g) || err.stale) return;
+    ui.kingdom.hero = 'failed';
+    if (err.ended) { await endSession(err.session); return; }
+  } finally {
+    if (live(g)) { ui.busy = false; ui.pendingKey = null; markPending(); }
+  }
+  render();
 }
 
 // Plot squares: one tab stop; arrow keys move between plots, and past the edge move the view by
@@ -2061,7 +2131,7 @@ setInterval(async () => {
   if (!ZONES[char.loc.zone]) {
     try {
       const fresh = (await api('state')).char;
-      if (live(g)) char = fresh;
+      if (live(g)) { char = fresh; heroSeq++; }
     } catch { /* next action will sort it out */ }
   }
   if (live(g)) render();
@@ -2128,6 +2198,7 @@ export async function start(newSession, isCurrent = () => true) {
   const res = await api('state', {}, current);
   if (!current()) return false;
   char = res.char;
+  heroSeq++;
   ui.sanctions = res.sanctions || null;
   ui.phase = 'game';
   // Chat starts after the hero; by then the account may have changed or signed out.

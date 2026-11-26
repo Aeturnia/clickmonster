@@ -222,6 +222,7 @@ export class FakeBackend {
     this.calls = [];
     this.failures = []; // { action, status, message, once }
     this.holds = {}; // action -> promise: requests for it wait until released
+    this.readHolds = []; // Kingdom reads held with their answer as it was when asked (holdRead())
     this.offline = false;
     this.sockets = [];
     this.revoked = new Set(); // refresh-<account id>: that account's refresh tokens are refused
@@ -291,6 +292,34 @@ export class FakeBackend {
     let release;
     this.holds[action] = new Promise((r) => { release = r; });
     return () => { delete this.holds[action]; release(); };
+  }
+
+  // Hold the next Kingdom read of a kind (the K1-3 review, K1-UI03). Unlike hold(), its answer is taken
+  // when the request arrives, so when released it is an old answer: a slow read overtaken by newer
+  // ones. kind: 'window' (a plot-map window), 'mine' (the hero's own plot), 'owners', 'finder' or 'me'
+  // (my_character). One request only; later reads of that kind answer at once. The returned
+  // function releases it; release.arrived() says whether the held request has come in.
+  holdRead(kind) {
+    let open;
+    const h = { kind, used: false, done: new Promise((r) => { open = r; }) };
+    this.readHolds.push(h);
+    const release = () => { this.readHolds = this.readHolds.filter((x) => x !== h); open(); };
+    release.arrived = () => h.used;
+    return release;
+  }
+  async heldRead(kind) {
+    const h = kind && this.readHolds.find((x) => x.kind === kind && !x.used);
+    if (!h) return;
+    h.used = true;
+    await h.done;
+  }
+  static readKind(table, params) {
+    if (table === 'kingdom_plots') {
+      const [lo, hi] = params.getAll('x').map((f) => f.split('.')[1]);
+      return lo === hi ? 'mine' : 'window';
+    }
+    if (table === 'characters' && /^in\./.test(params.get('id') || '')) return 'owners';
+    return null;
   }
 
   userFor(token) {
@@ -677,7 +706,7 @@ export class FakeBackend {
       case 'characters': {
         const ids = (params.get('id') || '').match(/^in\.\((.*)\)$/);
         if (ids) {
-          this.kingdomCalls.push({ kind: 'owners' });
+          this.kingdomCalls.push({ kind: 'owners', account: user?.id });
           const want = ids[1].split(',').map((v) => v.replace(/^"|"$/g, ''));
           const own = Object.entries(this.charIds).map(([acct, cid]) => [cid, this.heroes[acct]?.name]);
           const names = { ...Object.fromEntries(own), ...this.ownerNames };
@@ -686,7 +715,7 @@ export class FakeBackend {
         return this.players.filter((p) => p.zone === eq('zone') && String(p.x) === eq('x') && String(p.y) === eq('y'));
       }
       case 'kingdom_plots': {
-        this.kingdomCalls.push({ kind: 'read', query: params.toString() });
+        this.kingdomCalls.push({ kind: 'read', query: params.toString(), account: user?.id });
         const ok = (col, v) => params.getAll(col).every((f) => {
           const [op, n] = f.split('.');
           if (op === 'eq') return String(v) === n;
@@ -898,14 +927,21 @@ export async function attach(context, backend, baseUrl) {
       }
       if (p.startsWith('/rest/v1/rpc/kingdom_free_plot')) {
         const body = JSON.parse(req.postData() || '{}');
-        backend.kingdomCalls.push({ kind: 'finder', args: body });
-        return json(route, 200, backend.freePlot(Number(body.p_x), Number(body.p_y), !!body.p_random));
+        backend.kingdomCalls.push({ kind: 'finder', args: body, account: user?.id });
+        const found = backend.freePlot(Number(body.p_x), Number(body.p_y), !!body.p_random);
+        await backend.heldRead('finder');
+        return json(route, 200, found);
       }
-      if (p.startsWith('/rest/v1/rpc/my_character')) return json(route, 200, user ? [{ id: backend.charIds[user.id], zone: backend.heroes[user.id]?.loc.zone }] : []);
+      if (p.startsWith('/rest/v1/rpc/my_character')) {
+        const me = user ? [{ id: backend.charIds[user.id], zone: backend.heroes[user.id]?.loc.zone }] : [];
+        await backend.heldRead('me');
+        return json(route, 200, me);
+      }
       if (p.startsWith('/rest/v1/')) {
         const table = p.split('/').pop();
         const single = /vnd\.pgrst\.object/.test(req.headers().accept || '');
         const out = backend.rest(user, table, url.searchParams, single);
+        await backend.heldRead(FakeBackend.readKind(table, url.searchParams));
         if (out?.__status) return json(route, out.__status, out.body);
         if (single && out == null) return json(route, 406, { message: 'no rows' });
         return json(route, 200, out);

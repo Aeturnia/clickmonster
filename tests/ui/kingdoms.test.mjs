@@ -3,7 +3,7 @@
 // opens Kingdoms in the browser with the same test values (level 1, cost 100).
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { setup, signIn, settle, FakeBackend, makeHero, axe, kingdomsOn } from './harness.mjs';
+import { setup, signIn, settle, FakeBackend, makeHero, axe, kingdomsOn, ACCOUNTS } from './harness.mjs';
 import { KINGDOM_ZONE_ID } from '../../public/js/data/kingdoms.js';
 
 let env;
@@ -14,10 +14,12 @@ const CROSSROADS = { zone: 'overworld', x: 4, y: 4 };
 const GATE = { zone: KINGDOM_ZONE_ID, x: 1, y: 1 };
 
 // A hero, a backend and a page. open: Kingdoms open in both the browser and the fake function.
-async function game({ open = true, hero = {}, kingdom = null, plots = [], viewport, mobile = true } = {}) {
+// ownRow: false leaves out the plot row for the hero's Kingdom (the hero's record and the plots
+// disagree, as when the page's copy of the hero is out of date).
+async function game({ open = true, hero = {}, kingdom = null, ownRow = true, plots = [], viewport, mobile = true } = {}) {
   const h = makeHero({ ...GATE, ...hero });
   if (kingdom) h.kingdom = { plot: { x: kingdom.x, y: kingdom.y }, claimedAt: 1 };
-  const seeded = kingdom ? [{ x: kingdom.x, y: kingdom.y, status: 'claimed', character_id: 'char-player' }, ...plots] : plots;
+  const seeded = kingdom && ownRow ? [{ x: kingdom.x, y: kingdom.y, status: 'claimed', character_id: 'char-player' }, ...plots] : plots;
   const backend = new FakeBackend({ hero: h, kingdoms: open ? { plots: seeded } : null });
   const ctx = await env.page({ backend, viewport, mobile });
   if (open) await kingdomsOn(ctx.page);
@@ -364,6 +366,271 @@ test('K3-17 axe: no violations of any impact on the Kingdom screens and dialogs'
   await check('hero tab, Kingdom section');
   await page.click('#main [data-a="kmanage"]'); await page.waitForSelector('#sheet [data-a="krelease"]');
   await check('management view');
+  clean(ctx);
+  await ctx.context.close();
+});
+
+// ------------------------------------------------------------ review corrections (the K1-3 review)
+const PLAYER = ACCOUNTS.player.id;
+const NAME = 'Bartholomew Thorne';
+// Wait, in the test, for something the fake backend records.
+async function until(cond, what, ms = 8000) {
+  const end = Date.now() + ms;
+  while (!cond()) {
+    if (Date.now() > end) throw new Error(`timed out waiting for ${what}`);
+    await new Promise((r) => setTimeout(r, 20));
+  }
+}
+const bodyHas = (page, re) => page.waitForFunction((src) => new RegExp(src).test(document.body.textContent), re.source);
+async function noViolations(page, label) {
+  const v = await axe(page, { minImpact: 'minor' });
+  assert.deepEqual(v, [], `${label}: ${JSON.stringify(v, null, 1)}`);
+}
+const claimOff = (page) => page.$eval('[data-a="kclaim"]', (b) => b.disabled || b.getAttribute('aria-disabled') === 'true');
+
+// K1-UI01
+test('K3-18 after a refusal the hero is read again before anything else can be sent, and Release waits for that answer', async () => {
+  const ctx = await game({ kingdom: { x: 9, y: 3 } });
+  const { page, backend } = ctx;
+  const oldId = backend.plots.find((p) => p.character_id === 'char-player').id;
+  await page.click('#dock [data-a="kmanage"]');
+  await page.waitForSelector('#sheet [data-a="krelease"]');
+  const fresh = backend.reclaimFor(PLAYER, 12, 12); // another tab released it and claimed again
+  await page.click('#sheet [data-a="krelease"]');
+  await page.waitForSelector('#confirm[open]');
+  await page.fill('#confirm-input', NAME);
+  const states = gameCalls(backend, 'state').length;
+  const release = backend.hold('state'); // the hero's read after the refusal is slow
+  await page.click('#confirm [data-r="ok"]');
+  await until(() => gameCalls(backend, 'state').length > states, 'the hero to be read again');
+  await page.waitForFunction(() => /Checking your hero/.test(document.querySelector('#sheet')?.textContent || ''));
+  assert.equal(await page.$('#sheet [data-a="krelease"]'), null, 'no Release while the hero is read again');
+  await page.click('#sheet [data-a="close"]');
+  const sent = backend.calls.length;
+  await page.click('#dock [data-a="portal"]'); // another action, while that read is on its way
+  await bodyHas(page, /Still working on your last action/);
+  await page.waitForTimeout(300);
+  assert.equal(backend.calls.length, sent, 'no other action was sent before the hero\'s answer');
+  release();
+  await settle(page);
+  assert.match(await page.textContent('#alerts'), /Your Kingdom has changed since you looked/, 'the refusal stays on screen');
+  assert.match(await page.textContent('#main'), /Your Kingdom is on plot 12, 12/);
+  await page.click('#dock [data-a="kmanage"]');
+  await page.waitForSelector(`#sheet [data-a="krelease"][data-v="${fresh.id}"]`);
+  assert.deepEqual(gameCalls(backend, 'kingdomRelease').map((c) => c.args), [{ plotId: oldId }], 'sent once, never again by itself');
+  clean(ctx);
+  await ctx.context.close();
+
+  // A refused claim (plot_taken), by a hero without a Kingdom: here only the refusal's own read of
+  // the hero holds other actions back.
+  const two = await game();
+  await openMap(two.page);
+  await two.page.click('.plots [data-v="7,7"]'); await settle(two.page);
+  two.backend.plots.push({ id: 999, x: 7, y: 7, status: 'claimed', character_id: 'char-rival', claimed_at: '' });
+  two.backend.ownerNames['char-rival'] = 'Rival';
+  await two.page.click('[data-a="kclaim"]');
+  await two.page.waitForSelector('#confirm[open]');
+  const states2 = gameCalls(two.backend, 'state').length;
+  const release2 = two.backend.hold('state');
+  await two.page.click('#confirm [data-r="ok"]');
+  await until(() => gameCalls(two.backend, 'state').length > states2, 'the hero to be read again');
+  await two.page.waitForFunction(() => /Checking your hero/.test(document.querySelector('#main')?.textContent || ''));
+  await two.page.click('.plots [data-v="8,8"]'); // selecting sends nothing, and is allowed
+  assert.equal(await claimOff(two.page), true, 'Claim waits for the hero\'s answer');
+  const sent2 = two.backend.calls.length;
+  await two.page.click('[data-a="tab"][data-v="explore"]'); // a view change, sent nowhere
+  await two.page.click('#dock [data-a="portal"]');
+  await bodyHas(two.page, /Still working on your last action/);
+  await two.page.waitForTimeout(300);
+  assert.equal(two.backend.calls.length, sent2, 'no other action was sent before the hero\'s answer');
+  release2();
+  await settle(two.page);
+  await two.page.click('[data-a="tab"][data-v="map"]'); await settle(two.page);
+  await two.page.click('.plots [data-v="8,8"]'); await settle(two.page);
+  assert.equal(await claimOff(two.page), false, 'Claim is offered again once the hero and plots are read');
+  assert.equal(gameCalls(two.backend, 'kingdomClaim').length, 1);
+  clean(two);
+  await two.context.close();
+});
+
+test('K3-19 if reading the hero again fails, Claim and Release wait, with Try again; nothing is sent again by itself', async () => {
+  const ctx = await game();
+  const { page, backend } = ctx;
+  await openMap(page);
+  await page.click('.plots [data-v="7,7"]'); await settle(page);
+  backend.plots.push({ id: 999, x: 7, y: 7, status: 'claimed', character_id: 'char-rival', claimed_at: '' });
+  backend.ownerNames['char-rival'] = 'Rival';
+  backend.failNext('state', 500, 'Server error — please try again.');
+  await page.click('[data-a="kclaim"]');
+  await page.waitForSelector('#confirm[open]');
+  await page.click('#confirm [data-r="ok"]'); await settle(page);
+  await page.waitForSelector('#main [data-a="kresync"]');
+  assert.match(await page.textContent('#main'), /Couldn’t check your hero/);
+  assert.match(await page.textContent('#alerts'), /That plot was just taken/, 'the refusal stays on screen');
+  await page.click('.plots [data-v="8,8"]'); await settle(page);
+  assert.equal(await claimOff(page), true, 'Claim waits');
+  assert.match(await page.textContent('.plot-sel'), /Your hero couldn’t be checked/);
+  await noViolations(page, 'the hero not checked');
+  await page.click('#main [data-a="kresync"]'); await settle(page);
+  assert.equal(await page.$('#main [data-a="kresync"]'), null);
+  assert.equal(await claimOff(page), false, 'Claim is offered again');
+  assert.equal(gameCalls(backend, 'kingdomClaim').length, 1, 'the claim was sent once');
+  clean(ctx);
+  await ctx.context.close();
+});
+
+test('K3-20 a version conflict (409, no reason) on a claim or a release shows no success, and asks again', async () => {
+  const msg = 'Your hero was busy — try again.';
+  const one = await game();
+  await openMap(one.page);
+  await one.page.click('.plots [data-v="4,4"]'); await settle(one.page);
+  one.backend.failNext('kingdomClaim', 409, msg);
+  await one.page.click('[data-a="kclaim"]');
+  await one.page.waitForSelector('#confirm[open]');
+  await one.page.click('#confirm [data-r="ok"]'); await settle(one.page);
+  assert.match(await one.page.textContent('#alerts'), /Your hero was busy/);
+  assert.ok(!(await one.page.textContent('body')).includes('You claimed plot'), 'no success shown');
+  assert.equal(one.backend.heroes[PLAYER].kingdom, undefined);
+  assert.match(await cellLabel(one.page, 4, 4), /Free/);
+  await one.page.click('[data-a="kclaim"]');
+  await one.page.waitForSelector('#confirm[open]'); // a second claim asks again
+  await one.page.click('#confirm [data-r="cancel"]'); await settle(one.page);
+  assert.equal(gameCalls(one.backend, 'kingdomClaim').length, 1);
+  clean(one);
+  await one.context.close();
+
+  const two = await game({ kingdom: { x: 9, y: 3 } });
+  await two.page.click('#dock [data-a="kmanage"]');
+  await two.page.waitForSelector('#sheet [data-a="krelease"]');
+  two.backend.failNext('kingdomRelease', 409, msg);
+  await two.page.click('#sheet [data-a="krelease"]');
+  await two.page.waitForSelector('#confirm[open]');
+  await two.page.fill('#confirm-input', NAME);
+  await two.page.click('#confirm [data-r="ok"]'); await settle(two.page);
+  assert.match(await two.page.textContent('#alerts'), /Your hero was busy/);
+  assert.ok(!(await two.page.textContent('body')).includes('Your Kingdom is released'), 'no success shown');
+  assert.ok(two.backend.heroes[PLAYER].kingdom, 'the Kingdom is kept');
+  assert.match(await two.page.textContent('#main'), /Your Kingdom is on plot 9, 3/);
+  assert.equal(gameCalls(two.backend, 'kingdomRelease').length, 1);
+  clean(two);
+  await two.context.close();
+});
+
+// K1-UI02
+test('K3-21 another hero\'s plot at the coordinates the hero records is never shown as theirs, and Release isn\'t offered', async () => {
+  // The page's hero records plot 9, 3, but the database says Rival holds it.
+  const ctx = await game({ kingdom: { x: 9, y: 3 }, ownRow: false, plots: [{ x: 9, y: 3, status: 'claimed', name: 'Rival' }] });
+  const { page, backend } = ctx;
+  const rivalId = backend.plots.find((p) => p.x === 9 && p.y === 3).id;
+  await page.waitForSelector('#main [data-a="kretry"]');
+  assert.match(await page.textContent('#main'), /Plot 9, 3 couldn’t be confirmed as your Kingdom/);
+  await page.waitForTimeout(1000);
+  assert.equal(gameCalls(backend, 'state').length, 2, 'the hero was read again once, not over and over');
+  await noViolations(page, 'the plot not confirmed');
+  await page.click('#dock [data-a="kmanage"]'); await settle(page);
+  assert.equal(await page.$('#sheet [data-a="krelease"]'), null, 'no Release');
+  assert.equal(await page.$(`[data-a="krelease"][data-v="${rivalId}"]`), null, 'nothing carries Rival\'s instance id');
+  assert.match(await page.textContent('#sheet'), /couldn’t be confirmed/);
+  assert.ok(!(await page.textContent('#sheet')).includes('Loading your plot'));
+  await page.click('#sheet [data-a="close"]'); await settle(page);
+  await openMap(page);
+  assert.match(await cellLabel(page, 9, 3), /Claimed by Rival/);
+  await page.click('.plots [data-v="9,3"]'); await settle(page);
+  assert.equal(await page.$('.plot-sel [data-a="kmanage"]'), null);
+  // The hero's record catches up (another tab released it): Try again reads the hero again.
+  delete backend.heroes[PLAYER].kingdom;
+  await page.click('#main [data-a="kretry"]'); await settle(page);
+  await page.click('[data-a="tab"][data-v="explore"]'); await settle(page);
+  assert.match(await page.textContent('#main'), /Choose a free plot on the plot map/);
+  assert.equal(gameCalls(backend, 'kingdomRelease').length, 0);
+  clean(ctx);
+  await ctx.context.close();
+});
+
+test('K3-22 a Kingdom with no plot row shows that it couldn\'t be confirmed, with Try again, not "Loading" for ever', async () => {
+  const ctx = await game({ kingdom: { x: 9, y: 3 }, ownRow: false });
+  const { page, backend } = ctx;
+  await page.click('#dock [data-a="kmanage"]');
+  await page.waitForSelector('#sheet [data-a="kretry"]');
+  const sheet = await page.textContent('#sheet');
+  assert.match(sheet, /Plot 9, 3 couldn’t be confirmed as your Kingdom/);
+  assert.ok(!sheet.includes('Loading your plot'));
+  assert.equal(await page.$('#sheet [data-a="krelease"]'), null);
+  await page.waitForTimeout(1000);
+  assert.equal(gameCalls(backend, 'state').length, 2, 'the hero was read again once');
+  // Try again, still missing: one more read of the plot and the hero, and the same answer.
+  await page.click('#sheet [data-a="kretry"]'); await settle(page);
+  await page.waitForSelector('#sheet [data-a="kretry"]');
+  assert.equal(gameCalls(backend, 'state').length, 3);
+  assert.equal(gameCalls(backend, 'kingdomRelease').length, 0);
+  clean(ctx);
+  await ctx.context.close();
+});
+
+// K1-UI03
+test('K3-23 a slow read of a window, overtaken after moving away and back, never replaces the newer plots', async () => {
+  const ctx = await game();
+  const { page, backend } = ctx;
+  const release = backend.holdRead('window'); // the first read of plots 1-10 is slow
+  await page.click('[data-a="tab"][data-v="map"]');
+  await until(release.arrived, 'the first window read');
+  backend.plots.push({ id: 990, x: 3, y: 3, status: 'claimed', character_id: 'char-rival', claimed_at: '' });
+  backend.ownerNames['char-rival'] = 'Rival';
+  await page.click('[data-a="kwin"][data-v="e"]'); await settle(page);
+  await page.click('[data-a="kwin"][data-v="w"]'); await settle(page);
+  assert.match(await cellLabel(page, 3, 3), /Claimed by Rival/);
+  release(); // the old answer, with 3, 3 free, arrives last
+  await page.waitForTimeout(400); await settle(page);
+  assert.match(await cellLabel(page, 3, 3), /Claimed by Rival/, 'the newer plots stay');
+  assert.match(await page.textContent('#plot-range'), /Plots 1 to 10 across/);
+  clean(ctx);
+  await ctx.context.close();
+});
+
+test('K3-24 a plot read still on its way when the account changes sends nothing further, and shows nothing, for the next account', async () => {
+  const ctx = await game({ plots: [{ x: 3, y: 2, status: 'claimed', name: 'Alda' }] });
+  const { page, backend } = ctx;
+  backend.heroes[ACCOUNTS.fresh.id] = makeHero({ ...GATE, name: 'Mira Vale' });
+  backend.charIds[ACCOUNTS.fresh.id] = 'char-fresh';
+  const release = backend.holdRead('window');
+  await page.click('[data-a="tab"][data-v="map"]');
+  await until(release.arrived, 'the window read');
+  await page.click('[data-a="tab"][data-v="hero"]');
+  await page.click('[data-a="signout"]');
+  await page.waitForSelector('#authform');
+  // Another account signs in on the same page, while the first account's read is still held.
+  await page.fill('#email', ACCOUNTS.fresh.email);
+  await page.fill('#password', ACCOUNTS.fresh.password);
+  await page.click('#authform button[type=submit]');
+  await page.waitForSelector('#main .place', { timeout: 15000 });
+  await settle(page);
+  assert.match(await page.textContent('#top'), /Mira Vale/);
+  release();
+  await page.waitForTimeout(500); await settle(page);
+  assert.deepEqual(backend.kingdomCalls.filter((c) => c.kind === 'owners'), [], 'no owners read from the old answer');
+  assert.equal(backend.kingdomCalls.filter((c) => c.account === ACCOUNTS.fresh.id).length, 0, 'nothing sent for the next account from the old read');
+  assert.equal(await page.$('.plots'), null, 'the next account starts on Explore');
+  clean(ctx);
+  await ctx.context.close();
+});
+
+test('K3-25 a slow finder answer doesn\'t move a view the player has moved on from', async () => {
+  const ctx = await game();
+  const { page, backend } = ctx;
+  await openMap(page);
+  await page.click('.plots [data-v="5,5"]'); await settle(page);
+  const release = backend.holdRead('finder');
+  await page.click('[data-a="kfind"][data-v="near"]');
+  await until(release.arrived, 'the finder');
+  await page.click('[data-a="kwin"][data-v="e"]'); await settle(page);
+  release();
+  await page.waitForFunction(() => !document.querySelector('[data-a="kfind"][disabled]'));
+  await settle(page);
+  assert.match(await page.textContent('#plot-range'), /Plots 11 to 20 across/, 'the view stays where the player moved it');
+  assert.ok(!(await page.textContent('#main')).includes('was free just now'));
+  // The finder works again from here.
+  await page.click('[data-a="kfind"][data-v="near"]'); await settle(page);
+  assert.match(await page.textContent('#main'), /was free just now/);
   clean(ctx);
   await ctx.context.close();
 });

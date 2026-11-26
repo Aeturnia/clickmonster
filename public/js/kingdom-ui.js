@@ -17,8 +17,16 @@ export function freshKingdomState() {
     selected: null, // { x, y }: the plot whose details are shown
     cells: null, cellsKey: null, loadingKey: null, errorKey: null,
     owners: {}, // character id -> hero name
+    myId: null, // the hero's character id (my_character()): a plot is theirs only if its owner is this
     mine: null, mineKey: null, mineLoading: null, mineErrorKey: null, // the hero's own plot row
+    mineProblem: null, // why mineErrorKey is set: 'error' (the read failed) or 'mismatch' (not theirs)
+    resyncedFor: null, // the mismatch the hero was last read again for, so it happens once per mismatch
     stale: false, mineStale: false, // reload when next drawn, keeping what is shown meanwhile
+    recheck: false, // after a refusal: Claim waits for the plots to be read again
+    hero: null, // the hero read after a refusal or mismatch: null, 'loading' or 'failed'
+    // Each read's number (the K1-3 review, K1-UI03): an answer is used only if its read is still the
+    // latest of its kind, so a slow, superseded read never replaces a newer one.
+    plotsSeq: 0, mineSeq: 0, findSeq: 0,
     finding: false, note: null,
   };
 }
@@ -44,8 +52,9 @@ export function plotStatus(k, x, y, char) {
   const p = k.cells[`${x},${y}`];
   if (!p) return { kind: 'free', text: 'Free' };
   if (p.status === 'reserved') return { kind: 'reserved', text: 'Reserved' };
-  // The hero's own plot is the one their Kingdom records (I-1).
-  if (char?.kingdom && char.kingdom.plot.x === x && char.kingdom.plot.y === y) return { kind: 'mine', text: 'Your Kingdom' };
+  // The hero's own plot is one the database says they own, never one that only matches the
+  // coordinates their Kingdom records: those may be out of date (the K1-3 review, K1-UI02).
+  if (p.status === 'claimed' && k.myId && p.character_id === k.myId) return { kind: 'mine', text: 'Your Kingdom' };
   const name = k.owners[p.character_id];
   return { kind: 'claimed', text: name ? `Claimed by ${name}` : 'Claimed' };
 }
@@ -58,6 +67,21 @@ export function claimBlock(char, cfg) {
   if (char.level < cfg.minLevel) return `You must be level ${cfg.minLevel} to claim a plot.`;
   if ((char.gold || 0) < cfg.cost) return `Claiming costs ${cfg.cost} gold, carried. You carry ${char.gold || 0}. Withdraw gold at a bank first.`;
   return null;
+}
+
+// When the screen can't vouch for the hero or their plot (the K1-3 review, K1-UI01 and K1-UI02):
+// what is wrong, and a way to try again. Claim and Release are withheld meanwhile.
+export function kingdomNotice({ char, k, btn }) {
+  if (k.hero === 'loading') return '<p class="small muted" aria-busy="true">Checking your hero…</p>';
+  if (k.hero === 'failed') {
+    return `<div class="notice bad" role="alert"><p class="small" style="margin:0">Couldn’t check your hero. Claiming and releasing wait until it is checked.</p>${btn('kresync', null, 'Try again', 'sm')}</div>`;
+  }
+  const p = char?.kingdom?.plot;
+  if (p && k.mineErrorKey === `${p.x},${p.y}`) {
+    const what = k.mineProblem === 'mismatch' ? `Plot ${p.x}, ${p.y} couldn’t be confirmed as your Kingdom.` : 'Couldn’t load your plot.';
+    return `<div class="notice bad" role="alert"><p class="small" style="margin:0">${what}</p>${btn('kretry', null, 'Try again', 'sm')}</div>`;
+  }
+  return '';
 }
 
 // ------------------------------------------------------------ the plot map (the Map tab)
@@ -95,6 +119,7 @@ export function viewPlotMap({ char, k, cfg, esc, btn, fmt }) {
       ${btn('kwin', 'n', 'North', 'sm', win.y <= 1)}${btn('kwin', 'w', 'West', 'sm', win.x <= 1)}${btn('kwin', 'e', 'East', 'sm', win.x >= MAX_ORIGIN)}${btn('kwin', 's', 'South', 'sm', win.y >= MAX_ORIGIN)}
     </div>
     <p class="small muted" id="plot-range">${range}.</p>
+    ${kingdomNotice({ char, k, btn })}
     ${status}
     <div class="map plots" id="plots" role="group" aria-label="${esc(`${range}, ${PLOT_WINDOW} by ${PLOT_WINDOW}`)}" aria-describedby="plot-help" style="--n:${PLOT_WINDOW}">${cells.join('')}</div>
     <div class="legend"><span><b>Y</b> Yours</span><span><b>C</b> Claimed</span><span><b>R</b> Reserved</span><span>Blank: free</span><span id="plot-help">Tap a plot to see it. With a keyboard, arrow keys move between plots, and past the edge move the view by one row.</span></div>
@@ -121,7 +146,9 @@ function viewSelected({ char, k, cfg, esc, btn, fmt }) {
   const s = plotStatus(k, x, y, char);
   let act = '';
   if (s.kind === 'free') {
-    const why = claimBlock(char, cfg);
+    // After a refusal, Claim waits until the hero and the plots are read again (K1-UI01).
+    const why = claimBlock(char, cfg)
+      || (k.hero === 'failed' ? 'Your hero couldn’t be checked. Try again above.' : k.hero || k.recheck ? 'Checking the plots again…' : null);
     act = `${btn('kclaim', `${x},${y}`, `Claim for ${fmt(cfg.cost)} gold`, 'primary', !!why)}${why ? `<p class="small muted">${esc(why)}</p>` : ''}`;
   } else if (s.kind === 'mine') {
     act = btn('kmanage', null, 'Manage my Kingdom', 'primary');
@@ -140,6 +167,7 @@ export function viewKingdomPlace({ char, k, cfg, esc, btn, fmt, zone }) {
       <div class="place-row"><h2>${esc(zone.name)}</h2><span class="coords">The gate</span></div>
       <p class="here">${esc(zone.desc)}</p>
     </div>
+    ${kingdomNotice({ char, k, btn })}
     ${own}`;
 }
 
@@ -159,18 +187,16 @@ export function viewHeroKingdom({ char, cfg, esc, btn, fmt, inZone }) {
 }
 
 // ------------------------------------------------------------ the management view (empty in K-1)
-// Release is offered only once the hero's own plot row is loaded and current: the button carries
-// that row's ownership instance id, which the release names (K1-DB01).
+// Release is offered only once the hero's own plot row is loaded, current, and theirs by its owner
+// (K1-UI02), and the hero isn't being read again (K1-UI01): the button carries that row's ownership
+// instance id, which the release names (K1-DB01). Otherwise the sheet says why, with Try again.
 export function sheetKingdom({ char, k, esc, btn }) {
   const p = char.kingdom?.plot;
   const mk = p ? `${p.x},${p.y}` : null;
-  const ready = !!k.mine && k.mineKey === mk && !k.mineStale;
-  const failed = !ready && k.mineErrorKey === mk;
+  const ready = !!k.mine && k.mineKey === mk && !k.mineStale && !k.hero; // k.mine is set only for the hero's own row (loadMine)
   const release = ready
     ? btn('krelease', String(k.mine.id), 'Release my Kingdom', 'danger')
-    : failed
-      ? `<p class="small" role="alert">Couldn’t load your plot.</p>${btn('kretry', null, 'Try again', 'sm')}`
-      : '<p class="small muted" aria-busy="true">Loading your plot…</p>';
+    : kingdomNotice({ char, k, btn }) || '<p class="small muted" aria-busy="true">Loading your plot…</p>';
   return `<div class="panel">
     <div class="panel-head"><h2 id="sheet-title" tabindex="-1">${esc(char.name)}’s Kingdom</h2>${btn('close', null, 'Close', 'sm ghost')}</div>
     <p class="small">On plot ${p ? `${p.x}, ${p.y}` : 'none'}.</p>
