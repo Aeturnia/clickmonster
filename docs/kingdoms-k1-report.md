@@ -752,7 +752,7 @@ It asked for two narrow corrections. **The owner authorized them** (2026-11-26),
 
 **`tools/admin-shots.mjs`:** a second pass, with Kingdoms open and then closed: the section, a claimed, a reserved and a free plot, and the revoke question. `ADMIN_SHOTS_KINGDOMS=0` skips it, for capturing a checkout from before K1-4.
 
-### 4.2 The tests (`tests/ui/admin-kingdoms.test.mjs`, 12)
+### 4.2 The tests (`tests/ui/admin-kingdoms.test.mjs`, 13)
 
 | Test | What it proves |
 |---|---|
@@ -765,9 +765,10 @@ It asked for two narrow corrections. **The owner authorized them** (2026-11-26),
 | K4-7 | **A second press** while a reserve is on its way: no second question, no second request, "Still working…". One audit entry |
 | K4-8 | **Kingdoms closed meanwhile:** the reserve is refused, the alert stays, the section turns read-only, and nothing is sent again |
 | K4-9 | **A slow plot read overtaken by a newer one** never replaces it, and the address stays the newer plot's |
-| K4-10 | **A plot read on its way at sign-out:** after another staff member signs in on the same page and the old answer lands, they see no plot record |
+| K4-10 | **A plot read on its way at sign-out:** another staff member signs in on the same page. Straight away, and again after the old answer lands, they see no plot record and no loading from it |
 | K4-11 | **A link to a plot** (`#kingdom/3,2`) opens it after the capability is known |
 | K4-12 | **At 320 px:** no sideways scrolling, and axe finds nothing on a claimed plot's record |
+| K4-13 | **A slow owner search overtaken by a newer one** never replaces its results or its note |
 
 **axe, 0 violations of any impact:** in K4-2 (closed, a free plot), K4-4 (a claimed plot, and the revoke question) and K4-12 (320 px).
 
@@ -783,17 +784,22 @@ It asked for two narrow corrections. **The owner authorized them** (2026-11-26),
 | A6: no single flight | K4-7: a second question opened |
 | A7: the capability not read again after "not open" | K4-8: the section stayed writable |
 | A8: no read number for the plot | K4-9: the slower plot replaced the newer one |
-| A9: no reset at sign-in or sign-out | K4-10: the next staff member was still shown the previous sign-in's pending plot, which never resolved for them |
+| A9: no reset at sign-in or sign-out | K4-10: "no plot record, or its loading, carried over" |
 | A10: no reason check | K4-4: no inline error |
 | A11: the player record's line without the capability | K4-1 |
+| A12: no read number for the list | K4-13: the older search's results replaced the newer |
 
 **The restored files** matched their md5s before the run.
 
+**Found by the mutations:**
+- **A9 first failed through a `settle()` timeout,** before the assertion that names it. K4-10 now checks straight after the second sign-in, before waiting, and A9 fails on that assertion.
+- **The list's read number had no test.** K4-13 was added, and A12 is caught by it.
+
 ### 4.3 Evidence (local, the owner's laptop, 2026-11-26)
 
-- **`tests/ui/admin-kingdoms.test.mjs`:** 12 of 12. **The existing admin files** (`admin.test.mjs`, `admin-console.test.mjs`, `admin-news.test.mjs`): 47 of 47 with the new startup `meta` request.
+- **`tests/ui/admin-kingdoms.test.mjs`:** 13 of 13 (K4-1 to K4-12, then K4-10's added check and K4-13, run on their own). **The existing admin files** (`admin.test.mjs`, `admin-console.test.mjs`, `admin-news.test.mjs`): 47 of 47 with the new startup `meta` request.
 - **Engine:** 110 of 110.
-- **The full browser suite:** **355 of 355** (343, plus the 12), in two runs, with the local stack stopped. That's two runs rather than three, given the laptop's memory, as K1-3's reviews accepted; CI's browser job is the further run.
+- **The full browser suite:** **355 of 355** (343, plus K4-1 to K4-12), in two runs, with the local stack stopped, before K4-13 was added. With K4-13 it is 356; CI's browser job is that run.
 - **The admin screens** (`tools/admin-shots.mjs`, at 320, 390, 768, 1024 and 1440):
   - **The deployed shape (v8), `main` (`e31a946`, a temporary worktree) against this branch,** with the Kingdom pass off on both: **53 of 60 byte-identical.**
     - **The other 7** are Events and rates, and Hunts, whose fixtures take their times from the clock. On 390 px Events and rates, the only difference is the event's end time (5:34:34 PM against 5:35:47 PM).
@@ -813,9 +819,13 @@ It asked for two narrow corrections. **The owner authorized them** (2026-11-26),
 - **The list without a name** is the function's own: the 50 most recent by claim time.
 - **A record whose hero doesn't record that plot** says so, rather than offering a different action. The I-1 check is the authority.
 
+- **Two local full browser runs, not three** (plan section 6), given the laptop's memory. K1-3's reviews accepted this for K1-3; it is asked again here. CI's browser job is the further run.
+- **No local `npm run test:db`** (plan section 6). Nothing on the server or in the database changed; CI's database job runs it.
+
 ### 4.5 Not done in K1-4
 
 - **Correcting a Kingdom's stock or buildings** through the hero editor (scope 5.10). K-1 has neither; it's K-2's. The hero editor accepts a fixed list of fields, and a Kingdom isn't one, so it can't break I-1.
 - **The rollout (K1-5)** and activation. Kingdoms stay closed.
 - **The local database suite:** not run, because nothing on the server changed. CI runs it.
+- **The capability read's number** has no test of its own. A late `meta` answer for an earlier sign-in is dropped by the state replacement at sign-in and sign-out, which A9 tests.
 - **Real devices and screen readers:** not tested.

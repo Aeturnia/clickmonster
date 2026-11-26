@@ -265,6 +265,9 @@ test('K4-10 a plot read still on its way at sign-out shows nothing to the next s
   await page.fill('#password', ACCOUNTS.mod.password);
   await page.click('#login button[type=submit]');
   await page.waitForSelector('.a-nav', { timeout: 15000 });
+  await page.waitForSelector('#kp-list-title');
+  // Straight away, before the old answer lands: nothing of the previous sign-in's plot.
+  assert.equal(await has(page, '#kp-title'), false, 'no plot record, or its loading, carried over');
   await settle(page);
   release();
   await page.waitForTimeout(400);
@@ -290,5 +293,25 @@ test('K4-12 at 320 px: the section fits, with no sideways scrolling, and axe fin
   await showPlot(page, 9, 3);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
   await noAxe(page, '320 px, a claimed plot');
+  await done(ctx);
+});
+
+test('K4-13 a slow owner search overtaken by a newer one never replaces its results', async () => {
+  const ctx = await console_();
+  const { page, backend } = ctx;
+  await page.waitForSelector('#kp-list-title'); await settle(page);
+  const release = backend.holdOnce('kingdomSearch');
+  await page.fill('#kp-q', 'Alda');
+  await page.click('#kp-search button[type=submit]');
+  await until(() => arrived(backend, 'kingdomSearch') === 2, 'the slow search'); // the first was the section's own list
+  await page.fill('#kp-q', 'Bart');
+  await page.click('#kp-search button[type=submit]');
+  await page.waitForFunction(() => /contains “Bart”/.test(document.querySelector('#admin').textContent));
+  release(); // the search for "Alda" answers last
+  await page.waitForTimeout(400); await settle(page);
+  const text = await page.textContent('#admin');
+  assert.match(text, /contains “Bart”/, 'the newer search stays');
+  assert.match(text, new RegExp(NAME));
+  assert.equal(await page.locator('#admin table [data-a="kpOpen"][data-v="3,2"]').count(), 0, 'nothing of the older search');
   await done(ctx);
 });

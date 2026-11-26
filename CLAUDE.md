@@ -364,7 +364,7 @@ Read these first:
 
 ```
 npm test                 # engine, entrance file checks, the first-paint tripwire, the public pages, news rules, the news page handler, the town rule, the log rules, the session rule, the pending-rewards staging rule and the Kingdom rules (110)
-npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (355)
+npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (356)
 npm run test:db          # database (pgTAP, 222: news 42, pending rewards 40, Kingdoms 140) and API/function/recovery/session/pending-rewards/Kingdom-check/Kingdom tests (63, plus 4 opt-in: 1, and the 3 closed-state checks) on the LOCAL Supabase stack, with Mailpit
 npx playwright install chromium   # once
 ```
