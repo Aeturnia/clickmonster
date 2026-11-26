@@ -3,6 +3,7 @@
 import { client, fetchZoneDefs, signOut } from './net.js';
 import { setupZones } from './admin-zones.js';
 import { setupNews } from './admin-news.js';
+import { setupKingdoms } from './admin-kingdoms.js';
 import { loadZones } from './data/zones.js';
 import { STATS, STAT_SHORT } from './data/stats.js';
 import { MASTERIES, MASTERY_LABEL, masteryCap } from './data/masteries.js';
@@ -46,6 +47,10 @@ function detailsText(action, d) {
   if (action.startsWith('news:')) {
     return [d.slug ? `/news/${d.slug}` : '', d.revised ? 'text corrected after publishing' : '', d.republished ? 'published again' : '',
       action === 'news:delete' && d.status ? `was ${d.status}` : ''].filter(Boolean).join(', ');
+  }
+  if (action.startsWith('kingdom:')) {
+    return [`plot ${d.x}, ${d.y}`, d.plot_id ? `instance ${d.plot_id}` : '', d.refund ? `${fmt(d.refund)} gold refunded` : '',
+      d.reason ? `reason: ${d.reason}` : ''].filter(Boolean).join(', ');
   }
   return JSON.stringify(d);
 }
@@ -96,7 +101,7 @@ async function call(action, args = {}) {
     const status = error.context?.status;
     try { msg = (await error.context.json()).error || msg; } catch { /* not json */ }
     if (status == null) throw new Error(`Can't reach the server. ${msg}`);
-    throw new Error(msg);
+    throw Object.assign(new Error(msg), { status }); // the status: a Kingdom change refused as stale is a 409 (K1-4)
   }
   // A successful request clears connection problems.
   const before = problems.length;
@@ -154,14 +159,16 @@ function formFoot(id, label, extra = '') {
 // ---------------------------------------------------------------- navigation
 const GROUPS = [
   { id: 'people', label: 'Players and moderation', short: 'Players', items: [['players', 'Players'], ['chat', 'Reports and chat'], ['log', 'Audit log']] },
-  { id: 'world', label: 'World', short: 'World', items: [['dashboard', 'Overview'], ['world', 'Events and rates'], ['hunts', 'Hunts'], ['economy', 'Economy']] },
+  { id: 'world', label: 'World', short: 'World', items: [['dashboard', 'Overview'], ['world', 'Events and rates'], ['hunts', 'Hunts'], ['economy', 'Economy'], ['kingdoms', 'Kingdoms', 'kingdoms']] },
   { id: 'content', label: 'Content', short: 'Content', items: [['zones', 'Zones'], ['announce', 'Announcements'], ['news', 'Public news', 'admin']] },
   { id: 'staff', label: 'Staff', short: 'Staff', items: [['staff', 'Staff']], admin: true },
 ];
 const SECTION_LABEL = Object.fromEntries(GROUPS.flatMap((g) => g.items));
-// Groups and sections a moderator can't use are left out (the server refuses them anyway).
+// Groups and sections a moderator can't use are left out (the server refuses them anyway), and
+// Kingdoms unless the admin function reports them (Q3: no Kingdom request otherwise).
+const sectionShown = (tab, who) => (who !== 'admin' || isAdmin()) && (who !== 'kingdoms' || kingdoms.available());
 const groupsFor = () => GROUPS.filter((g) => !g.admin || isAdmin())
-  .map((g) => ({ ...g, items: g.items.filter(([, , who]) => who !== 'admin' || isAdmin()) }));
+  .map((g) => ({ ...g, items: g.items.filter(([id, , who]) => sectionShown(id, who)) }));
 const adminOnly = (tab) => tab === 'staff' || GROUPS.some((g) => g.items.some(([id, , who]) => id === tab && who === 'admin'));
 const groupOf = (tab) => GROUPS.find((g) => g.items.some(([id]) => id === tab))?.id || 'world';
 
@@ -337,6 +344,7 @@ function viewPlayer() {
     <section class="box gap-top" aria-labelledby="player-title"><h2 id="player-title" tabindex="-1">${esc(p.name)} ${sanctionPills(p)}</h2>
       <p class="note">Level ${c.level} ${RACES[c.race]?.name || ''}, in ${esc(ZONES[c.loc.zone]?.name || c.loc.zone)} at ${c.loc.x}, ${c.loc.y}. Last seen ${ago(p.updated_at)}. Created ${when(p.created_at)}.${email ? ` Email: ${esc(email)}.` : ''}</p>
       <p class="small">Gold ${fmt(c.gold)} carried, ${fmt(c.bank)} banked. Kills ${fmt(c.kills)}, deaths ${fmt(c.deaths)}, quests ${fmt(c.questsDone || 0)}, duels won ${fmt(c.pvpWins || 0)}.</p>
+      ${kingdoms.playerLine(c)}
     </section>
     <section class="box" aria-labelledby="mod-title"><h2 id="mod-title">Moderation</h2>
       <p class="small">${sanctionSummary(p)}</p>
@@ -619,7 +627,7 @@ function render() {
   else if (st.phase === 'login') html = viewLogin();
   else if (st.phase === 'denied') html = viewDenied();
   else {
-    const body = { dashboard: viewDashboard, players: viewPlayers, world: viewWorld, hunts: viewHunts, economy: viewEconomy, zones: zones.view, news: news.view, chat: viewChat, announce: viewAnnounce, log: viewLog, staff: viewStaff }[st.tab]();
+    const body = { dashboard: viewDashboard, players: viewPlayers, world: viewWorld, hunts: viewHunts, economy: viewEconomy, zones: zones.view, news: news.view, kingdoms: kingdoms.view, chat: viewChat, announce: viewAnnounce, log: viewLog, staff: viewStaff }[st.tab]();
     const section = st.tab === 'players' && st.player ? `Player: ${st.player.player.name}` : SECTION_LABEL[st.tab] || st.tab;
     const group = GROUPS.find((g) => g.id === groupOf(st.tab));
     html = `<div class="a-shell">${header()}${nav()}<div class="a-main">
@@ -655,6 +663,7 @@ function route() {
   if (st.tab === 'players' && st.player) return `#player/${st.player.player.id}`;
   if (st.tab === 'zones' && st.zoneEdit && !st.zoneEdit.isNew) return `#zone/${st.zoneEdit.originalId}`;
   if (st.tab === 'news' && st.newsEdit && st.newsEdit.id != null) return `#news/${st.newsEdit.id}`;
+  if (st.tab === 'kingdoms') return kingdoms.route();
   return `#${st.tab}`;
 }
 function pushRoute() { if (location.hash !== route()) history.pushState(null, '', route()); }
@@ -663,7 +672,13 @@ async function applyRoute() {
   if (kind === 'player' && id) { await openPlayer(id, { push: false }); return; }
   if (kind === 'zone' && id) { st.tab = 'zones'; st.navGroup = 'content'; st.zoneEdit = null; render(); await zones.load(); zones.edit(id); return; }
   if (kind === 'news' && id && isAdmin()) { st.tab = 'news'; st.navGroup = 'content'; st.newsEdit = null; render(); await news.edit(id); return; }
-  const tab = SECTION_LABEL[kind] && (!adminOnly(kind) || isAdmin()) ? kind : 'dashboard';
+  if (kind === 'kingdom' && id && kingdoms.available()) {
+    const [x, y] = id.split(',').map(Number);
+    showTab('kingdoms', { push: false });
+    if (Number.isInteger(x) && Number.isInteger(y)) await kingdoms.loadPlot(x, y, { focus: true });
+    return;
+  }
+  const tab = SECTION_LABEL[kind] && (!adminOnly(kind) || isAdmin()) && (kind !== 'kingdoms' || kingdoms.available()) ? kind : 'dashboard';
   showTab(tab, { push: false });
 }
 window.addEventListener('popstate', () => { if (st.phase === 'ready') applyRoute(); });
@@ -689,6 +704,7 @@ async function load(tab = st.tab) {
     if (tab === 'staff') st.staff = (await call('staff')).staff;
     if (tab === 'zones') { if (!st.zoneEdit) await zones.load(); return; }
     if (tab === 'news') { await news.load(); return; }
+    if (tab === 'kingdoms') { await kingdoms.load(); return; }
     if (tab === 'chat') {
       const [log, rep] = await Promise.all([call('chatLog', st.chatQ), call('chatReports')]);
       st.chat = log.messages;
@@ -853,6 +869,7 @@ async function submitting(id, fn) {
 // ---------------------------------------------------------------- events
 const zones = setupZones({ st, call, toast, render, esc, isAdmin, field, input, pushRoute });
 const news = setupNews({ st, call, toast, render, esc, field, input, dataTable, pushRoute });
+const kingdoms = setupKingdoms({ st, call, toast, render, esc, field, input, dataTable, isAdmin, pushRoute, when, fmt, showTab });
 document.addEventListener('input', (e) => {
   zones.onInput(e);
   if (news.onInput(e)) return;
@@ -890,6 +907,7 @@ document.addEventListener('click', async (e) => {
   const v = el.dataset.v;
   if (a.startsWith('zone') && await zones.onClick(a, v)) return;
   if (a.startsWith('news') && await news.onClick(a, v)) return;
+  if (a.startsWith('kp') && await kingdoms.onClick(a, v)) return;
   if (a === 'dismissProblem') {
     const i = problems.findIndex((p) => String(p.id) === v);
     if (i >= 0) problems.splice(i, 1);
@@ -1026,6 +1044,7 @@ document.addEventListener('submit', async (e) => {
   }
   if (id === 'search') { st.q = $('#q').value; st.players = null; render(); load('players'); return; }
   if (await news.onSubmit(form)) return;
+  if (await kingdoms.onSubmit(form)) return;
   // Before validating or asking anything: a press while this form is sending does nothing.
   if (stillWorking(id)) return;
   if (!validate(id, form)) return;
@@ -1088,7 +1107,7 @@ document.addEventListener('submit', async (e) => {
 
 sb.auth.onAuthStateChange((event, session) => {
   setTimeout(async () => {
-    if (!session) { st.phase = 'login'; st.me = null; render(); return; }
+    if (!session) { st.phase = 'login'; st.me = null; kingdoms.reset(); render(); return; }
     if (st.me) return;
     st.email = session.user.email;
     try {
@@ -1096,6 +1115,10 @@ sb.auth.onAuthStateChange((event, session) => {
       st.phase = 'ready';
       // The open-report count shows in the navigation from the start.
       call('chatReports').then((r) => { st.reports = r.reports; render(); }).catch(() => {});
+      // The Kingdoms capability (Q3) before the first route, so a link to the section works. A
+      // failure is no capability, and says nothing.
+      kingdoms.reset();
+      await kingdoms.loadCap();
       await applyRoute();
     } catch {
       st.phase = 'denied';

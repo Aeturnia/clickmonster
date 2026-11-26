@@ -71,6 +71,53 @@ for (const w of widths) {
   if (backend.unexpected.length) summary.push({ width: w, screen: 'unexpected', urls: backend.unexpected });
   await context.close();
 }
+
+// Kingdoms K1-4: the Kingdoms section, with the admin function reporting Kingdoms (open, then
+// closed). The pass above is the deployed function (admin v8), which has no Kingdoms section.
+// ADMIN_SHOTS_KINGDOMS=0 skips this, for capturing a checkout from before K1-4.
+if (process.env.ADMIN_SHOTS_KINGDOMS !== '0') {
+  for (const w of widths) {
+    for (const meta of ['open', 'closed']) {
+      const h = HEIGHT[w] || 900;
+      const hero = makeHero();
+      hero.kingdom = { plot: { x: 9, y: 3 }, claimedAt: 1 };
+      const backend = new FakeBackend({ hero, adminKingdoms: meta, kingdoms: { plots: [{ x: 9, y: 3, status: 'claimed', character_id: 'char-player' }, { x: 3, y: 2, status: 'claimed', name: 'Alda' }, { x: 5, y: 5, status: 'reserved' }] } });
+      const { page, context } = await env.page({ backend, viewport: { width: w, height: h }, mobile: w < 900 });
+      const shot = async (name) => {
+        await page.waitForTimeout(350);
+        await page.screenshot({ path: `${out}/${w}-${name}.png`, fullPage: false });
+        const v = await axe(page, { minImpact: 'minor' }).catch((e) => [{ id: `axe-error:${e.message}` }]);
+        summary.push({ width: w, screen: name, violations: v.map((x) => `${x.id}:${x.impact}`), metrics: await page.evaluate(METRICS) });
+      };
+      const plot = async (x, y) => {
+        await page.fill('#kp-x', String(x)); await page.fill('#kp-y', String(y));
+        await page.click('#kp-find button[type=submit]');
+        await page.waitForFunction((t) => document.querySelector('#kp-title')?.textContent === t && !document.querySelector('[aria-busy="true"]'), `Plot ${x}, ${y}`);
+        await page.locator('#kp-title').scrollIntoViewIfNeeded();
+      };
+      try {
+        await signIn(page, env.url, 'admin', '/admin.html#kingdoms');
+        await page.waitForSelector('#kp-list-title', { timeout: 15000 });
+        await shot(`kingdoms-${meta}`);
+        await plot(9, 3); await shot(`kingdom-claimed-${meta}`);
+        if (meta === 'open') {
+          await plot(5, 5); await shot('kingdom-reserved-open');
+          await plot(20, 20); await shot('kingdom-free-open');
+          await plot(9, 3);
+          await page.fill('#kp-revoke-reason', 'Abandoned test account');
+          await page.click('#kp-revoke button[type=submit]'); await page.waitForSelector('#confirm[open]');
+          await shot('kingdom-revoke-dialog');
+          await page.click('#confirm [data-r="cancel"]');
+        }
+      } catch (err) {
+        summary.push({ width: w, screen: `kingdoms-${meta}-ERROR`, error: err.message.split('\n')[0] });
+      }
+      if (page.errors.length) summary.push({ width: w, screen: `kingdoms-${meta}-pageerrors`, errors: page.errors });
+      if (backend.unexpected.length) summary.push({ width: w, screen: `kingdoms-${meta}-unexpected`, urls: backend.unexpected });
+      await context.close();
+    }
+  }
+}
 await env.close();
 fs.writeFileSync(`${out}/summary.json`, JSON.stringify(summary, null, 1));
 for (const s of summary) console.log(JSON.stringify({ w: s.width, s: s.screen, v: s.violations, ...s.metrics, e: s.error }));
