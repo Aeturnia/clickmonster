@@ -599,7 +599,7 @@ It asked for three corrections, all about asynchronous state. **The owner author
 |---|---|---|
 | **K1-UI01:** recovering from a refusal was not serialized | **`resyncHero()`** reads the hero again after a Kingdom refusal. **`runRemote()` keeps `ui.busy` through that read,** so no other action can start until its answer is in ("Still working on your last action"). **The answer is used only if nothing newer replaced the hero meanwhile** (`heroSeq`, counted at every replacement). **While the hero is being read, or if that failed,** Claim is disabled with the reason, and Release isn't offered. **A failure says so** ("Couldn't check your hero"), with Try again (`kresync`), which reads the hero again the same way. **The refusal's message stays on screen.** The claim or release is never sent again by itself | **K3-18:** a stale release, and a refused claim, each with the hero's read held. No Release, Claim disabled, and another action refused and not sent; then the new plot's Release, and one request each. **K3-19:** the hero's read fails. Try again shows, Claim waits, then is offered again; one claim. **K3-20, the ordinary version conflict** (409, no `reason`), on a claim and on a release: no success shown, the Kingdom state unchanged, one request, and a second claim asks again |
 | **K1-UI02:** the hero's plot was found by its coordinates | **The hero's own plot is the one whose owner is the hero's character id.** The id comes from `my_character()` (`net.js` `myCharacterId()`, the function chat already reads), only while open. **"Your Kingdom" on the map, and the row Release names, both need it;** coordinates alone never do. **A missing row, or someone else's,** reads the hero again once for that mismatch (`resyncedFor`), so it can't loop, and shows "Plot x, y couldn't be confirmed as your Kingdom", with Try again, instead of Release. **That replaces the "Loading your plot…" that could stay for ever.** A new or deleted hero starts a fresh `ui.kingdom` | **K3-21:** another hero's row at the hero's recorded coordinates. "Claimed by Rival", no Release, nothing carrying Rival's id, the hero read again once (not repeatedly), then the no-Kingdom view once the record catches up. **K3-22:** no row: the message and Try again, not "Loading"; one hero read, and one more on Try again |
-| **K1-UI03:** a superseded read could still be used | **Each read is numbered** (`plotsSeq`, `mineSeq`, `findSeq` in `ui.kingdom`), replacing the revision counter. **An answer is used only while its read is the latest of its kind,** for the same account (`gameGen`, and the same `ui.kingdom`) and, for the plots, the same window. **That is checked before the owners read as well as after it.** **`refreshKingdom()`** drops the reads in flight and starts new ones, keeping what is shown. **The finder's answer is dropped** if the window, the selection or the tab changed, or the hero left the Kingdom Zone; its buttons are enabled again | **K3-23:** window A, then B, then A again, with the first read of A held and answered last: the newer plots stay. **K3-24:** a window read held across signing out and another account signing in on the same page: no owners read follows from it, and nothing is sent for the next account. **K3-25:** a finder answer held while the view moves: the view stays, and the finder works again |
+| **K1-UI03:** a superseded read could still be used | **Each read is numbered** (`plotsSeq`, `mineSeq`, `findSeq` in `ui.kingdom`), replacing the revision counter. **An answer is used only while its read is the latest of its kind,** for the same account (`gameGen`, and the same `ui.kingdom`) and, for the plots, the same window. **That is checked before the owners read as well as after it.** **`refreshKingdom()`** drops the reads in flight and starts new ones, keeping what is shown. **The finder's answer is dropped** if the window, the selection or the tab changed, or the hero left the Kingdom Zone; its buttons are enabled again | **K3-23:** window A, then B, then A again, with the first read of A held and answered last: the newer plots stay. **K3-24:** a window read held across signing out and another account signing in on the same page: no owners read follows from it, and nothing is sent for the next account. **K3-25:** a finder answer held while the view moves: the view stays, and the finder works again. **K3-26:** a window read held across a refresh (leaving the Kingdom Lands and coming back): the refreshed plots are shown, and the old answer, landing last, is dropped |
 
 **The harness** (`tests/ui/harness.mjs`):
 - **`backend.holdRead(kind)`** holds one Kingdom read: a window, the hero's plot, the owners, the finder, or `my_character`. **Its answer is taken when the request arrives,** so it comes back as an old answer (`hold()` answers with the state at release). `release.arrived()` says whether it has come in.
@@ -615,7 +615,7 @@ It asked for three corrections, all about asynchronous state. **The owner author
 
 | Mutation | Caught by |
 |---|---|
-| M1: busy cleared before the hero's read (the old order) | K3-18: the other action was sent |
+| M1: busy cleared before the hero's read (the old order) | K3-18: "no other action was sent before the hero's answer" |
 | M2: a failed read of the hero isn't reported | K3-19 |
 | M3: Claim isn't held back while the hero is unconfirmed | K3-19 ("Claim waits") |
 | M4: "Your Kingdom" by coordinates again | K3-21 |
@@ -624,15 +624,18 @@ It asked for three corrections, all about asynchronous state. **The owner author
 | M7: no check before the owners read | K3-24 |
 | M8: no read number for the plots (window only, as before) | K3-23 |
 | M9: the finder's answer used after the view moved | K3-25 |
+| M10: a refresh doesn't drop the reads in flight | K3-26: the refreshed read never started, and the old answer was shown |
 
 - **Found by the mutations:**
   - **The first M1 run wasn't caught.** In K3-18's stale-release case, the plot read that follows found the hero's plot changed, and K1-UI02's path then read the hero again while busy. K3-18 now also has a refused claim by a hero without a Kingdom, where only K1-UI01 serializes, and M1 is caught there.
   - **A second owner check in the management view** couldn't be caught. It repeated `loadMine()`'s check, which alone sets the hero's row. It was removed, rather than kept untested.
+  - **M10 first passed every test.** Nothing exercised a read in flight across a refresh, the case the review named. K3-26 was added for it. It wasn't run against `ae3e694`, whose revision counter started a fresh read once the old answer had been shown.
+  - **K3-18's assertions were reordered** so that the count of requests is checked before waiting for the "Still working" message. M1 now fails on that count.
 
 **Evidence (local, the owner's laptop, 2026-11-26):**
-- **`tests/ui/kingdoms.test.mjs`:** 25 of 25 (the 17, plus 8).
+- **`tests/ui/kingdoms.test.mjs`:** 26 of 26 (the 17, plus 9).
 - **Engine:** 110 of 110.
-- **The full browser suite:** **340 of 340** (332, plus the 8), in two runs, with the local stack stopped. The review accepted two local runs.
+- **The full browser suite:** **340 of 340** (332, plus K3-18 to K3-25), in two runs, with the local stack stopped, then **341 of 341** in one run with K3-26. The review accepted two local runs.
 - **No new screens:** the corrections change only the new states' text (a notice, and Claim's reason). axe ran on those states in K3-19 and K3-21: 0 violations of any impact.
 - **The database suite** wasn't run: no server or database change. CI runs it.
 

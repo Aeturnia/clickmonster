@@ -408,9 +408,9 @@ test('K3-18 after a refusal the hero is read again before anything else can be s
   await page.click('#sheet [data-a="close"]');
   const sent = backend.calls.length;
   await page.click('#dock [data-a="portal"]'); // another action, while that read is on its way
-  await bodyHas(page, /Still working on your last action/);
   await page.waitForTimeout(300);
   assert.equal(backend.calls.length, sent, 'no other action was sent before the hero\'s answer');
+  await bodyHas(page, /Still working on your last action/);
   release();
   await settle(page);
   assert.match(await page.textContent('#alerts'), /Your Kingdom has changed since you looked/, 'the refusal stays on screen');
@@ -440,9 +440,9 @@ test('K3-18 after a refusal the hero is read again before anything else can be s
   const sent2 = two.backend.calls.length;
   await two.page.click('[data-a="tab"][data-v="explore"]'); // a view change, sent nowhere
   await two.page.click('#dock [data-a="portal"]');
-  await bodyHas(two.page, /Still working on your last action/);
   await two.page.waitForTimeout(300);
   assert.equal(two.backend.calls.length, sent2, 'no other action was sent before the hero\'s answer');
+  await bodyHas(two.page, /Still working on your last action/);
   release2();
   await settle(two.page);
   await two.page.click('[data-a="tab"][data-v="map"]'); await settle(two.page);
@@ -631,6 +631,29 @@ test('K3-25 a slow finder answer doesn\'t move a view the player has moved on fr
   // The finder works again from here.
   await page.click('[data-a="kfind"][data-v="near"]'); await settle(page);
   assert.match(await page.textContent('#main'), /was free just now/);
+  clean(ctx);
+  await ctx.context.close();
+});
+
+test('K3-26 a read on its way when the plots are refreshed is dropped: the refreshed plots are shown, not the old answer', async () => {
+  const ctx = await game();
+  const { page, backend } = ctx;
+  await openMap(page);
+  const release = backend.holdRead('window'); // the next read of plots 1-10 is slow
+  await page.click('[data-a="kwin"][data-v="e"]'); await settle(page);
+  await page.click('[data-a="kwin"][data-v="w"]');
+  await until(release.arrived, 'the held window read');
+  backend.plots.push({ id: 991, x: 3, y: 3, status: 'claimed', character_id: 'char-rival', claimed_at: '' });
+  backend.ownerNames['char-rival'] = 'Rival';
+  // Leaving the Kingdom Lands and coming back refreshes the plots, with that read still on its way.
+  await page.click('[data-a="tab"][data-v="explore"]');
+  await page.click('#dock [data-a="portal"]'); await settle(page);
+  await page.click('[data-a="portal"]'); await settle(page);
+  await page.click('[data-a="tab"][data-v="map"]');
+  await page.waitForFunction(() => /Claimed by Rival/.test(document.querySelector('.plots [data-v="3,3"]')?.getAttribute('aria-label') || ''));
+  release(); // the old answer, with 3, 3 free, arrives last
+  await page.waitForTimeout(400); await settle(page);
+  assert.match(await cellLabel(page, 3, 3), /Claimed by Rival/, 'the refreshed plots stay');
   clean(ctx);
   await ctx.context.close();
 });
