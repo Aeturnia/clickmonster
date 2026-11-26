@@ -351,6 +351,11 @@ A separate staging Supabase project is dropped. The live sign-in session above c
   - **The review's qualification** (2026-11-24): naming the item, or giving exact XP across a level-up, may need more reward information from the server. The scope must establish whether the current response is enough before committing to a client-only fix.
   - **Not authorized, and not scheduled.** No milestone.
 
+- **The 120-second zone-edit read of the hero can overwrite a newer action's answer** (found in PR #119's re-review, 2026-11-26). **Tracked in #120.**
+  - **What happens:** every 120 seconds, `main.js` picks up zone edits. If the hero's zone was removed, it reads the hero again and replaces the page's copy. That read isn't serialized with actions, so an older answer can replace a newer one, in either direction. `gameGen` guards only against another account's answers.
+  - **It predates Kingdoms.** No production incident is known. K1-3's `heroSeq` (`docs/kingdoms-k1-report.md`, 3.6) protects only the Kingdoms recovery read, one way.
+  - **Tracked on the owner's instruction (2026-11-26). Not authorized, and not scheduled.** No milestone.
+
 ## Desktop layout (done)
 
 Built in phases D-1 to D-3 and merged on 2026-11-13. See `docs/desktop-scope.md` and the three D reports. The layout picker from that scope was built as landing phase L-2. Still not approved: wider desktop sheets, and the possible rename to "Monstra Regna".

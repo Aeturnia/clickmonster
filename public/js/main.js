@@ -19,7 +19,7 @@ import { monsterCombatant } from './engine/monster.js';
 import { meleeChance, spellChance, meleeBase, spellBase } from './engine/combat.js';
 import { shopItems, isEquipped, sellPrice } from './engine/inventory.js';
 import { PVP_LEVEL_GAP } from './engine/pvp.js';
-import { sb, api, playersAt, recentEvents, fetchZoneDefs, signOut, endSession } from './net.js';
+import { sb, api, playersAt, recentEvents, fetchZoneDefs, signOut, endSession, kingdomPlots, kingdomOwners, kingdomFreePlot, myCharacterId } from './net.js';
 import { setupChat } from './chat-ui.js';
 import { questTitle, canAccept } from './engine/quests.js';
 import { waitingReminder } from './engine/rewards.js';
@@ -27,6 +27,12 @@ import { setWorld, activeEvents, MULT_LABEL, MULT_KEYS } from './engine/world-co
 import { huntCombatant } from './engine/hunt.js';
 import { watchLayout, setLayoutPreference, layoutStatus, LAYOUT_CHOICES } from './layout.js';
 import { logGroups, cardLine, cardListsMastery } from './log-view.js';
+import { kingdomsOpen, kingdomConfig, PLOT_WINDOW } from './data/kingdoms.js';
+import { inKingdomZone } from './engine/kingdom.js';
+import {
+  freshKingdomState, windowAround, windowKey, inWindow, shiftWindow, viewPlotMap, viewKingdomPlace,
+  viewHeroKingdom, sheetKingdom, claimQuestion,
+} from './kingdom-ui.js';
 
 // The entrance (entry.js) imports this module only once net.js has created the Supabase client.
 if (!sb) throw new Error('main.js is started by entry.js, after the Supabase client is ready.');
@@ -49,6 +55,9 @@ function savePrefs() {
 
 let session = null;
 let char = null; // the server's copy of our hero
+// Counts every time char is replaced by a server answer. A read of the hero again after a Kingdom
+// refusal is used only if nothing newer replaced it meanwhile (the K1-3 review, K1-UI01).
+let heroSeq = 0;
 let layout = 'mobile'; // set by watchLayout(): mobile, wide or desktop (layout.js)
 // Per-account UI state. stop() replaces it with a fresh copy at every account boundary
 // (landing L-1 review, L1-02). Device-level settings live in prefs, not here.
@@ -77,6 +86,7 @@ const freshUi = () => ({
   cues: null, // gold and XP changes waiting to float (showCues)
   losses: null,
   pickMonster: null, // the monster chosen in the drop-down (monsterPicker)
+  kingdom: freshKingdomState(), // the plot map and the hero's own plot (Kingdoms K1-3)
 });
 const ui = freshUi();
 
@@ -415,6 +425,11 @@ function viewSummary() {
 // squares are a picture of the Map screen (hidden from screen readers; the text says it all).
 // On short screens only the text shows, to leave room for chat.
 function viewMinimap() {
+  if (inKingdoms()) {
+    return `<h2 class="side-h">The Kingdom Lands</h2>
+      <p class="mini-near">You are at the gate.${char.kingdom ? ` Your Kingdom is on plot ${char.kingdom.plot.x}, ${char.kingdom.plot.y}.` : ' Choose a plot on the plot map.'}</p>
+      <button class="textbtn" id="mini-open" data-a="tab" data-v="map">Open the plot map</button>`;
+  }
   const zone = currentZone(char);
   const { x, y } = char.loc;
   const near = nearbyPlaces(zone);
@@ -520,6 +535,8 @@ function viewExplore() {
       <button class="textbtn" data-a="seenann">Dismiss</button></div>` : '';
   const events = activeEvents().map((e) => `<div class="notice event"><p class="small" style="margin:0">${eventLine(e)}</p></div>`).join('');
   const inSide = layout === 'desktop'; // the side column shows the quest and events instead
+  // The Kingdom Zone (K1-3, 5.1.1): no monsters, and no players list (every hero there is at the gate).
+  if (inKingdoms()) return `${jail}${mute}${ann}${inSide ? '' : events}${notices}${inSide ? '' : questLine}${viewKingdomPlace({ ...kingdomCtx(), zone })}`;
   return `
     ${jail}${mute}${ann}${inSide ? '' : events}
     ${notices}
@@ -594,6 +611,11 @@ function playerRows(zone) {
 }
 
 function dockExplore() {
+  if (inKingdoms()) {
+    return `<div class="dock-explore"><div class="ctx">${btn('portal', null, 'Leave the Kingdom Lands', 'primary')}${char.kingdom
+      ? btn('kmanage', null, 'Manage my Kingdom')
+      : btn('tab', 'map', 'Plot map')}</div></div>`;
+  }
   const zone = currentZone(char);
   const { x, y } = char.loc;
   const here = featuresAt(zone, x, y);
@@ -820,6 +842,7 @@ function viewHero() {
       <dt>Duels won</dt><dd>${fmt(char.pvpWins || 0)}</dd>
       <dt>Defeats</dt><dd>${fmt(char.deaths)}</dd>
     </dl>
+    ${kingdomsOpen() ? viewHeroKingdom({ ...kingdomCtx(), inZone: inKingdomZone(char) }) : ''}
     <h3>Settings</h3>
     <div class="rows settings">
       <button class="row" data-a="pref" data-v="leftHanded"><span class="nm">Left-handed controls<small>Moves the arrow pad to the left side</small></span><span class="go">${prefs.leftHanded ? 'On' : 'Off'}</span></button>
@@ -1147,6 +1170,7 @@ function viewSheet() {
   if (ui.sheet?.type === 'bank') return sheetBank();
   if (ui.sheet?.type === 'quests') return sheetQuests();
   if (ui.sheet?.type === 'keys') return sheetKeys();
+  if (ui.sheet?.type === 'kingdom') return inKingdoms() && char.kingdom ? sheetKingdom(kingdomCtx()) : '';
   if (char.pendingLevels > ui.levelSheetSnoozed && !fighting() && ui.tab !== 'hero') return sheetLevel();
   return '';
 }
@@ -1255,7 +1279,7 @@ function screenTitle() {
   if (!char) return 'Create your hero';
   if (ui.tab === 'hero') return 'Hero';
   if (ui.tab === 'gear') return 'Gear';
-  if (ui.tab === 'map') return `Map of ${currentZone(char)?.name || 'the world'}`;
+  if (ui.tab === 'map') return inKingdoms() ? 'Plot map of the Kingdom Lands' : `Map of ${currentZone(char)?.name || 'the world'}`;
   if (char.battle) return char.battle.hunt ? `Hunt: ${char.battle.name}` : 'Battle';
   return `Explore ${currentZone(char)?.name || ''}`;
 }
@@ -1270,7 +1294,7 @@ function render() {
   else if (!char) main = viewCreate();
   else if (ui.tab === 'hero') main = viewHero();
   else if (ui.tab === 'gear') main = viewGear();
-  else if (ui.tab === 'map') main = viewMap();
+  else if (ui.tab === 'map') main = inKingdoms() ? (kingdomWindow(), viewPlotMap(kingdomCtx())) : viewMap();
   else if (char.battle) { main = viewBattle(); dock = dockBattle(); fill = true; }
   else { main = viewExplore(); dock = dockExplore(); }
 
@@ -1299,6 +1323,7 @@ function render() {
   positionToast();
   markPending();
   markShortcuts();
+  syncKingdom();
   fitMeters();
   if (ui.cues) showCues();
 
@@ -1434,8 +1459,42 @@ const BATTLE_ACTIONS = new Set(['melee', 'cast', 'flee', 'again', 'fight', 'atta
 function handleLocal(a, v) {
   switch (a) {
     case 'race': ui.draftName = $('#name')?.value || ''; ui.race = v; return true;
-    case 'tab': ui.tab = v; ui.sheet = null; if (v === 'explore') refreshPlayers(); return true;
+    case 'tab': ui.tab = v; ui.sheet = null; dropFinder(); if (v === 'explore') refreshPlayers(); return true;
     case 'list': ui.list = v; refreshPlayers(); return true;
+    // The plot map (K1-3): moving the view and selecting send nothing to the game.
+    case 'kplot': { if (!inKingdoms()) return true; const [x, y] = v.split(',').map(Number); dropFinder(); showPlot(x, y); ui.kingdom.note = null; return true; }
+    case 'kwin': {
+      if (!inKingdoms()) return true;
+      const k = ui.kingdom;
+      const d = { n: [0, -PLOT_WINDOW], s: [0, PLOT_WINDOW], w: [-PLOT_WINDOW, 0], e: [PLOT_WINDOW, 0] }[v];
+      if (!d) return true;
+      dropFinder();
+      k.win = shiftWindow(kingdomWindow(), d[0], d[1]);
+      k.cursor = null;
+      announce(`Plots ${k.win.x} to ${k.win.x + PLOT_WINDOW - 1} across, ${k.win.y} to ${k.win.y + PLOT_WINDOW - 1} down.`);
+      return true;
+    }
+    case 'kmine': { const p = char?.kingdom?.plot; if (inKingdoms() && p) { dropFinder(); showPlot(p.x, p.y); } return true; }
+    case 'kfind': if (inKingdoms() && !ui.kingdom.finding) findPlot(v === 'random'); return true;
+    case 'kjump': {
+      if (!inKingdoms()) return true;
+      const k = ui.kingdom;
+      k.jumpX = ($('#kjump-x')?.value || '').trim();
+      k.jumpY = ($('#kjump-y')?.value || '').trim();
+      const x = Number(k.jumpX), y = Number(k.jumpY);
+      if (!Number.isInteger(x) || !Number.isInteger(y) || x < 1 || y < 1 || x > 100 || y > 100 || !/^\d+$/.test(k.jumpX) || !/^\d+$/.test(k.jumpY)) {
+        k.note = 'Plots are numbered 1 to 100, across and down.';
+        return true;
+      }
+      dropFinder();
+      showPlot(x, y);
+      k.note = null;
+      requestAnimationFrame(() => $(`.plots [data-a="kplot"][data-v="${x},${y}"]`)?.focus());
+      return true;
+    }
+    case 'kretry': refreshKingdom(); ui.kingdom.resyncedFor = null; return true; // a mismatch may read the hero again
+    case 'kresync': if (inKingdoms() && !ui.busy) resyncHero(gameGen); return true;
+    case 'kmanage': if (inKingdoms() && char?.kingdom) ui.sheet = { type: 'kingdom' }; return true;
     case 'mapcenter': {
       ui.mapCursor = null;
       requestAnimationFrame(() => { centerMap(char.loc.x, char.loc.y); $('.map [aria-current="location"]')?.focus({ preventScroll: true }); });
@@ -1545,11 +1604,36 @@ async function remoteCall(a, v) {
       });
       return ok ? ['attack', { targetId: v }] : null;
     }
+    // Kingdoms (K1-3). The claim is tier 2: a dialog with focus on Cancel (question 7).
+    case 'kclaim': {
+      if (!inKingdoms()) return null;
+      const [x, y] = v.split(',').map(Number);
+      const ok = await ask(claimQuestion(x, y, kingdomConfig(), fmt));
+      return ok ? ['kingdomClaim', { x, y }, `You claimed plot ${x}, ${y}. It is your Kingdom.`] : null;
+    }
+    // Release is tier 1: type the name (K-D5). The plot instance is the one on screen when the
+    // button was pressed, taken now, before the dialog: never replaced by a newer one (K1-DB01).
+    case 'krelease': {
+      if (!inKingdoms() || !char.kingdom) return null;
+      const plotId = Number(v);
+      const p = char.kingdom.plot;
+      const ok = await ask({
+        title: 'Release your Kingdom?',
+        points: [
+          `You give up plot ${p.x}, ${p.y}, and everything on it. Nothing is refunded.`,
+          'This cannot be undone. You can claim a plot again later, paying again.',
+        ],
+        typeToConfirm: char.name, confirm: 'Release my Kingdom', cancel: 'Keep my Kingdom',
+      });
+      return ok ? ['kingdomRelease', { plotId }, 'Your Kingdom is released.'] : null;
+    }
     case 'delete': {
       const ok = await ask({
         title: `Delete ${char.name}?`,
         points: [
           `${char.name}, with all their gear, gems, gold (carried and banked) and progress, is deleted.`,
+          // K-D7: deleting the hero frees their plot at once.
+          ...(char.kingdom ? [`${char.name}’s Kingdom, on plot ${char.kingdom.plot.x}, ${char.kingdom.plot.y}, is destroyed, and the plot is freed.`] : []),
           'This cannot be undone.',
         ],
         typeToConfirm: char.name, confirm: 'Delete forever', cancel: 'Keep my hero',
@@ -1579,14 +1663,20 @@ async function runRemote(a, v, el) {
     res = await api(action, args, () => live(g));
   } catch (err) {
     if (!live(g) || err.stale) return; // the account changed while this was on its way: not ours to report
-    ui.busy = false;
-    ui.pendingKey = null;
-    markPending();
+    // A Kingdom refusal means the screen was out of date: the hero is read again, still busy, so no
+    // other action starts before that answer is in (K1-UI01). Nothing is sent again by itself.
+    const recover = !err.ended && (action === 'kingdomClaim' || action === 'kingdomRelease') && KINGDOM_REFUSALS.has(err.reason);
+    if (!recover) {
+      ui.busy = false;
+      ui.pendingKey = null;
+      markPending();
+    }
     const message = err.message || 'Something went wrong.';
     if (action === 'create') ui.createError = message; // shown next to the name field
     else addError(err.status == null ? `Can't reach the game server. ${message}` : message, err.status == null ? 'connection' : action);
     render();
     if (err.ended) await endSession(err.session); // the server refused it even after a renewal (net.js api())
+    else if (recover) await resyncHero(g, true);
     return;
   }
   // The answer belongs to the session that asked. If that session has ended (signed out, or
@@ -1596,6 +1686,8 @@ async function runRemote(a, v, el) {
   ui.pendingKey = null;
   markPending();
   char = res.char;
+  heroSeq++;
+  if (ui.kingdom.hero === 'failed') ui.kingdom.hero = null; // this answer is the hero as the server has it
   trackChanges(action, before);
   if ('sanctions' in res) ui.sanctions = res.sanctions;
   resolveErrors(action);
@@ -1604,6 +1696,10 @@ async function runRemote(a, v, el) {
   if (msg) toast(msg);
   if (action === 'create' && char) { ui.tab = 'explore'; toast(`Welcome to ${ZONES[char.loc.zone].name}, ${char.name}.`); chat.start(); }
   if (action === 'sell' || action === 'buyequip') ui.sheet = null;
+  if (action === 'kingdomClaim' || action === 'kingdomRelease') refreshKingdom();
+  if (action === 'kingdomRelease') ui.sheet = null;
+  if (action === 'create' || action === 'delete') ui.kingdom = freshKingdomState(); // another hero, another id
+  if (char && before && char.loc.zone !== before.zone) { refreshKingdom(); ui.kingdom.selected = null; ui.kingdom.note = null; }
   if (action === 'fight' || action === 'attack' || action === 'hunt') ui.tab = 'explore';
   if (char?.battle?.hunt && ['melee', 'cast'].includes(action)) {
     const h = ui.hunts.find((x) => x.id === char.battle.hunt);
@@ -1656,6 +1752,232 @@ document.addEventListener('focusin', (e) => {
   for (const c of document.querySelectorAll('.map [data-a="walk"][tabindex="0"]')) if (c !== cell) c.tabIndex = -1;
   cell.tabIndex = 0;
 });
+// ---------------------------------------------------------------- Kingdoms (K-1, K1-3)
+// docs/kingdoms-k1-plan.md 2.3. Everything here runs only while Kingdoms are open: while closed,
+// nothing of Kingdoms is drawn and no Kingdom request leaves the browser (the live database has no
+// Kingdom table until the rollout). Every read records gameGen, and the window it was for: an
+// answer for another account, or for a window the player has moved on from, is dropped.
+const kingdomCtx = () => ({ char, k: ui.kingdom, cfg: kingdomConfig(), esc, btn, fmt });
+const inKingdoms = () => kingdomsOpen() && !!char && inKingdomZone(char);
+
+function kingdomWindow() {
+  const k = ui.kingdom;
+  if (!k.win) {
+    const p = char.kingdom?.plot;
+    k.win = p ? windowAround(p.x, p.y) : { x: 1, y: 1 };
+  }
+  return k.win;
+}
+
+// Read the plots and the hero's own plot again when next drawn (after a claim, a release, a refusal,
+// or now and then). What is shown stays until the new answer arrives. Release waits for it.
+// Reads already on their way predate this: they are dropped when they return, and new ones start
+// (the K1-3 review, K1-UI03). recheck: Claim waits for the new plots too (after a refusal).
+function refreshKingdom(recheck = false) {
+  const k = ui.kingdom;
+  k.stale = true; k.mineStale = true; k.errorKey = null; k.mineErrorKey = null; k.mineProblem = null;
+  k.plotsSeq++; k.mineSeq++; k.loadingKey = null; k.mineLoading = null;
+  dropFinder(); // a finder answer on its way is dropped too (K1-UI03a)
+  if (recheck) k.recheck = true;
+}
+
+// Start the reads the screen needs, unless they are loaded, loading, or failed for the same window
+// (a failure waits for Try again). Called after every render; it does nothing outside the Kingdom
+// Zone, or while closed.
+function syncKingdom() {
+  if (!inKingdoms()) return;
+  const k = ui.kingdom;
+  const key = windowKey(kingdomWindow());
+  if (ui.tab === 'map' && (k.cellsKey !== key || k.stale) && k.loadingKey !== key && k.errorKey !== key) loadPlots(key);
+  const mk = char.kingdom ? `${char.kingdom.plot.x},${char.kingdom.plot.y}` : null;
+  if (!mk) { k.mine = null; k.mineKey = null; k.mineStale = false; }
+  else if ((k.mineKey !== mk || k.mineStale) && k.mineLoading !== mk && k.mineErrorKey !== mk) loadMine(mk);
+}
+
+// Each read is numbered (K1-UI03). It is used only while it is the latest of its kind, for the same
+// account and, for the plots, the same window; that is checked before a read that depends on it
+// (the owners' names) as well as before anything is shown. A window left and come back to is a new
+// read: the old one's answer is dropped.
+async function loadPlots(key) {
+  const g = gameGen;
+  const k = ui.kingdom;
+  const seq = ++k.plotsSeq;
+  const current = () => live(g) && ui.kingdom === k && k.plotsSeq === seq && windowKey(k.win) === key;
+  const [x, y] = key.split(',').map(Number);
+  k.loadingKey = key;
+  try {
+    const [rows, myId] = await Promise.all([kingdomPlots(x, y, PLOT_WINDOW), k.myId || myCharacterId()]);
+    if (!current()) return; // another account, a newer read, or the view has moved on
+    const missing = [...new Set(rows.map((r) => r.character_id).filter((id) => id && !(id in k.owners)))];
+    const owners = await kingdomOwners(missing);
+    if (!current()) return;
+    k.myId = myId;
+    for (const o of owners) k.owners[o.id] = o.name;
+    k.cells = Object.fromEntries(rows.map((r) => [`${r.x},${r.y}`, r]));
+    k.cellsKey = key;
+    k.errorKey = null;
+    k.stale = false;
+    k.recheck = false;
+  } catch {
+    if (!current()) return;
+    k.errorKey = key;
+  } finally {
+    if (live(g) && ui.kingdom === k && k.plotsSeq === seq) k.loadingKey = null;
+  }
+  render();
+}
+
+// The hero's own plot row, for its ownership instance id: a release names it (K1-DB01). It is the
+// hero's only if its owner is the hero (K1-UI02). If the row is missing or someone else's, the hero
+// is read again, once for that mismatch, and Release stays withheld with a way to try again.
+async function loadMine(mk) {
+  const g = gameGen;
+  const k = ui.kingdom;
+  const seq = ++k.mineSeq;
+  const current = () => live(g) && ui.kingdom === k && k.mineSeq === seq;
+  const [x, y] = mk.split(',').map(Number);
+  k.mineLoading = mk;
+  let mismatch = null;
+  try {
+    const [[row], myId] = await Promise.all([kingdomPlots(x, y, 1), k.myId || myCharacterId()]);
+    if (!current()) return;
+    k.myId = myId;
+    k.mineKey = mk;
+    k.mineStale = false;
+    if (row && row.status === 'claimed' && myId && row.character_id === myId) {
+      k.mine = row;
+      k.mineErrorKey = null;
+      k.mineProblem = null;
+    } else {
+      k.mine = null;
+      k.mineErrorKey = mk;
+      k.mineProblem = 'mismatch';
+      mismatch = `${mk}:${row ? row.id : 'none'}`;
+    }
+  } catch {
+    if (!current()) return;
+    k.mineErrorKey = mk;
+    k.mineProblem = 'error';
+  } finally {
+    if (current()) k.mineLoading = null;
+  }
+  if (mismatch && k.resyncedFor !== mismatch && !ui.busy) {
+    k.resyncedFor = mismatch;
+    await resyncHero(g); // renders
+  } else render();
+}
+
+// Show a plot: move the view to it if needed, select it, and put it in the tab order.
+function showPlot(x, y) {
+  const k = ui.kingdom;
+  if (!inWindow(kingdomWindow(), x, y)) k.win = windowAround(x, y);
+  k.selected = { x, y };
+  k.cursor = { x, y };
+}
+
+// The finders are advisory: they move the view and select a plot, nothing else. The claim decides.
+// Any navigation (moving the view, selecting a plot, changing tab) and any refresh drops a finder
+// answer still on its way, even if the view later comes back to where it was (K1-UI03, and the
+// re-review's K1-UI03a): it never moves a view the player has moved on from. The buttons come back.
+function dropFinder() {
+  const k = ui.kingdom;
+  k.findSeq++;
+  k.finding = false;
+}
+async function findPlot(random) {
+  const g = gameGen;
+  const k = ui.kingdom;
+  const win = kingdomWindow();
+  const from = k.selected || { x: win.x + Math.floor(PLOT_WINDOW / 2), y: win.y + Math.floor(PLOT_WINDOW / 2) };
+  const seq = ++k.findSeq;
+  const current = () => live(g) && ui.kingdom === k && k.findSeq === seq && inKingdoms();
+  k.finding = true;
+  k.note = null;
+  render();
+  try {
+    const p = await kingdomFreePlot(from.x, from.y, random);
+    if (!current()) return;
+    if (!p) k.note = 'No free plots are left.';
+    else { showPlot(p.x, p.y); k.note = `Plot ${p.x}, ${p.y} was free just now.`; }
+  } catch (err) {
+    if (current()) k.note = err.message;
+  } finally {
+    if (current()) { k.finding = false; render(); announce(k.note || ''); }
+  }
+}
+
+// The refusals a Kingdom request can get from the game function (K1-2). Each means what the screen
+// showed is out of date: read the hero and the plots again. Nothing is sent again by itself: the
+// player looks, and confirms again (the K1-2 review's carry-forward).
+const KINGDOM_REFUSALS = new Set(['plot_taken', 'plot_changed', 'has_kingdom', 'no_plot']);
+
+// Read the hero again, after a Kingdom refusal or a plot that isn't the hero's (the K1-3 review,
+// K1-UI01 and K1-UI02). It holds ui.busy, so no other action starts until the answer is in, and the
+// answer is used only if nothing newer replaced the hero meanwhile (heroSeq). Claim and Release are
+// withheld until it succeeds; a failure says so, with Try again. Nothing is sent again by itself.
+// held: the caller (runRemote, after a refusal) is already busy and hands that over.
+async function resyncHero(g, held = false) {
+  if (!live(g)) return;
+  if (!held) {
+    if (ui.busy) return;
+    ui.busy = true;
+    markPending();
+  }
+  ui.kingdom.hero = 'loading';
+  refreshKingdom(true);
+  render();
+  const seq = heroSeq;
+  try {
+    const res = await api('state', {}, () => live(g));
+    if (!live(g)) return;
+    if (heroSeq === seq) {
+      char = res.char;
+      heroSeq++;
+      if ('sanctions' in res) ui.sanctions = res.sanctions;
+    }
+    ui.kingdom.hero = null;
+  } catch (err) {
+    if (!live(g) || err.stale) return;
+    ui.kingdom.hero = 'failed';
+    if (err.ended) { await endSession(err.session); return; }
+  } finally {
+    if (live(g)) { ui.busy = false; ui.pendingKey = null; markPending(); }
+  }
+  render();
+}
+
+// Plot squares: one tab stop; arrow keys move between plots, and past the edge move the view by
+// one row or column, keeping focus on the matching plot.
+function plotKeys(e) {
+  const cell = e.target.closest?.('.plots [data-a="kplot"]');
+  if (!cell || !inKingdoms()) return false;
+  const d = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] }[e.key];
+  if (!d) return false;
+  e.preventDefault();
+  const [x, y] = cell.dataset.v.split(',').map(Number);
+  const nx = x + d[0];
+  const ny = y + d[1];
+  if (nx < 1 || ny < 1 || nx > 100 || ny > 100) return true;
+  const k = ui.kingdom;
+  k.cursor = { x: nx, y: ny };
+  if (!inWindow(k.win, nx, ny)) {
+    dropFinder();
+    k.win = shiftWindow(k.win, d[0], d[1]);
+    render();
+    announce(`Plots ${k.win.x} to ${k.win.x + PLOT_WINDOW - 1} across, ${k.win.y} to ${k.win.y + PLOT_WINDOW - 1} down.`);
+  }
+  document.querySelector(`.plots [data-a="kplot"][data-v="${nx},${ny}"]`)?.focus();
+  return true;
+}
+document.addEventListener('focusin', (e) => {
+  const cell = e.target.closest?.('.plots [data-a="kplot"]');
+  if (!cell) return;
+  const [x, y] = cell.dataset.v.split(',').map(Number);
+  ui.kingdom.cursor = { x, y };
+  for (const c of document.querySelectorAll('.plots [data-a="kplot"][tabindex="0"]')) if (c !== cell) c.tabIndex = -1;
+  cell.tabIndex = 0;
+});
+
 function mapKeys(e) {
   const cell = e.target.closest?.('.map [data-a="walk"]');
   if (!cell) return false;
@@ -1762,8 +2084,10 @@ document.addEventListener('keydown', (e) => {
   // arrow keys in the chat panel also moved the hero.
   if (e.defaultPrevented) return;
   if (mapKeys(e)) return;
+  if (plotKeys(e)) return;
   if (e.target.tagName === 'INPUT') {
     if (e.key === 'Enter' && e.target.id === 'name') $('[data-a="create"]')?.click();
+    if (e.key === 'Enter' && (e.target.id === 'kjump-x' || e.target.id === 'kjump-y')) $('[data-a="kjump"]')?.click();
     return;
   }
   if (shortcut(e)) return;
@@ -1777,7 +2101,7 @@ document.addEventListener('keydown', (e) => {
 
 // ---------------------------------------------------------------- timers and boot
 async function refreshPlayers() {
-  if (!char || ui.list !== 'players' || ui.tab !== 'explore' || char.battle) return;
+  if (!char || ui.list !== 'players' || ui.tab !== 'explore' || char.battle || inKingdoms()) return;
   const key = locKey();
   const g = gameGen;
   try {
@@ -1804,6 +2128,7 @@ setInterval(() => {
   if (document.visibilityState !== 'visible' || !char) return;
   loadHunts();
   loadWorldConfig();
+  if (inKingdoms() && ui.tab === 'map') { refreshKingdom(); render(); }
 }, 30000);
 // Pick up zone edits now and then (the server moves heroes out of removed areas).
 setInterval(async () => {
@@ -1814,7 +2139,7 @@ setInterval(async () => {
   if (!ZONES[char.loc.zone]) {
     try {
       const fresh = (await api('state')).char;
-      if (live(g)) char = fresh;
+      if (live(g)) { char = fresh; heroSeq++; }
     } catch { /* next action will sort it out */ }
   }
   if (live(g)) render();
@@ -1881,6 +2206,7 @@ export async function start(newSession, isCurrent = () => true) {
   const res = await api('state', {}, current);
   if (!current()) return false;
   char = res.char;
+  heroSeq++;
   ui.sanctions = res.sanctions || null;
   ui.phase = 'game';
   // Chat starts after the hero; by then the account may have changed or signed out.

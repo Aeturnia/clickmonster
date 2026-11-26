@@ -24,6 +24,8 @@ import { generateQuests, accept, hourBucket } from '../../public/js/engine/quest
 import { canSend } from '../../public/js/engine/chat.js';
 import { duel } from '../../public/js/engine/pvp.js';
 import { startHuntBattle } from '../../public/js/engine/hunt.js';
+import { setKingdomConfig, kingdomConfig, TEST_CONFIG } from '../../public/js/data/kingdoms.js';
+import { claimKingdom, releaseKingdom } from '../../public/js/engine/kingdom.js';
 import { checkNews, canDeleteNews } from '../../public/js/data/news.js';
 import { newsResponse } from '../../netlify/edge-functions/news.js';
 
@@ -152,6 +154,26 @@ export function recoveryUrl(base, acct, { error = false } = {}) {
 
 // Turns on "Forgot your password?" for this page only, as releasing it will (entry.js
 // RECOVERY_REQUESTS). Test-only: it rewrites the served entry.js, and fails if the switch is missing.
+// Kingdoms K1-3: open Kingdoms in the browser by rewriting public/js/data/kingdoms.js as served,
+// with the fake's test values (level 1, cost 100). Pair it with new FakeBackend({ kingdoms: {...} }).
+export async function kingdomsOn(page) {
+  await page.route('**/js/data/kingdoms.js', async (route) => {
+    const res = await route.fetch();
+    const text = await res.text();
+    const swaps = [
+      ['export const KINGDOMS_OPEN = false;', 'export const KINGDOMS_OPEN = true;'],
+      ['export const CLAIM_MIN_LEVEL = null;', `export const CLAIM_MIN_LEVEL = ${TEST_CONFIG.minLevel};`],
+      ['export const CLAIM_COST = null;', `export const CLAIM_COST = ${TEST_CONFIG.cost};`],
+    ];
+    let on = text;
+    for (const [from, to] of swaps) {
+      if (!on.includes(from)) throw new Error(`kingdoms.js has no "${from}" to turn on`);
+      on = on.replace(from, to);
+    }
+    await route.fulfill({ response: res, body: on });
+  });
+}
+
 export async function recoveryRequestsOn(page) {
   await page.route('**/js/entry.js', async (route) => {
     const res = await route.fetch();
@@ -167,7 +189,21 @@ export class FakeBackend {
   // worldEvents: timed events in world_config (e.g. { id, name, until, xp: 2 }); activeHunts:
   // world-boss hunts players can see ({ id, zone, name, level, hp, max_hp, ends_at }).
   // news: rows of the public news table (landing L-3), as the admin function returns them.
-  constructor({ hero = makeHero(), players = [], chat = [], events = [], seed = 7, zones = [], quests = null, reports = null, worldEvents = [], activeHunts = [], news = [] } = {}) {
+  // kingdoms: open Kingdoms in the fake game function, with its test configuration, and seed the plot
+  // table: { plots: [{ x, y, status, character_id? , name? }] }. Plots named by `name` belong to that
+  // other hero. Every Kingdom request is recorded in kingdomCalls, closed or open.
+  constructor({ hero = makeHero(), players = [], chat = [], events = [], seed = 7, zones = [], quests = null, reports = null, worldEvents = [], activeHunts = [], news = [], kingdoms = null } = {}) {
+    this.kingdomsOpen = !!kingdoms;
+    this.kingdomCalls = []; // { kind: 'read' | 'owners' | 'finder' | 'action', ... }
+    this.nextPlotId = 101;
+    this.ownerNames = {}; // character id -> name, for owners who aren't the signed-in hero
+    this.plots = (kingdoms?.plots || []).map((pl) => {
+      const id = this.nextPlotId++;
+      const cid = pl.character_id || (pl.status === 'claimed' ? `char-k${id}` : null);
+      if (cid && pl.name) this.ownerNames[cid] = pl.name;
+      return { id, x: pl.x, y: pl.y, status: pl.status || 'claimed', character_id: pl.status === 'reserved' ? null : cid, claimed_at: new Date().toISOString() };
+    });
+    this.useKingdoms();
     this.news = structuredClone(news);
     this.newsSeq = Math.max(0, ...this.news.map((n) => n.id)) + 1;
     this.worldEvents = worldEvents;
@@ -186,6 +222,7 @@ export class FakeBackend {
     this.calls = [];
     this.failures = []; // { action, status, message, once }
     this.holds = {}; // action -> promise: requests for it wait until released
+    this.readHolds = []; // Kingdom reads held with their answer as it was when asked (holdRead())
     this.offline = false;
     this.sockets = [];
     this.revoked = new Set(); // refresh-<account id>: that account's refresh tokens are refused
@@ -218,7 +255,14 @@ export class FakeBackend {
     this.quests = quests || generateQuests(hourBucket()).map((q, i) => ({ ...q, id: `quest-${i}`, completedBy: null }));
   }
 
-  failNext(action, status, message) { this.failures.push({ action, status, message }); } // status 'drop': the connection is dropped
+  failNext(action, status, message, reason) { this.failures.push({ action, status, message, reason }); } // status 'drop': the connection is dropped; reason: a game refusal code
+
+  // The fake game function's Kingdom configuration. The engine's module state is shared by every
+  // backend in the worker, so it is set again before each request, and loadZones() follows.
+  useKingdoms() { setKingdomConfig(this.kingdomsOpen ? TEST_CONFIG : null); }
+
+  // A Kingdom refusal, as the game function answers it (K1-2: status, message, reason).
+  static refusal(status, message, reason) { return Object.assign(new Error(message), { status, reason }); }
 
   // The account's sessions so far end on the server, as when another device signs out everywhere:
   // their tokens are refused (game 401; /user and /logout 403 session_not_found, which supabase-js
@@ -250,6 +294,42 @@ export class FakeBackend {
     return () => { delete this.holds[action]; release(); };
   }
 
+  // Hold the next Kingdom read of a kind (the K1-3 review, K1-UI03). Unlike hold(), its answer is taken
+  // when the request arrives, so when released it is an old answer: a slow read overtaken by newer
+  // ones. kind: 'window' (a plot-map window), 'mine' (the hero's own plot), 'owners', 'finder' or 'me'
+  // (my_character). One request only; later reads of that kind answer at once. The returned
+  // function releases it; release.arrived() says whether the held request has come in.
+  holdRead(kind) {
+    let open;
+    const h = { kind, used: false, done: new Promise((r) => { open = r; }) };
+    this.readHolds.push(h);
+    const release = () => { this.readHolds = this.readHolds.filter((x) => x !== h); open(); };
+    release.arrived = () => h.used;
+    return release;
+  }
+  async heldRead(kind) {
+    const h = kind && this.readHolds.find((x) => x.kind === kind && !x.used);
+    if (!h) return;
+    h.used = true;
+    await h.done;
+  }
+  // The next Kingdom read of a kind (as holdRead()) fails with a 500, once (the K1-3 re-review).
+  failRead(kind) { (this.readFails ||= []).push(kind); }
+  readFailed(kind) {
+    const i = kind ? (this.readFails || []).indexOf(kind) : -1;
+    if (i < 0) return false;
+    this.readFails.splice(i, 1);
+    return true;
+  }
+  static readKind(table, params) {
+    if (table === 'kingdom_plots') {
+      const [lo, hi] = params.getAll('x').map((f) => f.split('.')[1]);
+      return lo === hi ? 'mine' : 'window';
+    }
+    if (table === 'characters' && /^in\./.test(params.get('id') || '')) return 'owners';
+    return null;
+  }
+
   userFor(token) {
     try {
       const payload = JSON.parse(Buffer.from(String(token).split('.')[1], 'base64url').toString());
@@ -261,6 +341,7 @@ export class FakeBackend {
 
   // Game edge function, using the real engine.
   game(user, action, args) {
+    this.useKingdoms();
     loadZones(this.zoneDefs); // other backends in the same process may have loaded different zones
     const now = Date.now();
     const id = user.id;
@@ -282,6 +363,30 @@ export class FakeBackend {
     const c = this.heroes[id];
     if (!c) throw Object.assign(new Error('Create a hero first.'), { status: 404 });
     const rng = this.rng;
+    if (action === 'kingdomClaim' || action === 'kingdomRelease') {
+      this.kingdomCalls.push({ kind: 'action', action, args });
+      const charId = this.charIds[id];
+      const draft = structuredClone(c);
+      if (action === 'kingdomClaim') {
+        claimKingdom(draft, args.x, args.y, now, kingdomConfig());
+        const { x, y } = draft.kingdom.plot;
+        if (this.plots.some((pl) => pl.x === x && pl.y === y)) throw FakeBackend.refusal(409, 'That plot was just taken.', 'plot_taken');
+        if (this.plots.some((pl) => pl.character_id === charId)) throw FakeBackend.refusal(409, 'You already have a Kingdom.', 'has_kingdom');
+        this.plots.push({ id: this.nextPlotId++, x, y, status: 'claimed', character_id: charId, claimed_at: new Date().toISOString() });
+      } else {
+        releaseKingdom(draft, kingdomConfig());
+        const plotId = Number(args.plotId);
+        if (!Number.isSafeInteger(plotId) || plotId < 1) throw FakeBackend.refusal(400, 'Choose your Kingdom again.');
+        const at = this.plots.findIndex((pl) => pl.id === plotId && pl.character_id === charId && pl.status === 'claimed');
+        if (at < 0) {
+          if (this.plots.some((pl) => pl.character_id === charId)) throw FakeBackend.refusal(409, 'Your Kingdom has changed since you looked. Check it and try again.', 'plot_changed');
+          throw FakeBackend.refusal(409, 'You don’t have a Kingdom.', 'no_plot');
+        }
+        this.plots.splice(at, 1);
+      }
+      this.heroes[id] = draft;
+      return { char: draft, sanctions: { banned: null, jailed: null, muted: null, reason: null } };
+    }
     const actions = {
       move: () => move(c, args.dir), walk: () => walkTo(c, args.x, args.y),
       fight: () => startBattle(c, args.monsterId, () => 0.99),
@@ -574,6 +679,29 @@ export class FakeBackend {
     }
   }
 
+  // Another tab released the player's Kingdom and claimed a plot again (a new ownership instance).
+  reclaimFor(accountId, x, y) {
+    const charId = this.charIds[accountId];
+    this.plots = this.plots.filter((pl) => pl.character_id !== charId);
+    const plot = { id: this.nextPlotId++, x, y, status: 'claimed', character_id: charId, claimed_at: new Date().toISOString() };
+    this.plots.push(plot);
+    this.heroes[accountId].kingdom = { plot: { x, y }, claimedAt: Date.now() };
+    return plot;
+  }
+
+  // The plot finder (kingdom_free_plot): nearest by Chebyshev distance, ties by y then x; or a
+  // random free plot (here the first free one from a seeded start, so tests are repeatable).
+  freePlot(px, py, random) {
+    const taken = new Set(this.plots.map((pl) => `${pl.x},${pl.y}`));
+    const free = [];
+    for (let y = 1; y <= 100; y++) for (let x = 1; x <= 100; x++) if (!taken.has(`${x},${y}`)) free.push({ x, y });
+    if (!free.length) return [];
+    if (random) return [free[Math.floor(this.rng() * free.length)]];
+    const d = (q) => Math.max(Math.abs(q.x - px), Math.abs(q.y - py));
+    free.sort((a, b) => d(a) - d(b) || a.y - b.y || a.x - b.x);
+    return [free[0]];
+  }
+
   // PostgREST-style reads.
   rest(user, table, params, single) {
     const eq = (k) => (params.get(k) || '').replace(/^eq\./, '');
@@ -583,7 +711,29 @@ export class FakeBackend {
       case 'world_config': return single ? { data: { base: { xp: 1, gold: 1, drop: 1, elite: 1, mastery: 1 }, events: this.worldEvents } } : [{ data: { base: {}, events: this.worldEvents } }];
       case 'hunts': return this.activeHunts;
       case 'events': return [...this.events].reverse();
-      case 'characters': return this.players.filter((p) => p.zone === eq('zone') && String(p.x) === eq('x') && String(p.y) === eq('y'));
+      case 'characters': {
+        const ids = (params.get('id') || '').match(/^in\.\((.*)\)$/);
+        if (ids) {
+          this.kingdomCalls.push({ kind: 'owners', account: user?.id });
+          const want = ids[1].split(',').map((v) => v.replace(/^"|"$/g, ''));
+          const own = Object.entries(this.charIds).map(([acct, cid]) => [cid, this.heroes[acct]?.name]);
+          const names = { ...Object.fromEntries(own), ...this.ownerNames };
+          return want.filter((cid) => names[cid]).map((cid) => ({ id: cid, name: names[cid] }));
+        }
+        return this.players.filter((p) => p.zone === eq('zone') && String(p.x) === eq('x') && String(p.y) === eq('y'));
+      }
+      case 'kingdom_plots': {
+        this.kingdomCalls.push({ kind: 'read', query: params.toString(), account: user?.id });
+        const ok = (col, v) => params.getAll(col).every((f) => {
+          const [op, n] = f.split('.');
+          if (op === 'eq') return String(v) === n;
+          if (op === 'gte') return Number(v) >= Number(n);
+          if (op === 'lte') return Number(v) <= Number(n);
+          return false;
+        });
+        return this.plots.filter((pl) => ok('x', pl.x) && ok('y', pl.y) && ok('character_id', pl.character_id) && ok('status', pl.status))
+          .map(({ id, x, y, status, character_id }) => ({ id, x, y, status, character_id }));
+      }
       case 'chat_messages': {
         const ch = eq('channel');
         return this.chat.filter((m) => m.channel === ch && (ch !== 'zone' || m.zone === c?.loc.zone)).slice().reverse();
@@ -760,7 +910,7 @@ export async function attach(context, backend, baseUrl) {
         if (fail >= 0) {
           const f = backend.failures.splice(fail, 1)[0];
           if (f.status === 'drop') return route.abort('connectionreset');
-          return json(route, f.status, { error: f.message });
+          return json(route, f.status, f.reason ? { error: f.message, reason: f.reason } : { error: f.message });
         }
         if (fnName === 'game' && backend.staleTokens > 0) { backend.staleTokens--; return json(route, 401, { error: 'Please sign in again.' }); }
         if (fnName === 'game' && backend.expiredUpTo) {
@@ -780,14 +930,28 @@ export async function attach(context, backend, baseUrl) {
           const out = fnName === 'admin' ? backend.admin(user, body.action, body.args || {}) : backend.game(user, body.action, body.args || {});
           return json(route, 200, JSON.parse(JSON.stringify(out)));
         } catch (err) {
-          return json(route, err.status || 400, { error: err.message });
+          return json(route, err.status || 400, err.reason ? { error: err.message, reason: err.reason } : { error: err.message });
         }
       }
-      if (p.startsWith('/rest/v1/rpc/my_character')) return json(route, 200, user ? [{ id: backend.charIds[user.id], zone: backend.heroes[user.id]?.loc.zone }] : []);
+      if (p.startsWith('/rest/v1/rpc/kingdom_free_plot')) {
+        const body = JSON.parse(req.postData() || '{}');
+        backend.kingdomCalls.push({ kind: 'finder', args: body, account: user?.id });
+        const found = backend.freePlot(Number(body.p_x), Number(body.p_y), !!body.p_random);
+        await backend.heldRead('finder');
+        return json(route, 200, found);
+      }
+      if (p.startsWith('/rest/v1/rpc/my_character')) {
+        const me = user ? [{ id: backend.charIds[user.id], zone: backend.heroes[user.id]?.loc.zone }] : [];
+        await backend.heldRead('me');
+        return json(route, 200, me);
+      }
       if (p.startsWith('/rest/v1/')) {
         const table = p.split('/').pop();
         const single = /vnd\.pgrst\.object/.test(req.headers().accept || '');
         const out = backend.rest(user, table, url.searchParams, single);
+        const readKind = FakeBackend.readKind(table, url.searchParams);
+        await backend.heldRead(readKind);
+        if (backend.readFailed(readKind)) return json(route, 500, { message: 'internal error' });
         if (out?.__status) return json(route, out.__status, out.body);
         if (single && out == null) return json(route, 406, { message: 'no rows' });
         return json(route, 200, out);

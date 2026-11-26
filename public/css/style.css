@@ -356,6 +356,22 @@ p { margin: 0 0 8px; }
 .map button.me { background: var(--gold); color: var(--on-gold); }
 .legend { font-size: 0.8125rem; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 14px; }
 .legend b { color: var(--text); }
+/* The Kingdom Lands' plot map (K1-3): ten plots across at any width. Plots are at least 24px, the
+   WCAG 2.5.8 minimum target, and no wider than the zone map's squares. No scrolling frame. */
+.map.plots { width: min(100%, calc(10 * 48px + 27px)); grid-template-columns: repeat(10, minmax(24px, 1fr)); margin: 10px 0; }
+.map.plots button { min-height: 24px; }
+.map.plots button.free { background: #2a231c; }
+.map.plots button.reserved { background: #33211f; color: #b77d74; }
+.map.plots button.claimed { background: #1f3346; color: #a9c8ee; }
+.map.plots button.mine { background: var(--gold); color: var(--on-gold); }
+.map.plots button.loading { background: #1d1813; color: var(--muted); }
+.map.plots button.sel { outline: 2px solid var(--gold-soft); outline-offset: 1px; }
+.plot-tools, .plot-find { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.plot-jump { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; margin-top: 10px; }
+.plot-jump .field { flex: 0 1 6.5rem; margin: 0; }
+.plot-jump input { width: 100%; }
+.plot-sel { margin-top: 12px; }
+.plot-sel h3 { margin-top: 0; }
 
 /* ---------------------------------------------------------------- start screens */
 .intro { text-align: center; padding: 28px 0 18px; }
