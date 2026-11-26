@@ -268,7 +268,7 @@ The review accepted the core architecture: the transactions, the private reward 
 
 ## 2. K1-2: the engine and the game and admin functions (authorized by the owner, 2026-11-25)
 
-**Status: implemented, with the review corrections K1-ENG01 and K1-ENG02 (2.6), at its re-review gate.**
+**Status: accepted and merged** as PR #118 (`6b19337`, 2026-11-26), after its final independent review at `bd5e992`. `main`'s CI run 45848086852 passed. The review corrections are in 2.6.
 - **Kingdoms stay closed:** the shipped configuration is closed, so nothing of Kingdoms is reachable in production or on the site.
 - **No production access, and no deploy.**
 - **The authorization:** the owner's "Next stage owner authorized", given with K1-1's final review, read as authorizing PR #117's merge and K1-2. Both were recorded on #83.
@@ -462,3 +462,122 @@ It asked for two corrections. **The owner authorized them, and ratified two thin
     - while closed, it is read-only;
     - while open, it does what each role may;
   - **a stale admin change (409)** either gets a reason code or refreshes the inspected plot. It is never retried with a replacement id.
+
+## 3. K1-3: the player's interface (authorized by the owner, 2026-11-26)
+
+**Status: implemented, at its review gate.**
+- **Kingdoms stay closed as shipped.** With the shipped constants, nothing of Kingdoms is drawn, and no Kingdom request leaves the browser. Production has no Kingdom table yet (the rollout is K1-5), and `game` is still v15.
+- **No server change,** and no deploy.
+
+### 3.1 What it adds
+
+**`public/js/kingdom-ui.js`, new:** views and pure helpers only. `main.js` owns the state, the reads and the requests, and passes helpers in; the module never imports `main.js`.
+- **The plot map (the Map tab in the Kingdom Zone):**
+  - **a 10 × 10 window** (`PLOT_WINDOW`, decision 9.4) on the 100 × 100 Kingdom Lands;
+  - **controls:** North, West, East and South move the view by a window; show a plot by its coordinates; "My Kingdom"; "Nearest free plot" and "Random free plot";
+  - **the selected plot:** what it is, and the claim, or "Manage my Kingdom";
+  - **a list of the plots in view.** It lists the claimed and reserved plots, with a count of the free ones, rather than 100 rows. That is a choice for the review;
+  - **each plot's label:** its coordinates, then "Free", "Reserved", "Claimed by" and the owner's hero name (K-D4), or "Your Kingdom". **Until the window's plots have loaded, a plot is "Loading", never "Free".** A failed read shows "Couldn't load these plots" with Try again;
+  - **plain text only:** no icons or arrow glyphs.
+- **The Explore screen in the Kingdom Zone:** the zone's description, and "Manage my Kingdom" or the claim prompt, with the level and the carried-gold cost.
+- **The Hero tab's Kingdom section** (5.5):
+  - outside the Kingdom Zone, the plot and "Travel to the Kingdom Lands to manage it";
+  - inside it, "Manage my Kingdom";
+  - without a Kingdom, the requirements.
+- **The management view,** a sheet: the Kingdom (the hero's name) and its plot, and Release. Nothing else yet. **Release is offered only once the hero's own plot row has been read fresh.** Its button carries that row's ownership instance id.
+
+**`public/js/main.js`:**
+- **The state:** `ui.kingdom`, in `freshUi()`, so each account starts afresh.
+- **The reads** (`loadPlots()`, `loadMine()`, started by `syncKingdom()` after each render) record `gameGen` **and** the window they were asked for. An answer for another account, or for a window the player has moved on from, is dropped.
+  - **A refresh** (after a claim, a release, a refusal, or every 30 seconds on the plot map) keeps what is shown until the new answer arrives.
+  - **A revision counter** stops a read already on its way from passing for the refreshed one.
+- **Nothing iterates the Kingdom Zone's 10,000 cells:**
+  - the Map tab draws the plot map, not `viewMap()`;
+  - the desktop side column shows a summary, not the minimap;
+  - the dock has no arrow pad, so the arrow-key move shortcut finds nothing to press;
+  - **there's no players list**, so `playersAt()` isn't called.
+- **Claiming** is tier 2: `confirm.js`'s danger tone, with focus on Cancel (question 7). It names the plot and the cost, and says the Kingdom can't be moved, with the price on the button.
+  - **When the hero can't claim,** the button is disabled, with the reason. For gold, the reason says the cost is carried gold, and to withdraw at a bank.
+- **Releasing** is tier 1: type the name (K-D5). **The plot instance id is the one on screen when Release was pressed,** taken before the dialog opens.
+- **A Kingdom refusal** (`plot_taken`, `plot_changed`, `has_kingdom`, `no_plot`) shows the server's message, reads the hero and the plots again, **and sends nothing more.** The player looks, and confirms again (the K1-2 review's carry-forward).
+- **The finders are advisory:** they move the view and select a plot, nothing else. A full map says "No free plots are left."
+- **Deleting a hero with a Kingdom** adds a line to the confirmation (K-D7): the Kingdom on its plot is destroyed, and the plot freed. The copy is unchanged for a hero without one.
+
+**`public/js/net.js`:**
+- **`call()` keeps the server's `reason`** on the error (the K1-2 review's carry-forward).
+- **`kingdomPlots()`, `kingdomOwners()` and `kingdomFreePlot()`:** the window's plots, the owners' names, and the finder, under RLS. **They're called only while Kingdoms are open.**
+
+**`public/css/style.css`:** the plot grid. Ten plots across at any width, each at least 24 × 24 px (WCAG 2.5.8), with no scrolling frame.
+
+**The test harness, `tests/ui/harness.mjs`:**
+- **`kingdomsOn(page)`** opens Kingdoms in the browser by rewriting the three shipped constants, with the fake's test values (level 1, cost 100). It throws if a constant isn't found.
+- **`new FakeBackend({ kingdoms: { plots } })`** opens them in the fake `game` function, which mirrors K1-2:
+  - the engine's checks, then the table's: a new instance id per claim, carried-gold payment;
+  - the same messages, statuses and `reason` codes, including `plot_changed` against `no_plot`.
+- **The configuration** is set before every request, because the engine's module state is shared within a test worker.
+- **Every Kingdom request is recorded** (`kingdomCalls`).
+- **Owners' names** come through `characters?id=in.(…)`. The finder works as the database function does.
+- **`reclaimFor()`** plays another tab's release and claim. **`failNext()`** can carry a `reason`.
+
+**`tools/kingdom-shots.mjs`, new:** the Kingdom screens, with an axe summary.
+
+### 3.2 The tests (`tests/ui/kingdoms.test.mjs`, 17)
+
+| Test | What it proves |
+|---|---|
+| K3-1 | **Closed (the shipped constants): no Kingdom request is sent.** No plot read, owner read, finder call or Kingdom action (`kingdomCalls` is empty). No path at the Crossroads, no Kingdom text on Explore or the Hero tab, and the ordinary map |
+| K3-2 | The Crossroads leads to the Kingdom Lands. There: no monsters, no players list, no arrow pad, and an arrow key sends no move. "Leave the Kingdom Lands" returns to the Overworld |
+| K3-3 | The window is exactly 100 plots, with each plot's status and the owner's name. Moving the view and selecting send no game action, and the hero stays at the gate |
+| K3-4 | One tab stop. Arrows move between plots, and past the edge move the view by one row, **with focus on the matching plot after the reload.** Enter selects |
+| K3-5 | **The claim:** tier 2, with focus on Cancel. Cancel sends nothing. The claim sends `{ x, y }`, the plot becomes "Your Kingdom", carried gold drops by 100, and the Hero tab shows the Kingdom |
+| K3-6 | A claim the hero can't pay for, with banked gold available: disabled, with the reason. Nothing is sent |
+| K3-7 | A plot taken meanwhile: **one** claim is sent and refused (`plot_taken`), and the map is read again, showing the new owner |
+| K3-8 | **The release:** type the name. **The instance id on screen is sent.** The Kingdom is gone and the view closes |
+| K3-9 | **A stale release** (`plot_changed`): another tab releases and claims again. **One** release is sent, naming the old instance. The hero is read again, the view shows the new plot, and nothing is sent again by itself |
+| K3-10 | The finders: nearest (ring 1, `y` then `x`), random, no game action, and a full map says so |
+| K3-11 | Showing a plot by its coordinates; out-of-range input is refused with a message |
+| K3-12 | The Hero tab: the summary outside, "Manage" inside, and the requirements without a Kingdom |
+| K3-13 | Deleting a hero with a Kingdom says it is destroyed and its plot freed |
+| K3-14 | Account isolation: after signing out and in again, the plot map starts afresh |
+| K3-15 | At 320 px and in phone landscape (740 × 360): ten plots fit, each at least 24 px, with no horizontal scrolling |
+| K3-16 | Desktop: the side column summarises the Kingdom Lands, with no squares, and the page never draws the 10,000 |
+| K3-17 | **axe, 0 violations of any impact:** Explore, the plot map, a plot selected, the claim dialog, the Hero section, the management view |
+
+**Mutation checks on the client** (local only; each file restored byte for byte, checked by md5):
+
+| Mutation | Caught by |
+|---|---|
+| C1: the Hero section shown while closed | K3-1 |
+| C2: `net.js` drops the `reason` | K3-9 |
+| C3: a stale release is retried by itself | K3-9 |
+| C4: past the edge, the view doesn't move | K3-4 |
+| C5: the claim dialog focuses its confirm button | K3-5 |
+| C6: the dock keeps the arrow pad in the Kingdom Zone | K3-2 |
+| C7: the minimap draws the Kingdom Zone | K3-16 |
+| C8: a claim the hero can't pay for is offered | K3-6 |
+
+**The restored run had 0 failing.** One run, C6's, stopped making progress after K3-2 had failed, and was ended after about 80 minutes. Its result stands: K3-2 caught it. Later mutation runs will have a time limit.
+
+### 3.3 Evidence (local, the owner's laptop, 2026-11-26)
+
+- **`tests/ui/kingdoms.test.mjs`:** 17 of 17, and again within the mutation runs (the restored run, 0 failing).
+- **Engine:** 110 of 110.
+- **The screens before and after** (`tools/ui-shots.mjs`, at 320, 390 and 1440). `main` (`6b19337`) came from a temporary worktree, and this branch was measured the same way.
+  - **43 of 51 are byte-identical.** The other 8 are the battle screens, the chat drawer and the 320 px Hero tab, whose values depend on the dice and the clock. The Hero tab differs only in its health bar (398 against 400, the regeneration's timing).
+  - **axe: 0 violations of any impact,** before and after.
+- **The Kingdom screens** (`tools/kingdom-shots.mjs`, at 320, 740 × 360, 390 and 1440): 28 screens, **axe 0 violations of any impact**, with no page errors and no unexpected requests.
+- **The full browser suite:** **332 of 332** (315, plus the 17), in two runs, with the local stack stopped. Two runs rather than three, given the laptop's memory pressure in earlier stages; CI's browser job is the further run.
+- **The database suite** wasn't run. K1-3 changes no server or database code, and the local stack stayed stopped for the browser runs.
+
+### 3.4 Deviations
+
+- **The list of plots in view** shows the claimed and reserved plots and counts the free ones, rather than listing all 100 (the plan said "a list of the plots in view").
+- **The window moves by a whole window** with the buttons, and by a row or column with the arrow keys past the edge. The plan said "by a window or a row".
+- **The jump-to-coordinates controls are a group, not a form,** so a button can't submit the page.
+- **The Explore dock in the Kingdom Zone** has "Leave the Kingdom Lands" and "Manage my Kingdom" (or "Plot map"), and no arrow pad.
+
+### 3.5 Not done in K1-3
+
+- **The admin console's Kingdoms section (K1-4),** including Q3's client side.
+- **The rollout (K1-5)** and activation. Kingdoms stay closed.
+- **Real devices and screen readers:** not tested. The browser tests run in Chromium against the fake backend.

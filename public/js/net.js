@@ -146,12 +146,17 @@ async function call(action, args) {
   const { data, error } = await sb.functions.invoke('game', { body: { action, args } });
   if (error) {
     let message = 'Connection problem — please try again.';
+    let reason;
     try {
       const body = await error.context.json();
       if (body?.error) message = body.error;
+      // A stable code for some refusals (Kingdoms K-1), e.g. plot_changed: the interface acts on the
+      // kind of refusal, not on its wording (the K1-2 review's carry-forward).
+      if (typeof body?.reason === 'string') reason = body.reason;
     } catch { /* not a JSON error */ }
     const err = new Error(message);
     err.status = error.context?.status;
+    if (reason) err.reason = reason;
     throw err;
   }
   return data;
@@ -264,6 +269,36 @@ export async function playersAt(loc, myName) {
     .limit(50);
   if (error) throw new Error('Could not load players.');
   return data.filter((p) => p.name !== myName);
+}
+
+// ---------------------------------------------------------------- Kingdoms (K-1, K1-3)
+// The plot map's reads, under RLS and the column grants (docs/kingdoms-k1-plan.md 2.3). The caller
+// sends them only while Kingdoms are open (kingdomsOpen()): while closed, the live database has no
+// such table or function, and nothing of Kingdoms is asked for. Claims and releases go through the
+// `game` function, never here.
+export async function kingdomPlots(x0, y0, size) {
+  const { data, error } = await sb.from('kingdom_plots')
+    .select('id, x, y, status, character_id')
+    .gte('x', x0).lte('x', x0 + size - 1)
+    .gte('y', y0).lte('y', y0 + size - 1);
+  if (error) throw new Error('Could not load the plots.');
+  return data || [];
+}
+
+// The owners' hero names, for "Claimed by" (K-D4).
+export async function kingdomOwners(ids) {
+  if (!ids.length) return [];
+  const { data, error } = await sb.from('characters').select('id, name').in('id', ids);
+  if (error) throw new Error('Could not load the plots\' owners.');
+  return data || [];
+}
+
+// The free plot nearest (x, y), or a random one: at most one, or null when none is free. Advisory:
+// the claim decides (K1-B05).
+export async function kingdomFreePlot(x, y, random) {
+  const { data, error } = await sb.rpc('kingdom_free_plot', { p_x: x, p_y: y, p_random: !!random });
+  if (error) throw new Error('Could not look for a free plot.');
+  return (data || [])[0] || null;
 }
 
 // The editable world. Falls back to the built-in zones if this fails.
