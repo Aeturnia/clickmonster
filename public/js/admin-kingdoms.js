@@ -33,7 +33,12 @@ export function setupKingdoms({ st, call, toast, render, esc, field, input, data
   const plotKey = (x, y) => `kingdom:${x},${y}:`;
   const busyPlot = (x, y) => [...K().pending].some((key) => key.startsWith(plotKey(x, y)));
   // The plot on screen (or being read): a change's recovery reads its plot again only if it still is.
-  const inspecting = (x, y) => { const r = K().rec || K().recLoading; return !!r && r.x === x && r.y === y; };
+  // The plot being read comes first: while it loads, the previous record is still kept, but it is no
+  // longer what is being inspected (the K1-4 re-review, K1-ADM02a). Only on the Kingdoms section.
+  const inspecting = (x, y) => {
+    const r = K().recLoading || K().rec;
+    return st.tab === 'kingdoms' && !!r && r.x === x && r.y === y;
+  };
 
   // A new sign-in, or a sign-out: the section's state, its forms' errors and the reasons typed go.
   function reset() {
@@ -341,7 +346,7 @@ export function setupKingdoms({ st, call, toast, render, esc, field, input, data
   }
 
   // The section's address: the plot on screen, if any.
-  const route = () => (K().rec ? `#kingdom/${K().rec.x},${K().rec.y}` : K().recLoading ? `#kingdom/${K().recLoading.x},${K().recLoading.y}` : '#kingdoms');
+  const route = () => { const r = K().recLoading || K().rec; return r ? `#kingdom/${r.x},${r.y}` : '#kingdoms'; }; // the same order as inspecting()
 
   return { view, load: () => loadList(), loadCap, loadPlot, reset, available, onSubmit, onClick, playerLine, route };
 }

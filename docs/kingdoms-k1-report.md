@@ -690,7 +690,7 @@ It asked for two narrow corrections. **The owner authorized them** (2026-11-26),
 
 ## 4. K1-4: the admin console (authorized by the owner, 2026-11-26)
 
-**Status: implemented, with the review corrections K1-ADM01 to K1-ADM03 (4.6), at its re-review gate.**
+**Status: implemented, with the review corrections K1-ADM01 to K1-ADM03 (4.6) and the re-review correction K1-ADM02a (4.7), at its final review gate.**
 - **The owner authorized it** with PR #119's merge, conditional on `main`'s CI, which passed (run 45902673857).
 - **Client only:** no server or database change, and no deploy. It works against the deployed `admin` v8: with it, the console shows no Kingdoms section and asks nothing about Kingdoms.
 - **Kingdoms stay closed.**
@@ -881,3 +881,29 @@ Both are second lines, kept because the review asked for them explicitly.
 - **Engine:** 110 of 110.
 - **The full browser suite** is CI's, on this head, as the review allowed.
 - **No new screens:** no visible change, except that the section can now close to the overview.
+
+### 4.7 Re-review correction (the re-review of `d407920`, 2026-11-27)
+
+**The re-review accepted:**
+- **K1-ADM01 and K1-ADM03 are resolved,** and **Q3 is satisfied.**
+- **K1-ADM02** is accepted, apart from one precedence defect.
+- **The seven mutations, and the local testing deviations,** are accepted.
+- **The two secondary session checks** (4.6) are kept, without needing tests of their own.
+
+**The owner authorized the one correction** (2026-11-27). It is client only.
+
+| Finding | What changed | Its test |
+|---|---|---|
+| **K1-ADM02a:** while a newer plot was loading, the previous record still counted as the one being inspected | **`inspecting()`** now takes the plot being read before the record kept from the last read, as `record()` draws them. It also requires the Kingdoms section to be the one open. **`route()`** takes them in the same order | **K4-21:** plot A's reserve is held. Plot B's read starts and is held too. A's answer comes while B is loading, then B's. Plot A isn't read again; B stays the plot being inspected, with its own answer shown, and B's address; A's change was made |
+
+**Negative control** (a 4-minute limit; the file restored, checked by md5): **with the previous order in `inspecting()`, K4-21 fails on "plot 20, 20 is not read again over the plot being loaded".**
+
+**Without a test of its own:**
+- **`route()`'s order.** The address is pushed when a read ends, when only the record is left, so the order shows only if the address is written while a read is on its way.
+- **The section check in `inspecting()`.**
+
+The re-review asked for both.
+
+**Evidence (local, 2026-11-27):**
+- **The admin browser tests:** 68 of 68 (21 for Kingdoms).
+- **The full suite** is CI's, on this head.

@@ -497,3 +497,34 @@ test('K4-20 a late capability answer for an ended sign-in is dropped', async () 
   assert.deepEqual(kCalls(backend), [], 'and no Kingdom request');
   await done(ctx);
 });
+
+// ------------------------------------------------------------ re-review correction (the K1-4 re-review)
+// K1-ADM02a
+test('K4-21 a change answered while another plot is still loading leaves that read, and that plot, in place', async () => {
+  const ctx = await console_();
+  const { page, backend } = ctx;
+  const readsOf = (x, y) => backend.calls.filter((c) => c.fn === 'admin' && c.action === 'kingdomPlot' && Number(c.args?.x) === x && Number(c.args?.y) === y).length;
+  await showPlot(page, 20, 20);
+  await page.fill('#kp-reserve-reason', 'Event plaza');
+  const releaseChange = backend.hold('kingdomReserve'); // plot A's change is slow
+  await page.click('#kp-reserve button[type=submit]');
+  await page.waitForSelector('#confirm[open]');
+  await page.click('#confirm [data-r="ok"]');
+  await until(() => arrived(backend, 'kingdomReserve') === 1, 'the reserve request');
+  const releaseRead = backend.holdOnce('kingdomPlot'); // and plot B's read is slow too
+  const readsOfA = readsOf(20, 20);
+  await page.fill('#kp-x', '21'); await page.fill('#kp-y', '21');
+  await page.click('#kp-find button[type=submit]');
+  await until(() => readsOf(21, 21) === 1, 'the read of plot 21, 21');
+  releaseChange(); // A's change is answered while B is still loading
+  await page.waitForTimeout(400);
+  assert.equal(readsOf(20, 20), readsOfA, 'plot 20, 20 is not read again over the plot being loaded');
+  releaseRead(); // then B's read is answered
+  await page.waitForFunction(() => document.querySelector('#kp-title')?.textContent === 'Plot 21, 21' && !document.querySelector('[aria-busy="true"]'));
+  await settle(page);
+  assert.equal(await page.textContent('#kp-title'), 'Plot 21, 21', 'B stays the plot being inspected');
+  assert.match(await page.textContent('#admin'), /Free. No hero holds it/, "and B's answer is the one shown");
+  assert.equal(await page.evaluate(() => location.hash), '#kingdom/21,21');
+  assert.equal(backend.plots.find((p) => p.x === 20 && p.y === 20)?.status, 'reserved', "A's change was made");
+  await done(ctx);
+});
