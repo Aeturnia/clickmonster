@@ -68,8 +68,11 @@ Read these first:
   - **K1-1, the database, is accepted and merged:** PR #117 (`0b9b4ab`, 2026-11-25).
   - **K1-2, the engine and the `game` and `admin` functions, is accepted and merged:** PR #118 (`6b19337`, 2026-11-26).
   - **K1-3, the player's interface, is accepted and merged:** PR #119 (`e31a946`, 2026-11-26), after two correction rounds (report 3.6 and 3.7). `main`'s CI run 45902673857 passed.
-  - **K1-4, the admin console, is authorized** (2026-11-26). Its review corrections (K1-ADM01 to K1-ADM03) and re-review correction (K1-ADM02a) are at the final review gate. See `docs/kingdoms-k1-report.md`, section 4. Kingdoms stay closed, and nothing is deployed.
-  - **K1-5 is not authorized.**
+  - **K1-4, the admin console, is accepted and merged:** PR #121 (`8eb471d`, 2026-11-27), after two correction rounds (report 4.6 and 4.7).
+  - **K1-5, the production rollout:**
+    - **Gate A (read-only) is authorized** (2026-11-27). The owner chose to have the written procedure (`docs/kingdoms-k1-report.md`, section 5) reviewed first. It is at its review gate, and **nothing has been done in production.**
+    - **Gates B and C need their own authorizations.**
+    - **The rollout is dormant:** Kingdoms stay closed. Activation, balancing values and K-2 are not authorized.
 - **#102, pending rewards delivered exactly once: fixed, deployed, accepted in independent review, and closed as completed** (2026-11-24, on the owner's authorization).
   - **The scope and reports:** `docs/pending-rewards-scope.md` and `docs/pending-rewards-report.md`.
   - **The implementation:** stage 1, PR #107; stage 2, PR #108. The rollout procedure is PR #109.
