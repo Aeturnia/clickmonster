@@ -690,7 +690,7 @@ It asked for two narrow corrections. **The owner authorized them** (2026-11-26),
 
 ## 4. K1-4: the admin console (authorized by the owner, 2026-11-26)
 
-**Status: implemented, with the review corrections K1-ADM01 to K1-ADM03 (4.6) and the re-review correction K1-ADM02a (4.7), at its final review gate.**
+**Status: accepted and merged** as PR #121 (`8eb471d`, 2026-11-27), after its final independent review at `fad232e`, with zero outstanding findings. `main`'s CI run 46023524601 passed: the browser job on its second attempt, after a `connect failed: 10055` failure on the Windows runner (#97). The review corrections are in 4.6, and the re-review correction in 4.7.
 - **The owner authorized it** with PR #119's merge, conditional on `main`'s CI, which passed (run 45902673857).
 - **Client only:** no server or database change, and no deploy. It works against the deployed `admin` v8: with it, the console shows no Kingdoms section and asks nothing about Kingdoms.
 - **Kingdoms stay closed.**
@@ -907,3 +907,331 @@ The re-review asked for both.
 **Evidence (local, 2026-11-27):**
 - **The admin browser tests:** 68 of 68 (21 for Kingdoms).
 - **The full suite** is CI's, on this head.
+
+## 5. K1-5: the production rollout procedure (proposed, for review; nothing in it has been done)
+
+**Status: written for review** (2026-11-27), after K1-4 merged as PR #121 (`8eb471d`) and `main`'s CI passed.
+- **The plan:** 2.5 and section 3 of the plan. **The precedent:** #102's procedure and record (`docs/pending-rewards-report.md`, sections 3 and 4), reused step by step.
+- **Not done:** no production read, apply, history change, deploy or rollback.
+- **Authorization:** the owner authorized Gate A on 2026-11-27, and chose to have this procedure reviewed first, as plan 2.5 says ("A written procedure for review … before anything is done"). **Gate A runs from `main` once this procedure is accepted and merged,** with the owner's go-ahead for the merge. **Gates B and C each need their own authorization,** after the previous gate's evidence is independently reviewed.
+- **Nothing moves automatically from one gate to the next.**
+- **What the rollout delivers is dormant:** the table and functions in the database, and `game` and `admin` with the Kingdom code, all closed.
+  - No balancing value is set, and nothing is opened.
+  - **Activation is its own future gate** (plan section 3, and scope 8).
+
+### 5.1 The baseline, and what is pinned
+
+**What production is expected to show,** from #102's record (2026-11-24). **This was not re-read: Gate A confirms it or stops.**
+- **`game`:** version **15**, ACTIVE, `verify_jwt` false, updated 2026-11-24T15:32:18.550Z, `ezbr_sha256` **`30a59b0fc0cacbf97dfcaa1ee875a045fd79924106a32c82cb0c4aa119d61c57`**, deployed from `fc189b4`.
+- **`admin`:** version **8**, ACTIVE, `verify_jwt` false, updated 2026-11-14T00:38:35.393Z, `ezbr_sha256` **`572f2b2c3581588407c24efd7ed4ee315b25e2064b1a51e8a15bc2206146ef64`**, deployed from `736a524` (L-3, `docs/landing-l3-report.md`, section 12).
+- **The migration history:** exactly **`20261115090000, 20261123120000`**. The six earlier versions are deliberately unrecorded, as L-3 and #102 left them.
+- **Postgres 17.11.**
+- **`save_hero_with_rewards()`:** md5 `46cea39f9a83b467c847dc4916815ca2`, 1,329 characters, owner `postgres`. `pending_rewards_verify.sql` gives 10 of 10.
+
+**The migration:** `supabase/migrations/20261125120000_kingdoms.sql`, taken with `git show 8eb471d:<path>`.
+- **Its LF bytes:** 19,484, with no carriage return. **SHA-256 `c6f450adc06030ba209240ff6785b13455cd0c7925b9202e99bf181b93030599`.**
+- **Its history:** last changed in `7c6c7f1` (K1-1's correction), and unchanged since.
+- **A CRLF copy** gives a different fingerprint. The rehearsal (5.7) shows `70ea886e…` instead of `afac33ee…`, so it would be a stop.
+
+**The expected installed state** (`kingdoms_state.sql`), measured on the LF bytes:
+- the table present, with **0** plots;
+- **7** functions;
+- definitions md5 **`afac33eeb3fb45123b4d18eb5300673b`**;
+- owner **`postgres`**;
+- the history recording `20261125120000`.
+
+**The payloads,** from `tools/function-payload.mjs`, each from an LF checkout:
+
+| Function | Pinned revision | Files | Payload hash | Use |
+|---|---|---|---|---|
+| `game` | `8eb471d` | 27 | `d6a053f4baefdb53c4259e8a41a5c7578015340e6738b18f4e3eaf18665efa55` | the deploy |
+| `admin` | `8eb471d` | 27 | `48c6259dd502d565ca596abda052250b2388336aa39a53455aee433eff7a991f` | the deploy |
+| `game` | `fc189b4` | 25 | `1ccf3b355dd6b13bf587ef62f6d749ad265f09a94b2b0df40ae9066107f17f5a` | the rollback: v15's own payload, as #102's Gate C recorded it |
+| `admin` | `736a524` | 23 | `968f6ca98fbaed2d082f018adf4efe947aab428568206891cab01af8113a62fa` | the rollback: v8's source commit |
+
+- **`admin`'s rollback:** v8 was deployed from `736a524`, but whether from an LF checkout isn't recorded. **A rollback from the LF checkout is v8's code;** its `ezbr_sha256` may still differ from v8's. This is the first `admin` deploy since v8, so `admin` gets its own payload check and rollback pin (plan 2.5).
+- **`tools/deploy-functions.mjs`** is byte-identical at all three revisions (SHA-256 `697a409a…`).
+- **A later `main`** may be used instead of `8eb471d` only if the tool shows the same payload hash for both functions, and that is reviewed.
+
+### 5.2 How production is read
+
+**As in #102** (`docs/pending-rewards-report.md`, 3.2 and section 4), with the owner's access token, which is never printed or recorded:
+- **`GET /v1/projects/janiqspmhkbsyemkknpv/functions`** for the functions;
+- **`POST /v1/projects/janiqspmhkbsyemkknpv/database/query`** for the database. **Every read is one request:** `set transaction read only;` then the exact check file from `main`. #102 found that this form returns the check's rows.
+- **`GET /v1/projects/janiqspmhkbsyemkknpv/secrets`** for the functions' secrets' **names**. No value, or digest of a value, is printed or recorded. **The exact command** (the token from the environment):
+
+  ```
+  node --input-type=module -e "const r = await fetch('https://api.supabase.com/v1/projects/janiqspmhkbsyemkknpv/secrets', { headers: { Authorization: 'Bearer ' + process.env.SUPABASE_ACCESS_TOKEN } }); const b = await r.json().catch(() => null); if (!r.ok || !Array.isArray(b) || !b.every((e) => e && typeof e.name === 'string')) { console.log('STOP: HTTP ' + r.status + ', not a list of named secrets; nothing else printed'); process.exit(1); } console.log(b.map((e) => e.name).sort().join('\n'));"
+  ```
+
+  - **It maps each entry to its `name` before anything is printed.**
+  - **Any other shape or status prints only the stop line,** and Gate A stops. Only that is recorded.
+  - **The filter was rehearsed against a local mock** (5.7). The endpoint itself wasn't.
+- **No CLI in Gate A,** because linking can create a short-lived login role in production. The CLI is linked only in Gate B, for the history repair.
+
+### 5.3 Gate A: the read-only inspection (authorized 2026-11-27; run after this procedure is accepted)
+
+1. **The functions:** `game` and `admin` as in 5.1: version, status, `verify_jwt`, update time and `ezbr_sha256`.
+2. **`kingdoms_state.sql`:** `table_present` false; `plot_rows` empty; `functions_present` 0; no md5 and no owners; `history_recorded` false; `history_versions` exactly `20261115090000, 20261123120000`.
+3. **`kingdoms_precheck.sql`:**
+   - row 1, 17.11;
+   - **rows 2 and 3, `none`:** no Kingdom table, and no `kingdom_*` functions;
+   - row 4, true;
+   - row 5, exactly its expected column types;
+   - **row 6, `none`:** this is the plan's zone check. **No database zone** has the id `kingdoms`, has a path into it, has an Overworld path at the town cell, or is placed on the Overworld at that cell. Without an Overworld row, the town cell is the built-in `(4, 4)`;
+   - row 7, true;
+   - row 8, the two versions.
+4. **The R-1 baseline,** which Kingdoms must not change:
+   - `pending_rewards_verify.sql`, 10 of 10;
+   - `pending_rewards_state.sql`, as #102's Gate B left it (5.1). **That includes md5 `46cea39f…`,** reconfirmed here before any migration. It is the value Gate B's deploy-verify row 16 must then show.
+5. **The secrets' names:** no `KINGDOMS_TEST`. The test configuration is local only, and also needs the local gateway's URL, which production can't have (`testConfigFrom()`). Its name in production is still a stop.
+
+**Stop conditions:** anything other than every expected value above. That includes:
+- another function version or `ezbr_sha256`;
+- another history entry;
+- any Kingdom object already present;
+- a zone row reported by row 6;
+- any column-type difference;
+- a `KINGDOMS_TEST` secret.
+
+**The response is the same in every case:** stop, record, and return the evidence for review. **There is no alternative route:** no `db push`, no `--include-all`, and no reconciling of the earlier history entries.
+
+**At the end of Gate A:** independent review of the evidence, then the owner's decision on Gate B.
+
+### 5.4 Gate B: the migration (the owner's authorization, after Gate A's review)
+
+**Applying and verifying:**
+1. **Re-read Gate A's steps 1 to 5.** They must be unchanged.
+2. **Take the file:** `git show 8eb471d:supabase/migrations/20261125120000_kingdoms.sql`. Check it has 19,484 bytes, no carriage return, and SHA-256 `c6f450ad…0599`.
+3. **Apply it** through the query endpoint as one request: `begin;`, the file's exact bytes, then `commit;`. Record the answer. Nothing else is applied.
+4. **Record only this version in the history:**
+   - `npx supabase link --project-ref janiqspmhkbsyemkknpv`;
+   - `npx supabase migration repair 20261125120000 --status applied --linked`;
+   - `npx supabase unlink`.
+
+   **Disclosed:** as in L-3 and #102, the CLI may create its short-lived login role for this, and Gate B's authorization includes it. Record the outputs.
+5. **Verify,** each read-only:
+   - **`kingdoms_deploy_verify.sql`: all 17 rows `ok`.** Row 16 is `save_hero_with_rewards()`'s md5, unchanged at `46cea39f…`. Row 17 is the history entry. **No row is waived in production:** the local rehearsal's row 16 difference (5.7) is a local line-ending effect, not an exception;
+   - **`kingdoms_state.sql`:** true, `0`, 7, `afac33eeb3fb45123b4d18eb5300673b`, `postgres`, true, `20261115090000, 20261123120000, 20261125120000`;
+   - **`kingdom_verify.sql`** (I-1): no rows;
+   - **`pending_rewards_verify.sql`:** 10 of 10;
+   - **a refused call with the publishable key:** `POST /rest/v1/rpc/kingdom_revoke` with `{"p_x":0,"p_y":0,"p_plot_id":0,"p_character_id":"00000000-0000-4000-8000-000000000000","p_staff":"00000000-0000-4000-8000-000000000000","p_staff_name":"probe","p_reason":"probe"}`.
+     - **It must answer HTTP 401 with SQLSTATE `42501`.**
+     - **The coordinates are 0,** so even with execute wrongly granted, the function refuses with `MRARG` (400) before writing anything. The rehearsal showed exactly that. A 400 is itself a stop;
+   - **the functions:** `game` v15 and `admin` v8, unchanged.
+
+**If a step fails, times out, or its answer is unclear:** read `kingdoms_state.sql`, act only by this table, and **retry, re-apply, repair or roll back nothing automatically.** Each named row was rehearsed (5.7).
+
+**A row matches only if every column matches,** including the plot count and the exact history. "The two versions" means exactly `20261115090000, 20261123120000`, and "the three" means those plus `20261125120000`, nothing else.
+
+| Table, plots, functions, md5, owner | `history_recorded`, `history_versions` | Meaning | What happens |
+|---|---|---|---|
+| false, empty, 0, none, none | false, the two versions | Not applied | **Stop.** A new apply needs a new authorization |
+| true, 0, 7, `afac33ee…`, `postgres` | false, the two versions | Applied; the history repair is incomplete | **Stop.** Repeating step 4 needs the owner's authorization |
+| false, empty, 0, none, none | true, the three versions | Inconsistent: recorded, not present | **Stop.** Investigate first |
+| **true, 0, 7, `afac33ee…`, `postgres`** | **true, the three versions** | **Applied and recorded, exactly as reviewed** | **Go on** with step 5. **This is the only row that goes on** |
+| true, 7, with the md5 or owner not as expected | either | Not the reviewed migration | **Stop.** Compare each definition with the reviewed file, and report |
+| **Anything else:** for example the table absent with functions present, plots already present, another history entry, a function count other than 0 or 7, or a missing, incomplete or malformed result from the check | | **Not a state this procedure expects** | **Stop** (K1-OPS02). Record it, and return it for review. Nothing authorizes an automatic apply, repair, rollback or retry |
+
+**Rollback, separately authorized** (K1-OPS01). It enforces the down file's own prerequisites, written in its header. **Every prerequisite must hold before anything is dropped; any that doesn't is a stop for review.**
+1. **Kingdoms were never opened.** Each of these must hold:
+   - **the deployed functions** are ones whose code can't open Kingdoms: `game` and `admin` as Gate A read them (v15 and v8, which have no Kingdom code), or the closed pins (`8eb471d`, whose `KINGDOMS_OPEN` is `false`), with the versions and `ezbr_sha256` recorded at their deploys;
+   - **the secrets' names** (5.2) include no `KINGDOMS_TEST`;
+   - **no Kingdom change has been audited:** `set transaction read only; select count(*) from public.admin_log where action like 'kingdom:%';` returns 0. Every revoke, reserve and unreserve writes one, and none is possible while closed.
+2. **Zero plots:** `kingdoms_state.sql` shows `plot_rows` 0.
+3. **No hero has a Kingdom:** `kingdom_verify.sql` returns no rows. With the table empty, any hero carrying `data.kingdom` is reported, so an empty table alone isn't enough.
+4. **Nothing deployed calls the functions.** If `game` or `admin` has been deployed from `8eb471d` (Gate C), each is first rolled back to its previous pin (5.5's rollback, separately authorized and verified). Then the functions are re-read: `game` and `admin` must both be running v15's and v8's code.
+5. **Drop the objects,** through the query endpoint, **as one transaction:** `begin;`, the exact bytes of `supabase/rollback/20261125120000_kingdoms_down.sql` from `main`, then `commit;`. Record the answer.
+6. **Then the history,** separately: `npx supabase migration repair 20261125120000 --status reverted --linked`, linked and unlinked as in step 4.
+7. **Verify,** read-only. **The original state, exactly:**
+   - **`kingdoms_state.sql`:** false, empty, 0, none, none, false, and exactly `20261115090000, 20261123120000`;
+   - **the precheck:** rows 2, 3 and 6 `none`, and row 8 the two versions;
+   - **`pending_rewards_verify.sql`:** 10 of 10.
+
+**If the drop or the history step fails, times out, or is unclear:**
+- read `kingdoms_state.sql`, and stop;
+- record the answer, and return it for review;
+- **nothing is re-run, repaired or re-applied automatically.**
+
+A state with the objects dropped and the history still recorded is the stop table's "recorded, not present" row. Repairing the history then needs its own authorization.
+
+**At the end of Gate B:** independent review of the installed contract, then the owner's decision on Gate C.
+
+### 5.5 Gate C: the `game` and `admin` deploys (the owner's authorization, after Gate B's review)
+
+**Before the deploys:**
+1. **Re-read:**
+   - the functions (`game` v15 and `admin` v8, with Gate A's `ezbr_sha256`);
+   - the secrets' names (no `KINGDOMS_TEST`);
+   - `kingdoms_state.sql` (as at the end of Gate B);
+   - **`kingdoms_deploy_verify.sql` (17 of 17 `ok`):** the grants and security settings the new functions rely on, which could drift between gates;
+   - **the zones: `kingdoms_precheck.sql` row 6 `none`.** The old `admin` stays live between gates, and its zone editor could have changed them. After the migration, rows 2 and 3 of the precheck are expected not to be `none`, so only row 6 is read here;
+   - `pending_rewards_verify.sql` (10 of 10).
+
+   **Anything else is a stop.**
+2. **The pinned checkout,** outside the repository: `git -c core.autocrlf=false worktree add --detach ../cm-deploy-8eb471d 8eb471d`. `git status --porcelain` must be empty.
+3. **The payload checks,** with `SUPABASE_PROJECT_REF` unset:
+   - **`node tools/function-payload.mjs game --rev 8eb471d --root ../cm-deploy-8eb471d`:** 27 files, each `matches`, the production target, and payload `d6a053f4…fa55`;
+   - **`… admin …`:** 27 files, each `matches`, and payload `48c6259d…991f`.
+   - **Anything else is a stop.**
+
+**`game` first, then `admin`.** Each deploy is checked before the next starts. A stop after the first leaves the second undeployed.
+
+**A deploy is accepted, and the next step may start, only if all of these hold** (K1-OPS03):
+- **the deploy script's answer** for that function is a success (`<slug> 201`, ACTIVE);
+- **re-read with `GET …/functions`:**
+  - that function's version is exactly one more than before;
+  - its status is ACTIVE;
+  - `verify_jwt` is false, as before;
+  - its update time and `ezbr_sha256` are new;
+  - **record all of them;**
+- **the other function is unchanged:** the same version, update time and `ezbr_sha256`;
+- **its boot check passes.**
+
+**A failed, timed-out or unclear deploy, or any of these not holding:**
+- re-read the functions' metadata, read-only;
+- record it;
+- **stop.** No deploy is repeated, no other deploy starts, and nothing is rolled back without a new authorization.
+
+**The boot check** is a request that changes nothing.
+- **A 503** may be repeated **at most three more times, 30 seconds apart.** If it still isn't a pass, stop.
+- **A 500, a platform error, or any other answer** is a stop, with rollback for the owner to decide.
+
+4. **Deploy `game`:** `node tools/deploy-functions.mjs game`, run in the checkout, then check the criteria above. The version is expected to be 16; it is read, not assumed. `admin` must still be v8.
+5. **`game`'s boot check:** `POST https://janiqspmhkbsyemkknpv.supabase.co/functions/v1/game` with `{"action":"state"}` and no token. **It must answer 401 `{"error":"Please sign in again."}`.**
+6. **Deploy `admin`:** `node tools/deploy-functions.mjs admin`, in the same checkout, then check the criteria above. The version is expected to be 9. `game` must be unchanged since step 4.
+7. **`admin`'s boot check:** `POST …/functions/v1/admin` with `{"action":"meta"}`, with the publishable key as `apikey` and bearer, and no sign-in.
+   - **It must answer 401 `{"error":"Please sign in."}`,** the function's own.
+   - **What it shows:** only that the new version boots. The same answer came from `8eb471d` locally (5.7), and from v8 in L-3's boot check (`docs/landing-l3-report.md`, section 12). Its capability is checked in step 9.
+8. **The database after both deploys:**
+   - `kingdoms_state.sql` unchanged: **0 plots**;
+   - `kingdoms_deploy_verify.sql`, 17 of 17 `ok`;
+   - `kingdom_verify.sql`, no rows;
+   - `pending_rewards_verify.sql`, 10 of 10;
+   - the publishable-key probe refused (401, `42501`).
+9. **The owner's live checks, with Kingdoms closed:**
+   - **the smoke check:** sign in and play normally (a fight, a move, the Gear tab), with no errors;
+   - **nothing of Kingdoms for a player:**
+     - no "The Kingdom Lands" at the Crossroads, `(4, 4)` on the Overworld;
+     - no Kingdom section on the Hero tab;
+   - **the admin console:**
+     - **the Kingdoms section now appears** in the World group (`admin`'s `meta` reports Kingdoms, closed). It says "Kingdoms are closed".
+     - **The plots list is empty,** and a plot looked up is free, with no change offered.
+     - **This is the one visible production change.** It's for staff, and read-only.
+   - **afterwards:**
+     - `kingdom_verify.sql` finds nothing;
+     - **`kingdoms_state.sql` still shows 0 plots** and the three history versions. An empty I-1 result alone doesn't show an empty table.
+10. **Remove the pinned checkout.**
+
+**Rollback, separately authorized, for each function on its own.** A rollback is itself a deploy, so the same acceptance criteria apply:
+- the script's success;
+- the re-read metadata: one version more (a rollback makes a **new** version, so the number doesn't go back), ACTIVE, `verify_jwt` false, a new update time and `ezbr_sha256`, all recorded;
+- the other function unchanged;
+- the boot check, with the same bounded retries.
+
+A failed or unclear rollback is a stop, in the same way.
+- **`game`:**
+  1. the LF checkout at `fc189b4`;
+  2. the payload check: 25 files, each `matches`, payload `1ccf3b35…7f5a`;
+  3. deploy `game`, and check the criteria;
+  4. the boot check (401 "Please sign in again.").
+
+  **Cost: none while closed.** v15 has no Kingdom code, and no Kingdom can exist.
+- **`admin`:**
+  1. the LF checkout at `736a524`;
+  2. the payload check: 23 files, each `matches`, payload `968f6ca9…62fa`;
+  3. deploy `admin`, and check the criteria;
+  4. the boot check (401 "Please sign in.").
+
+  **Cost:** the console's Kingdoms section goes, because v8's `meta` has no `kingdoms` (Q3, accepted in K1-4). Nothing else changes.
+- **The database objects stay** after either rollback. Nothing calls them, and the table is empty. Removing them is Gate B's rollback, separately authorized.
+
+**Every intermediate state works with the published site** (plan section 3, decision 9.3). The site has had K1-2 to K1-4 since their merges, all closed:
+
+| Database | `game` | `admin` | When | Effect |
+|---|---|---|---|---|
+| no Kingdom objects | v15 | v8 | now; after Gate B's rollback | None. The console has no Kingdoms section (v8's `meta`) |
+| the objects, empty | v15 | v8 | after Gate B | None. Nothing calls the functions; signed-in players can read the empty table and the finder, and nothing opens a way in |
+| the objects, empty | v16 (closed) | v8 | after `game`'s deploy; after `admin`'s rollback | None for players. The console still has no Kingdoms section |
+| the objects, empty | v15 | v9 (closed) | after `game`'s rollback | None for players. The console's section reads only, and finds nothing |
+| the objects, empty | v16 (closed) | v9 (closed) | after Gate C | The console's read-only section. Nothing for players |
+
+**At the end of Gate C:** independent review of the production evidence. **Kingdoms stay closed. Activation is a separate decision.**
+
+### 5.6 The tools and checks
+
+| File | What it does | Writes? |
+|---|---|---|
+| `supabase/checks/kingdoms_precheck.sql` (K1-1) | No Kingdom table or functions, the columns, **the zone rows** (row 6), and the history | No (one `SELECT`) |
+| `supabase/checks/kingdoms_state.sql` (K1-1) | One row: the table, the plot count, the 7 functions, their definitions' md5, the owners, and the history | No |
+| `supabase/checks/kingdoms_deploy_verify.sql` (K1-1) | 17 rows: the table, RLS, the policy, the constraints, the grants for `authenticated`, `anon` and PUBLIC, the functions' security, `save_hero_with_rewards()` unchanged, and the history | No |
+| `supabase/checks/kingdom_verify.sql` (K1-1) | I-1: every hero whose Kingdom and plot disagree | No |
+| `supabase/checks/pending_rewards_verify.sql`, `pending_rewards_state.sql` (#102) | R-1's function, unchanged | No |
+| `supabase/rollback/20261125120000_kingdoms_down.sql` (K1-1) | Drops the table and the 7 functions | Yes (rollback only) |
+| `tools/function-payload.mjs` (#102) | What `deploy-functions.mjs <slug>` would upload, checked byte for byte against a pinned revision, with the target and a payload hash | No |
+| `tools/deploy-functions.mjs` | The deploy, one slug at a time | Yes (Gate C only) |
+
+**No new tool or check file:** the procedure uses K1-1's checks and #102's tools as they are.
+
+### 5.7 Rehearsed on the local stack (2026-11-27)
+
+The local stack was started **without** `supabase/functions/.env`, so the functions ran closed, as production will. The database was reset, then put in production's expected shape: no Kingdom objects, and the history exactly `20261115090000, 20261123120000`. Every read used the read-only form.
+
+| Rehearsal | Result |
+|---|---|
+| **Gate A's state and precheck** | **State:** false, empty, 0, none, none, false, the two versions. **Precheck:** 17.11; rows 2, 3 and 6 `none`; 4 and 7 true; 5 the expected types; 8 the two versions. `pending_rewards_verify.sql`: 10 of 10 |
+| **The read-only form with a write** | Refused ("cannot execute CREATE TABLE in a read-only transaction"); the table doesn't exist afterwards |
+| **The apply:** `begin;`, `git show 8eb471d:…`, `commit;` | SHA-256 `c6f450ad…`. Applied. The state straight after: true, 0, 7, `afac33ee…`, `postgres`, **false**, the two versions: the "applied, not recorded" row |
+| **The history repair** (`--local`) | "Repaired migration history: [20261125120000] => applied"; the history now has three versions |
+| **Verification** | **State:** true, 0, 7, `afac33ee…`, `postgres`, true, the three versions. **`kingdom_verify.sql`:** no rows. **`pending_rewards_verify.sql`:** 10 of 10. **`kingdoms_deploy_verify.sql`:** 16 of 17. Row 16, `save_hero_with_rewards()`'s md5, is `f825cc85…` here, because a local `db reset` from this Windows checkout applies that migration with CRLF line endings (the effect recorded in 1.3). Production's is the LF `46cea39f…` (#102's Gate B) |
+| **The probe** | Publishable key: **401, `42501`.** With execute wrongly granted to `anon`: **400, `MRARG`,** and nothing written (0 plots, no audit entry). Restored: 401, `42501` |
+| **The stop table** | **Recorded, not present** (the down file without the history repair): false, 0, true. **Present, unexpected** (a CRLF copy, recorded): true, 7, **`70ea886e…`**, `postgres`, true. Each row of 5.4's table is distinct |
+| **The rollback** | The down file, then `repair --status reverted`: state false, 0, false, the two versions; precheck rows 2, 3 and 6 `none` |
+| **The closed functions at `8eb471d`** | `KINGDOMS_EXPECT_CLOSED=1 npm run test:db`: pgTAP 222 of 222, and the API tests 46 passed with 21 skipped, as expected (the open-state ones). That includes the closed-state checks (`kingdoms-closed.test.mjs`) |
+| **The boot checks** | `game`, no token: **401 `{"error":"Please sign in again."}`.** `admin`, with the publishable key: **401 `{"error":"Please sign in."}`** |
+| **The payloads** | The four in 5.1, each from an LF checkout: every file `matches`, and the production target |
+| **The secrets-names filter** (5.2), the same code against a local mock, with only the URL and token replaced | **A list of named entries with values:** exit 0, the names only, sorted, and no value printed. **Another shape** (an object): exit 1, only "STOP: HTTP 200, not a list of named secrets; nothing else printed". **A 401:** exit 1, only the stop line. **No value appeared in any output** |
+
+**Afterwards:**
+- the test configuration file was put back;
+- the stack was stopped;
+- the temporary checkouts were removed.
+
+**Not rehearsed** (they need production):
+- the Management API's endpoints, including the secrets list's shape;
+- `supabase link` and the `--linked` repair;
+- the deploys;
+- production's owners and `ezbr_sha256` after the deploys.
+
+### 5.8 Decisions for the owner (at the gates, not now)
+
+1. **Gate B:** authorizing the CLI's transient login role for the history repair, as in L-3 and #102.
+2. **Gate C:**
+   - **the order,** `game` then `admin`, as proposed;
+   - **the console's read-only Kingdoms section** becoming visible to staff when `admin` is deployed.
+3. **Whether to roll anything back** if a gate stops, each separately.
+
+**Activation, balancing values (`CLAIM_MIN_LEVEL`, `CLAIM_COST`) and K-2** are not part of this procedure.
+
+### 5.9 Review corrections (the review of `41fcd77`, 2026-11-27)
+
+**The review accepted:**
+- the coordinated dormant rollout, and the separate gates;
+- every pin, and the disclosed uncertainty about `admin` v8's original line endings;
+- Gate A's method, and the secret-name filter;
+- the history handling, R-1's preservation, and the probe;
+- the local rehearsal, with its CRLF deviation. Production gets no waiver;
+- `game` before `admin`, and the console's read-only section, both still subject to the owner at their gate;
+- K1-4's closeout.
+
+It asked for three procedural corrections. **The owner authorized them** (2026-11-27). They are documentation only: no implementation, migration, rollback SQL, check file or tool changed, and nothing was done in production.
+
+| Finding | The correction |
+|---|---|
+| **K1-OPS01:** the rollback checked only the plot count | Gate B's rollback (5.4) now enforces the down file's own prerequisites first: never opened (the deployed code, no `KINGDOMS_TEST`, and no `kingdom:` audit entry), zero plots, **`kingdom_verify.sql` empty**, and nothing deployed calling the functions (5.5's rollbacks first, if Gate C ran). Then the down file is applied **as one transaction**. The history repair stays a separate step. An unclear result is a stop. The original state and history are verified exactly |
+| **K1-OPS02:** the stop table wasn't exhaustive | A row matches only on every column, including the plot count and the exact history. "Go on" is the single complete expected state. **A catch-all row stops on anything else,** including a missing or malformed check result. Nothing authorizes an automatic apply, repair, rollback or retry |
+| **K1-OPS03:** Gate C's continuation criteria | **Each deploy is accepted only on:** the script's success; one version more; ACTIVE; `verify_jwt` false; new metadata, recorded; the other function unchanged; and its boot check. **A failed or unclear deploy is read, recorded and stopped,** with no redeploy. **The boot check's 503 retries are bounded:** three more, 30 s apart. **Rollbacks get the same criteria,** with a new version number expected. **Zone integrity (precheck row 6) is re-read before the deploys,** and **the plot count after the owner's live checks** |
+
+**Also:** Gate A and Gate B now say outright that deploy-verify row 16 has no production waiver.
+
+**Not repeated:** the local rehearsal, as the review allowed. Nothing it rehearsed changed.
