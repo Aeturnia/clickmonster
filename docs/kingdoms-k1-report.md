@@ -913,7 +913,7 @@ The re-review asked for both.
 **Status: written for review** (2026-11-27), after K1-4 merged as PR #121 (`8eb471d`) and `main`'s CI passed.
 - **The plan:** 2.5 and section 3 of the plan. **The precedent:** #102's procedure and record (`docs/pending-rewards-report.md`, sections 3 and 4), reused step by step.
 - **Not done:** no production read, apply, history change, deploy or rollback.
-- **Authorization:** the owner authorized Gate A on 2026-11-27, and chose to have this procedure reviewed first (decision 9.3: "A written procedure for review … before anything is done"). **Gates B and C each need their own authorization,** after the previous gate's evidence is independently reviewed.
+- **Authorization:** the owner authorized Gate A on 2026-11-27, and chose to have this procedure reviewed first, as plan 2.5 says ("A written procedure for review … before anything is done"). **Gate A runs from `main` once this procedure is accepted and merged,** with the owner's go-ahead for the merge. **Gates B and C each need their own authorization,** after the previous gate's evidence is independently reviewed.
 - **Nothing moves automatically from one gate to the next.**
 - **What the rollout delivers is dormant:** the table and functions in the database, and `game` and `admin` with the Kingdom code, all closed.
   - No balancing value is set, and nothing is opened.
@@ -958,7 +958,15 @@ The re-review asked for both.
 **As in #102** (`docs/pending-rewards-report.md`, 3.2 and section 4), with the owner's access token, which is never printed or recorded:
 - **`GET /v1/projects/janiqspmhkbsyemkknpv/functions`** for the functions;
 - **`POST /v1/projects/janiqspmhkbsyemkknpv/database/query`** for the database. **Every read is one request:** `set transaction read only;` then the exact check file from `main`. #102 found that this form returns the check's rows.
-- **`GET /v1/projects/janiqspmhkbsyemkknpv/secrets`** for the functions' secrets. **The reading script keeps only each entry's `name`, and discards the rest before printing.** No value, or digest of a value, is printed or recorded. This endpoint is new to this procedure and wasn't rehearsed.
+- **`GET /v1/projects/janiqspmhkbsyemkknpv/secrets`** for the functions' secrets' **names**. No value, or digest of a value, is printed or recorded. **The exact command** (the token from the environment):
+
+  ```
+  node --input-type=module -e "const r = await fetch('https://api.supabase.com/v1/projects/janiqspmhkbsyemkknpv/secrets', { headers: { Authorization: 'Bearer ' + process.env.SUPABASE_ACCESS_TOKEN } }); const b = await r.json().catch(() => null); if (!r.ok || !Array.isArray(b) || !b.every((e) => e && typeof e.name === 'string')) { console.log('STOP: HTTP ' + r.status + ', not a list of named secrets; nothing else printed'); process.exit(1); } console.log(b.map((e) => e.name).sort().join('\n'));"
+  ```
+
+  - **It maps each entry to its `name` before anything is printed.**
+  - **Any other shape or status prints only the stop line,** and Gate A stops. Only that is recorded.
+  - **The filter was rehearsed against a local mock** (5.7). The endpoint itself wasn't.
 - **No CLI in Gate A,** because linking can create a short-lived login role in production. The CLI is linked only in Gate B, for the history repair.
 
 ### 5.3 Gate A: the read-only inspection (authorized 2026-11-27; run after this procedure is accepted)
@@ -1042,6 +1050,7 @@ This is safe at Gate B: nothing calls the functions until Gate C, and the table 
    - the functions (`game` v15 and `admin` v8, with Gate A's `ezbr_sha256`);
    - the secrets' names (no `KINGDOMS_TEST`);
    - `kingdoms_state.sql` (as at the end of Gate B);
+   - **`kingdoms_deploy_verify.sql` (17 of 17 `ok`):** the grants and security settings the new functions rely on, which could drift between gates;
    - `pending_rewards_verify.sql` (10 of 10).
 
    **Anything else is a stop.**
@@ -1064,6 +1073,7 @@ This is safe at Gate B: nothing calls the functions until Gate C, and the table 
    - **What it shows:** only that the new version boots. The same answer came from `8eb471d` locally (5.7), and from v8 in L-3's boot check (`docs/landing-l3-report.md`, section 12). Its capability is checked in step 9.
 8. **The database after both deploys:**
    - `kingdoms_state.sql` unchanged: **0 plots**;
+   - `kingdoms_deploy_verify.sql`, 17 of 17 `ok`;
    - `kingdom_verify.sql`, no rows;
    - `pending_rewards_verify.sql`, 10 of 10;
    - the publishable-key probe refused (401, `42501`).
@@ -1095,6 +1105,16 @@ This is safe at Gate B: nothing calls the functions until Gate C, and the table 
 
   **Cost:** the console's Kingdoms section goes, because v8's `meta` has no `kingdoms` (Q3, accepted in K1-4). Nothing else changes.
 - **The database objects stay** after either rollback. Nothing calls them, and the table is empty. Removing them is Gate B's rollback, separately authorized.
+
+**Every intermediate state works with the published site** (plan section 3, decision 9.3). The site has had K1-2 to K1-4 since their merges, all closed:
+
+| Database | `game` | `admin` | When | Effect |
+|---|---|---|---|---|
+| no Kingdom objects | v15 | v8 | now; after Gate B's rollback | None. The console has no Kingdoms section (v8's `meta`) |
+| the objects, empty | v15 | v8 | after Gate B | None. Nothing calls the functions; signed-in players can read the empty table and the finder, and nothing opens a way in |
+| the objects, empty | v16 (closed) | v8 | after `game`'s deploy; after `admin`'s rollback | None for players. The console still has no Kingdoms section |
+| the objects, empty | v15 | v9 (closed) | after `game`'s rollback | None for players. The console's section reads only, and finds nothing |
+| the objects, empty | v16 (closed) | v9 (closed) | after Gate C | The console's read-only section. Nothing for players |
 
 **At the end of Gate C:** independent review of the production evidence. **Kingdoms stay closed. Activation is a separate decision.**
 
@@ -1130,6 +1150,7 @@ The local stack was started **without** `supabase/functions/.env`, so the functi
 | **The closed functions at `8eb471d`** | `KINGDOMS_EXPECT_CLOSED=1 npm run test:db`: pgTAP 222 of 222, and the API tests 46 passed with 21 skipped, as expected (the open-state ones). That includes the closed-state checks (`kingdoms-closed.test.mjs`) |
 | **The boot checks** | `game`, no token: **401 `{"error":"Please sign in again."}`.** `admin`, with the publishable key: **401 `{"error":"Please sign in."}`** |
 | **The payloads** | The four in 5.1, each from an LF checkout: every file `matches`, and the production target |
+| **The secrets-names filter** (5.2), the same code against a local mock, with only the URL and token replaced | **A list of named entries with values:** exit 0, the names only, sorted, and no value printed. **Another shape** (an object): exit 1, only "STOP: HTTP 200, not a list of named secrets; nothing else printed". **A 401:** exit 1, only the stop line. **No value appeared in any output** |
 
 **Afterwards:**
 - the test configuration file was put back;
