@@ -69,10 +69,15 @@ Read these first:
   - **K1-2, the engine and the `game` and `admin` functions, is accepted and merged:** PR #118 (`6b19337`, 2026-11-26).
   - **K1-3, the player's interface, is accepted and merged:** PR #119 (`e31a946`, 2026-11-26), after two correction rounds (report 3.6 and 3.7). `main`'s CI run 45902673857 passed.
   - **K1-4, the admin console, is accepted and merged:** PR #121 (`8eb471d`, 2026-11-27), after two correction rounds (report 4.6 and 4.7).
-  - **K1-5, the production rollout:**
-    - **Gate A (read-only) is authorized** (2026-11-27). The owner chose to have the written procedure (`docs/kingdoms-k1-report.md`, section 5) reviewed first. It is at its review gate, and **nothing has been done in production.**
-    - **Gates B and C need their own authorizations.**
-    - **The rollout is dormant:** Kingdoms stay closed. Activation, balancing values and K-2 are not authorized.
+  - **K1-5, the production rollout: done, and accepted in independent operational review** (2026-11-27).
+    - **The procedure:** PR #122 (`5c05522`). **The record:** `docs/kingdoms-k1-report.md`, section 6.
+    - **Production, dormant:**
+      - **the migration** `20261125120000` is applied and recorded. The history is exactly `20261115090000, 20261123120000, 20261125120000`;
+      - **the table and its seven functions** are installed, with 0 plots;
+      - **`game` is v16 and `admin` v9,** from `8eb471d`;
+      - **Kingdoms are closed:** players see nothing, and staff see the console's read-only Kingdoms section.
+    - **K-1 is complete.** #83 closes once the closing record is merged.
+    - **Not authorized:** activation, balancing values (`CLAIM_MIN_LEVEL`, `CLAIM_COST`) and K-2. **Opening Kingdoms is a reviewed code change** in the site and both functions (plan section 3).
 - **#102, pending rewards delivered exactly once: fixed, deployed, accepted in independent review, and closed as completed** (2026-11-24, on the owner's authorization).
   - **The scope and reports:** `docs/pending-rewards-scope.md` and `docs/pending-rewards-report.md`.
   - **The implementation:** stage 1, PR #107; stage 2, PR #108. The rollout procedure is PR #109.
@@ -238,7 +243,7 @@ Read these first:
   - **The ledger:** entries that depend on a hero's save are queued on its row (`queueLedger()`) and written only after it commits. They stay best effort.
   - **Tests:** a failing save is made deterministic with a test-only trigger on the local stack (`tests/db/pending-rewards-api.test.mjs`).
   - **Production:** the migration (`20261123120000`) and the `game` redeploy each need the owner's authorization, migration first.
-- **Kingdoms, K-1** (#83; `docs/kingdoms-scope.md`, `docs/kingdoms-k1-plan.md`, `docs/kingdoms-k1-report.md`). K1-1 adds the database only (`20261125120000_kingdoms.sql`). Nothing calls it yet, and nothing is in production:
+- **Kingdoms, K-1** (#83; `docs/kingdoms-scope.md`, `docs/kingdoms-k1-plan.md`, `docs/kingdoms-k1-report.md`). K1-1 added the database (`20261125120000_kingdoms.sql`). It has been in production since 2026-11-27 (K1-5), with `game` v16 and `admin` v9, all closed:
   - **The table and functions:** `kingdom_plots`, and five `security definer` functions (claim, release, revoke, reserve, unreserve), each one transaction, executable by the service role only.
   - **Claim and release** claim the request's staged reward ids through a private helper (R-1) and save with `version = p_version + 1`.
   - **The revoke** uses `version = version + 1` on the locked current row, so an in-flight save can't write a revoked Kingdom back. It returns the gold refunded, as `bigint` (exact up to `Number.MAX_SAFE_INTEGER`).
@@ -265,7 +270,7 @@ Read these first:
     - **A release sends the instance id that was on screen.**
     - **Tests:** `tests/ui/kingdoms.test.mjs`, with `kingdomsOn(page)` and `new FakeBackend({ kingdoms })` in the harness. `backend.holdRead(kind)` holds one Kingdom read with its answer as it was when asked.
   - **K1-4, the admin console** (`public/js/admin-kingdoms.js`, the World group's Kingdoms section):
-    - **Q3:** at sign-in, before the first route, the console asks `meta`. **Only `meta.kingdoms` turns the section on.** The deployed `admin` v8 has no such key; with it, a refusal or a failure, there's no section, no player-record line and **no Kingdom request**. The server's `open` decides, never the browser's `kingdomsOpen()`.
+    - **Q3:** at sign-in, before the first route, the console asks `meta`. **Only `meta.kingdoms` turns the section on.** `admin` v8 (deployed until 2026-11-27, and `admin`'s rollback pin) has no such key; with it, a refusal or a failure, there's no section, no player-record line and **no Kingdom request**. v9, deployed since then, reports Kingdoms closed. The server's `open` decides, never the browser's `kingdomsOpen()`.
     - **Closed:** read-only. **Open:** reads for all staff; revoke (tier 1, type the hero's name), reserve and unreserve (tier 3) for admins. Each needs a reason.
     - **A change sends the plot as shown** (instance id, and the owner for a revoke), single-flight under `kingdom:<x>,<y>:<op>`. It stays pending until its recovery ends.
       - **After it, done or refused,** its plot is read again only if it's still the one on screen. A plot being read counts before the record kept from the previous read (`inspecting()`).

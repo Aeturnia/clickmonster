@@ -4,6 +4,7 @@
 - **The design baseline** is [`docs/kingdoms-scope.md`](kingdoms-scope.md) (K-0, with amendment 1).
 - **The stages:** five, each with its own authorization and review gate (plan section 2).
 - **The plan's acceptance** carried four implementation qualifications, Q1 to Q4, into the stages. They're recorded on #83 (2026-11-25).
+- **K-1 is complete (2026-11-27).** All five stages were accepted, and the production rollout passed independent operational review. **Kingdoms are installed in production, closed.** The production record is section 6.
 
 ## 1. K1-1: the database foundation (authorized by the owner, 2026-11-25)
 
@@ -910,6 +911,8 @@ The re-review asked for both.
 
 ## 5. K1-5: the production rollout procedure (proposed, for review; nothing in it has been done)
 
+**Status (2026-11-27): accepted and merged** as PR #122 (`5c05522`), then **run:** Gates A, B and C passed, and the operational review accepted the rollout. **The production record is section 6.** The text below is the procedure as accepted, kept as it was.
+
 **Status: written for review** (2026-11-27), after K1-4 merged as PR #121 (`8eb471d`) and `main`'s CI passed.
 - **The plan:** 2.5 and section 3 of the plan. **The precedent:** #102's procedure and record (`docs/pending-rewards-report.md`, sections 3 and 4), reused step by step.
 - **Not done:** no production read, apply, history change, deploy or rollback.
@@ -1235,3 +1238,126 @@ It asked for three procedural corrections. **The owner authorized them** (2026-1
 **Also:** Gate A and Gate B now say outright that deploy-verify row 16 has no production waiver.
 
 **Not repeated:** the local rehearsal, as the review allowed. Nothing it rehearsed changed.
+
+## 6. K1-5: production record (2026-11-27)
+
+**Every gate was authorized by the owner on its own,** and run by the procedure in section 5 (merged as PR #122, `5c05522`).
+- **All production SQL** went through the Supabase Management API's query endpoint, with the owner's access token from the environment. The token was never printed or recorded.
+- **Every read** was `set transaction read only;` plus the exact check file from `5c05522`. Each answered HTTP 201 with its rows.
+- **The full evidence** is in #83's comments, cited below.
+- **The sanitized raw evidence:** the API answers, the check results, the CLI log, the secrets' names, and the read-only scripts used. It is kept outside the repository, on the owner's laptop, with a SHA-256 manifest (66 files). The copies were verified against the originals. None contains the token, a password or a secret value.
+
+### 6.1 Gate A: the read-only inspection (17:11:43 to 17:11:51 UTC)
+
+**The record:** [#83, comment 7224143897](https://github.com/Aeturnia/clickmonster/issues/83#issuecomment-7224143897). **All 14 checks matched,** and so did the secrets' names:
+
+| Check | Production |
+|---|---|
+| `game` | **v15**, ACTIVE, `verify_jwt` false, updated 2026-11-24T15:32:18.550Z, `ezbr_sha256` `30a59b0fc0cacbf97dfcaa1ee875a045fd79924106a32c82cb0c4aa119d61c57` |
+| `admin` | **v8**, ACTIVE, `verify_jwt` false, updated 2026-11-14T00:38:35.393Z, `ezbr_sha256` `572f2b2c3581588407c24efd7ed4ee315b25e2064b1a51e8a15bc2206146ef64` |
+| `kingdoms_state.sql` | no table, no plots, 0 functions, no md5 or owners, not recorded; history exactly `20261115090000, 20261123120000` |
+| `kingdoms_precheck.sql` | 17.11; rows 2 and 3 `none`; 4 true; 5 the 18 expected column types; **6 (zones) `none`**; 7 true; 8 the two versions |
+| `pending_rewards_verify.sql` and `pending_rewards_state.sql` | **10 of 10**; md5 `46cea39f9a83b467c847dc4916815ca2`, 1,329 characters, `postgres` |
+| The secrets' names (the command in 5.2) | 7 Supabase names (`SUPABASE_ANON_KEY`, `SUPABASE_DB_URL`, `SUPABASE_JWKS`, `SUPABASE_PUBLISHABLE_KEYS`, `SUPABASE_SECRET_KEYS`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_URL`). **No `KINGDOMS_TEST`**, and no value printed |
+
+**Accepted in independent review,** with zero findings.
+
+### 6.2 Gate B: the migration (18:21:30 to 18:23:04 UTC)
+
+**The record:** [#83, comment 7225441180](https://github.com/Aeturnia/clickmonster/issues/83#issuecomment-7225441180). The owner's authorization included the CLI's transient login role (5.4, step 4).
+
+1. **Gate A re-confirmed** (18:21:30 to 18:21:31Z): all 14 checks and the secrets' names, unchanged.
+2. **The file:** `git show 8eb471d:supabase/migrations/20261125120000_kingdoms.sql`. 19,484 bytes, no carriage return, SHA-256 `c6f450adc06030ba209240ff6785b13455cd0c7925b9202e99bf181b93030599`.
+3. **The apply:** sent at 18:21:56.066Z as one request (`begin;`, the exact bytes, `commit;`). It answered **HTTP 201 `[]`** at 18:21:56.450Z.
+   - **The state straight after:** table true, 0 plots, 7 functions, `afac33eeb3fb45123b4d18eb5300673b`, `postgres`, not yet recorded.
+   - That is the expected point before the repair.
+4. **The history:**
+   - `supabase link` (18:22:04Z);
+   - `migration repair 20261125120000 --status applied --linked` (18:22:17Z): "Initialising login role…", then "Repaired migration history: [20261125120000] => applied";
+   - `unlink` (18:22:23Z).
+
+   The working tree was clean afterwards.
+5. **Verification** (18:23:02 to 18:23:04Z), **8 of 8:**
+   - **`kingdoms_deploy_verify.sql` 17 of 17,** with no waiver. Row 16 is `46cea39f…`;
+   - **the state:** true, **0 plots**, 7 functions, `afac33ee…`, `postgres`, and the history exactly `20261115090000, 20261123120000, 20261125120000`;
+   - **`kingdom_verify.sql`:** 0 rows;
+   - **the pending-rewards checks:** 10 of 10, with the md5 unchanged;
+   - **the publishable-key probe:** HTTP 401, `42501`;
+   - **the functions:** `game` v15 and `admin` v8, unchanged.
+
+**Accepted in independent review,** with zero findings.
+
+### 6.3 Gate C: the deploys (18:33:20 to 18:34:20 UTC; the final checks at 18:39 UTC)
+
+**The record:** [#83, comment 7225635961](https://github.com/Aeturnia/clickmonster/issues/83#issuecomment-7225635961) (technical) and [comment 7225728427](https://github.com/Aeturnia/clickmonster/issues/83#issuecomment-7225728427) (completion).
+
+1. **Before the deploys** (18:33:20 to 18:33:22Z), every check matched:
+   - the functions (v15 and v8, unchanged since Gate A);
+   - the secrets' names (no `KINGDOMS_TEST`);
+   - the deploy-verify, 17 of 17;
+   - the state (0 plots);
+   - **precheck row 6 (zones) `none`;**
+   - I-1, 0 rows;
+   - the pending-rewards checks;
+   - the probe refused.
+2. **The pinned checkout and payloads:**
+   - **the checkout:** an LF worktree at `8eb471d`, clean;
+   - **the deploy script:** `697a409a…`;
+   - **`game`:** **27 files, each `matches`**, payload `d6a053f4baefdb53c4259e8a41a5c7578015340e6738b18f4e3eaf18665efa55`;
+   - **`admin`:** **27 files, each `matches`**, payload `48c6259dd502d565ca596abda052250b2388336aa39a53455aee433eff7a991f`;
+   - **the target:** production.
+3. **`game`:** the deploy (18:33:40Z) answered `game 201`, ACTIVE, version 16.
+   - **The metadata:** **v16**, ACTIVE, `verify_jwt` false, updated 2026-11-27T18:33:40.804Z, `ezbr_sha256` **`540b84c194be423be4f15d852ff60ad66b34f761686028571f297ebde9e4fb86`**, with `admin` v8 unchanged.
+   - **The boot check:** **401 "Please sign in again."**, first attempt.
+4. **`admin`:** the deploy (18:34:01Z) answered `admin 201`, ACTIVE, version 9.
+   - **The metadata:** **v9**, ACTIVE, `verify_jwt` false, updated 2026-11-27T18:34:01.414Z, `ezbr_sha256` **`0c73f8b7d2e9deeab1ef892d5d43c9a67fc5859be412239ba8d6bb65462b4c0c`**, with `game` v16 unchanged.
+   - **The boot check,** with the publishable key: **401 "Please sign in."**, first attempt.
+5. **After both deploys** (18:34:18 to 18:34:20Z): 7 of 7, as before the deploys.
+6. **The owner's live checks** (reported by the owner, not observed by me):
+   - **in the owner's words:** "Live checks all pass and behave as they should";
+   - **the smoke check:** sign-in and ordinary play, with no errors;
+   - **nothing of Kingdoms for a player;**
+   - **the admin console's Kingdoms section,** read-only: it says Kingdoms are closed, and the plots list is empty;
+   - **an individual plot looked up by its coordinates showed as free, with no change offered** (confirmed by the owner for this record; K1-OPS04).
+7. **The final checks after the live checks** (18:39:12 to 18:39:14Z): 7 of 7.
+   - **0 plots,** the exact three-version history, and **I-1 0 rows.** The live checks created no Kingdom state.
+   - **The functions:** `game` v16 and `admin` v9, unchanged.
+8. **The pinned checkout was removed.**
+
+### 6.4 The independent operational review (2026-11-27)
+
+**PASS, with zero blocking findings.**
+- **The reviewer** compared `8eb471d` with `5c05522`: only `CLAUDE.md` and this report differ, so no executable code, migration, check or tool changed.
+- **K1-OPS01 to K1-OPS03** remain satisfied.
+- **Two non-blocking recordkeeping findings,** both resolved by this record:
+
+| Finding | Resolution |
+|---|---|
+| **K1-OPS04:** the individual plot lookup wasn't recorded explicitly | The owner confirmed it: a plot looked up by its coordinates showed as free, with no change offered (6.3, step 6) |
+| **K1-OPS05:** #83's description still showed K1-3 at review, and K1-4 and K1-5 as not authorized | #83's description has a dated "Current status (2026-11-27)" section above the earlier ones, which are kept. #83 is closed as completed once this record is merged, on the owner's authorization of the K-1 closeout |
+
+### 6.5 The production baseline after K-1 (2026-11-27)
+
+| Part | State |
+|---|---|
+| **The migration history** | exactly `20261115090000, 20261123120000, 20261125120000`. The six earlier versions are still deliberately unrecorded |
+| **`kingdom_plots`** | present, **0 rows**, RLS on, readable by signed-in players only |
+| **The Kingdom functions** | 7, md5 `afac33eeb3fb45123b4d18eb5300673b`, owner `postgres`. The five changes are executable by `service_role` only |
+| **`save_hero_with_rewards()`** | unchanged: md5 `46cea39f9a83b467c847dc4916815ca2` (R-1) |
+| **`game`** | **v16**, `ezbr_sha256` `540b84c1…4fb86`, from `8eb471d`. **Rollback pin:** `fc189b4` (v15's payload, `1ccf3b35…`) |
+| **`admin`** | **v9**, `ezbr_sha256` `0c73f8b7…4c0c`, from `8eb471d`. **Rollback pin:** `736a524` (v8's source, `968f6ca9…`) |
+| **The site** | K1-2 to K1-4 since their merges, closed: `KINGDOMS_OPEN` false, and `CLAIM_MIN_LEVEL` and `CLAIM_COST` null |
+| **Kingdoms** | **closed** |
+
+**K-1 is complete.**
+
+**Not authorized:**
+- **activation:** opening Kingdoms, a reviewed code change in the site and both functions, with its own procedure (plan section 3);
+- **balancing values;**
+- **K-2.**
+
+**Still outstanding before any activation:**
+- real devices and screen readers;
+- #120, the 120-second zone-edit race, tracked and not authorized.
+
+**Unchanged and deferred:** #97, #105, #113 and #114.
