@@ -68,7 +68,7 @@ Read these first:
   - **K1-1, the database, is accepted and merged:** PR #117 (`0b9b4ab`, 2026-11-25).
   - **K1-2, the engine and the `game` and `admin` functions, is accepted and merged:** PR #118 (`6b19337`, 2026-11-26).
   - **K1-3, the player's interface, is accepted and merged:** PR #119 (`e31a946`, 2026-11-26), after two correction rounds (report 3.6 and 3.7). `main`'s CI run 45902673857 passed.
-  - **K1-4, the admin console, is authorized** (2026-11-26) and at its review gate. See `docs/kingdoms-k1-report.md`, section 4. Kingdoms stay closed, and nothing is deployed.
+  - **K1-4, the admin console, is authorized** (2026-11-26). Its review corrections (K1-ADM01 to K1-ADM03) are at the re-review gate. See `docs/kingdoms-k1-report.md`, section 4. Kingdoms stay closed, and nothing is deployed.
   - **K1-5 is not authorized.**
 - **#102, pending rewards delivered exactly once: fixed, deployed, accepted in independent review, and closed as completed** (2026-11-24, on the owner's authorization).
   - **The scope and reports:** `docs/pending-rewards-scope.md` and `docs/pending-rewards-report.md`.
@@ -264,7 +264,14 @@ Read these first:
   - **K1-4, the admin console** (`public/js/admin-kingdoms.js`, the World group's Kingdoms section):
     - **Q3:** at sign-in, before the first route, the console asks `meta`. **Only `meta.kingdoms` turns the section on.** The deployed `admin` v8 has no such key; with it, a refusal or a failure, there's no section, no player-record line and **no Kingdom request**. The server's `open` decides, never the browser's `kingdomsOpen()`.
     - **Closed:** read-only. **Open:** reads for all staff; revoke (tier 1, type the hero's name), reserve and unreserve (tier 3) for admins. Each needs a reason.
-    - **A change sends the plot as shown** (instance id, and the owner for a revoke), single-flight under `kingdom:<x>,<y>:<op>`. After it, done or refused, the plot is read again. **A refusal is never retried,** and a "not open" refusal reads `meta` again.
+    - **A change sends the plot as shown** (instance id, and the owner for a revoke), single-flight under `kingdom:<x>,<y>:<op>`. It stays pending until its recovery ends.
+      - **After it, done or refused,** its plot is read again only if it's still the one on screen.
+      - **A refusal is never retried.** A "not open" refusal or "Unknown action." reads `meta` again.
+    - **A change belongs to the sign-in that started it:**
+      - signing out (`cancelAsk()`) answers its question no;
+      - after the question, the sign-in and the permission are checked again;
+      - an answer that arrives after the sign-in ended is not followed up. The server's transaction stands.
+    - **Losing the capability** (a rollback, or `meta` failing) closes the section to the overview. Closed isn't lost.
     - **Reads are numbered;** the section's state is replaced at sign-in and sign-out.
     - **Tests:** `tests/ui/admin-kingdoms.test.mjs`, with `new FakeBackend({ adminKingdoms: 'v8' | 'closed' | 'open' })`. The default is open with `kingdoms`, otherwise v8.
 - **Signing out and refused sessions** (`net.js`; `docs/sign-out-report.md`):
@@ -364,7 +371,7 @@ Read these first:
 
 ```
 npm test                 # engine, entrance file checks, the first-paint tripwire, the public pages, news rules, the news page handler, the town rule, the log rules, the session rule, the pending-rewards staging rule and the Kingdom rules (110)
-npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (356)
+npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (363)
 npm run test:db          # database (pgTAP, 222: news 42, pending rewards 40, Kingdoms 140) and API/function/recovery/session/pending-rewards/Kingdom-check/Kingdom tests (63, plus 4 opt-in: 1, and the 3 closed-state checks) on the LOCAL Supabase stack, with Mailpit
 npx playwright install chromium   # once
 ```

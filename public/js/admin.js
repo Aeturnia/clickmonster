@@ -13,7 +13,7 @@ import { ZONES } from './data/zones.js';
 import { RACES } from './data/races.js';
 import { KINGDOM_ZONE_ID } from './data/kingdoms.js';
 import { MULT_KEYS, MULT_LABEL, MULT_MAX } from './engine/world-config.js';
-import { ask, setConfirmFallback } from './confirm.js';
+import { ask, cancelAsk, setConfirmFallback } from './confirm.js';
 // The one Supabase client (net.js), from our own copy of supabase-js. If it can't load, say so.
 let sb;
 try { sb = await client(); } catch (err) {
@@ -1107,7 +1107,9 @@ document.addEventListener('submit', async (e) => {
 
 sb.auth.onAuthStateChange((event, session) => {
   setTimeout(async () => {
-    if (!session) { st.phase = 'login'; st.me = null; kingdoms.reset(); render(); return; }
+    // Signed out (here or in another tab): a question still open belongs to that sign-in, and is
+    // answered no (K1-4 review, K1-ADM01), and the Kingdoms section's state goes with it.
+    if (!session) { cancelAsk(); st.phase = 'login'; st.me = null; kingdoms.reset(); render(); return; }
     if (st.me) return;
     st.email = session.user.email;
     try {
@@ -1118,7 +1120,9 @@ sb.auth.onAuthStateChange((event, session) => {
       // The Kingdoms capability (Q3) before the first route, so a link to the section works. A
       // failure is no capability, and says nothing.
       kingdoms.reset();
+      const me = st.me;
       await kingdoms.loadCap();
+      if (st.me !== me) return; // signed out meanwhile: this sign-in routes nothing (K1-ADM01)
       await applyRoute();
     } catch {
       st.phase = 'denied';

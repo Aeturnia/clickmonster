@@ -690,7 +690,7 @@ It asked for two narrow corrections. **The owner authorized them** (2026-11-26),
 
 ## 4. K1-4: the admin console (authorized by the owner, 2026-11-26)
 
-**Status: implemented, at its review gate.**
+**Status: implemented, with the review corrections K1-ADM01 to K1-ADM03 (4.6), at its re-review gate.**
 - **The owner authorized it** with PR #119's merge, conditional on `main`'s CI, which passed (run 45902673857).
 - **Client only:** no server or database change, and no deploy. It works against the deployed `admin` v8: with it, the console shows no Kingdoms section and asks nothing about Kingdoms.
 - **Kingdoms stay closed.**
@@ -829,3 +829,55 @@ It asked for two narrow corrections. **The owner authorized them** (2026-11-26),
 - **The local database suite:** not run, because nothing on the server changed. CI runs it.
 - **The capability read's number** has no test of its own. A late `meta` answer for an earlier sign-in is dropped by the state replacement at sign-in and sign-out, which A9 tests.
 - **Real devices and screen readers:** not tested.
+
+### 4.6 Review corrections (the review of `4849cc5`, 2026-11-26)
+
+**The review accepted:**
+- the administration design;
+- every implementation choice in 4.4, including tier 3 for reserve and unreserve and tier 1 for revoke;
+- the mandatory reasons;
+- Q3's ordinary behaviour and the roles;
+- the identities sent;
+- no automatic retry;
+- the read numbers;
+- the audit-log text;
+- the screens and axe evidence, within their limits;
+- the local testing deviations;
+- K1-3's closeout.
+
+It asked for three corrections about the changes' lifecycle. **The owner authorized them** (2026-11-26). They are client only.
+
+| Finding | What changed | Its tests |
+|---|---|---|
+| **K1-ADM01:** a change was not bound to the staff sign-in that started it | **The section's state object is the sign-in's identity.** `change()` takes it before the question.<br>**Signing out cancels an open question** (`cancelAsk()` in `admin.js`'s sign-out, here or from another tab), answered no.<br>**After the question,** the change goes ahead only if the sign-in is the same, changes are still allowed (`canChange()`: the capability, open, an admin), and no other change to that plot started.<br>**A change already sent, answered after the sign-in ended,** is not followed up: no message, no form cleared, no read of the plot, the list or `meta`. Its transaction may have committed on the server; that is not undone, or claimed undone.<br>**The section's changes in flight** are its own (`pending`, in its state), and `reset()` also drops its forms' errors and typed reasons, so none carry over.<br>**A sign-in whose `meta` answer comes after it ended** routes nothing (`admin.js`) | **K4-14:** another tab signs out while the revoke question is open, with the name typed. The question closes; signed in again, nothing has been sent, and the Kingdom is intact.<br>**K4-15:** a revoke on its way at sign-out, then a moderator signs in on the same page, on the same plot. The revoke commits, and the moderator gets no read, message or alert from it; their record is their own read.<br>**K4-16:** a revoke question is open while Kingdoms close (another change's refusal reads `meta` again). Confirming it sends nothing |
+| **K1-ADM02:** a change's recovery replaced a newer inspection | **The plot is read again only if it's still the one on screen** (or being read). Otherwise the newer plot, and anything typed in it, is left alone; the list is still read again.<br>**A form is cleared only after a success on the plot still shown.**<br>**The change stays pending until its recovery ends:** the capability read again after a "not open" refusal, and the plot read again. A second press meanwhile says "Still working…" and sends and asks nothing. Other plots stay independent | **K4-17:** a reserve answered after another plot is opened, with a reason typed there. That plot and the reason stay, and the first plot isn't read again over it.<br>**K4-18:** a reserve refused as not open, with the capability read held. The form drawn before the refusal opens no second question, and sends nothing |
+| **K1-ADM03:** losing the capability left the section | **When `meta` no longer reports Kingdoms** (a rollback to v8, or `meta` failing), `lose()` drops every Kingdom read on its way, empties the section's data, and falls back to the overview. The nav entry goes, and nothing more is asked.<br>**"Unknown action."** (the answer of a function without Kingdoms) from a plot or list read, or a change, reads `meta` again.<br>**Closed is not gone:** a function that reports Kingdoms closed keeps the section, read-only (K4-8) | **K4-19:** rolled back to v8, Reload plot gets "Unknown action.", and the section closes to the overview with no further Kingdom request. Then `meta` fails after a "not open" refusal: the section closes, and the plot isn't read again.<br>**K4-20:** an admin's `meta` held across another tab's sign-out and a moderator's sign-in with v8, then answered with Kingdoms open: the moderator gets no section and no Kingdom request |
+
+**Negative controls (targeted; the twelve earlier mutations weren't repeated):**
+- **On `4849cc5`** (a temporary worktree, with the new harness and tests): **6 of the 7 new tests fail.**
+  - **K4-14** to **K4-18** fail on their assertions: "the question closed with the sign-in", "no read for the moderator from the old change", "the revoke was not sent", "the newer plot stays" and "no second question".
+  - **K4-19** fails on a timeout: the section never fell back to the overview.
+  - **K4-20 passes on the old code:** the state replacement at sign-in already dropped a late `meta` answer. It's coverage the review asked for, not a regression.
+- **Mutations** (each with a 4-minute limit; the files restored, checked by md5):
+
+| Mutation | Caught by |
+|---|---|
+| B1: no `cancelAsk()` at sign-out | K4-14: "the question closed with the sign-in" |
+| B2: no eligibility check after the question | K4-16: "the revoke was not sent" |
+| B3: an ended sign-in's answer followed up | K4-15: "no success shown to the moderator" |
+| B4: the recovery reads the old plot regardless | K4-17: "the newer plot stays" |
+| B5: the change's guard released before its recovery | K4-18: "no second question" |
+| B6: `loadCap()` doesn't close the section on loss | K4-19: it never fell back to the overview |
+| B7: "Unknown action." on a read not followed up | K4-19: as B6 |
+
+**Without a test of their own:**
+- **The same-sign-in check after the question** (`mine()`): signing out always cancels the question, and the eligibility check also fails after a sign-out.
+- **`admin.js`'s check that the sign-in is unchanged before the first route:** without it, the ended sign-in's route runs for the current one and finds no section to open.
+
+Both are second lines, kept because the review asked for them explicitly.
+
+**Evidence (local, the owner's laptop, 2026-11-26):**
+- **`tests/ui/admin-kingdoms.test.mjs`:** 20 of 20. With the other admin files, 67 of 67.
+- **Engine:** 110 of 110.
+- **The full browser suite** is CI's, on this head, as the review allowed.
+- **No new screens:** no visible change, except that the section can now close to the overview.

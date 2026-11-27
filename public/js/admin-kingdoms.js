@@ -21,16 +21,39 @@ const FORMS = new Set(['kp-find', 'kp-search', 'kp-revoke', 'kp-reserve', 'kp-un
 export function setupKingdoms({ st, call, toast, render, esc, field, input, dataTable, isAdmin, pushRoute, when, fmt, showTab }) {
   // Per sign-in. Each read is numbered: an answer is used only while its read is still the latest of
   // its kind, and only for the state it was asked from (a sign-out replaces it).
-  const fresh = () => ({ cap: null, q: '', list: null, listError: null, rec: null, recError: null, recLoading: null, plotSeq: 0, listSeq: 0, capSeq: 0 });
+  // The state object is also the sign-in's identity: a request or a confirmation started from one
+  // state does nothing further once another has replaced it (the K1-4 review, K1-ADM01). The
+  // changes in flight are its own (pending), so none can carry over to the next staff member.
+  const fresh = () => ({ cap: null, q: '', list: null, listError: null, rec: null, recError: null, recLoading: null, plotSeq: 0, listSeq: 0, capSeq: 0, pending: new Set() });
   st.kingdoms = fresh();
   const K = () => st.kingdoms;
   const available = () => !!K().cap;
   const isOpen = () => K().cap?.open === true;
   const canChange = () => available() && isOpen() && isAdmin();
   const plotKey = (x, y) => `kingdom:${x},${y}:`;
-  const busyPlot = (x, y) => [...st.pendingForms].some((key) => key.startsWith(plotKey(x, y)));
+  const busyPlot = (x, y) => [...K().pending].some((key) => key.startsWith(plotKey(x, y)));
+  // The plot on screen (or being read): a change's recovery reads its plot again only if it still is.
+  const inspecting = (x, y) => { const r = K().rec || K().recLoading; return !!r && r.x === x && r.y === y; };
 
-  function reset() { st.kingdoms = fresh(); }
+  // A new sign-in, or a sign-out: the section's state, its forms' errors and the reasons typed go.
+  function reset() {
+    st.kingdoms = fresh();
+    for (const id of FORMS) delete st.formErrors[id];
+    if (st.fieldErrors) for (const id of Object.keys(st.fieldErrors)) if (id.startsWith('kp-')) delete st.fieldErrors[id];
+    for (const id of FORMS) st.clearForms.add(id);
+  }
+
+  // The capability is gone (an older function, a rollback, or meta failing): every Kingdom read on
+  // its way is dropped, nothing more is asked, and the section closes (K1-ADM03). Closed is not
+  // gone: a function that reports Kingdoms closed keeps the section, read-only.
+  function lose(s) {
+    s.plotSeq++; s.listSeq++;
+    s.rec = null; s.recLoading = null; s.recError = null; s.list = null; s.listError = null;
+    if (st.tab === 'kingdoms') showTab('dashboard');
+    else render();
+  }
+  // "Unknown action." is the answer of a function without Kingdoms (admin v8): read meta again.
+  const unknownAction = (e) => e?.status === 400 && e.message === 'Unknown action.';
 
   // The capability, from `meta`. Anything else (an older function, a refusal, no connection) means
   // no capability: no Kingdom request, and nothing said about it.
@@ -42,8 +65,10 @@ export function setupKingdoms({ st, call, toast, render, esc, field, input, data
       const c = (await call('meta'))?.kingdoms;
       if (c && Number(c.version) >= 1) cap = { version: Number(c.version), open: c.open === true };
     } catch { /* no capability */ }
-    if (K() !== s || s.capSeq !== seq) return;
+    if (K() !== s || s.capSeq !== seq) return; // another sign-in, or a newer read of meta
+    const had = !!s.cap;
     s.cap = cap;
+    if (had && !cap) lose(s);
   }
 
   async function loadPlot(x, y, { focus = false } = {}) {
@@ -62,6 +87,7 @@ export function setupKingdoms({ st, call, toast, render, esc, field, input, data
       if (!current()) return;
       s.rec = null;
       s.recError = { x, y, message: e.message };
+      if (unknownAction(e)) { s.recLoading = null; await loadCap(); if (!current()) return; } // lose() drops this read
     }
     s.recLoading = null;
     if (focus) st.focusNext = '#kp-title';
@@ -82,6 +108,7 @@ export function setupKingdoms({ st, call, toast, render, esc, field, input, data
     } catch (e) {
       if (K() !== s || s.listSeq !== seq) return;
       s.listError = e.message;
+      if (unknownAction(e)) { await loadCap(); if (K() !== s || s.listSeq !== seq) return; }
     }
     render();
   }
@@ -135,7 +162,7 @@ export function setupKingdoms({ st, call, toast, render, esc, field, input, data
 
   // A change's form. Its data attributes are the plot as shown: the change names exactly these.
   function changeForm(id, op, x, y, data, label, hint, tone = '') {
-    const pending = st.pendingForms.has(`${plotKey(x, y)}${op}`);
+    const pending = K().pending.has(`${plotKey(x, y)}${op}`);
     const err = st.formErrors[id];
     const attrs = Object.entries({ x, y, ...data }).map(([k, v]) => ` data-${k}="${esc(v)}"`).join('');
     return `<form id="${id}" class="gap-top" novalidate${attrs}>
@@ -212,6 +239,10 @@ export function setupKingdoms({ st, call, toast, render, esc, field, input, data
   };
 
   async function change(form, op) {
+    // The sign-in this change belongs to (K1-ADM01). Once another state replaces it (signing out,
+    // here or in another tab, or another staff member signing in), nothing more is done for it.
+    const s = K();
+    const mine = () => K() === s;
     // The plot as shown, taken now: the request names exactly this (K1-DB01).
     const d = form.dataset;
     const shown = { x: Number(d.x), y: Number(d.y), plotId: d.plot ? Number(d.plot) : null, characterId: d.char || null, name: d.name || '' };
@@ -225,35 +256,52 @@ export function setupKingdoms({ st, call, toast, render, esc, field, input, data
       return;
     }
     if (st.fieldErrors) delete st.fieldErrors[`${form.id}-reason`];
-    if (!await ask(QUESTIONS[op](shown, reason))) return;
+    const ok = await ask(QUESTIONS[op](shown, reason)); // signing out cancels it (admin.js, cancelAsk())
+    // Checked again after the question: the same sign-in, still allowed to change plots, and no
+    // other change to this plot started meanwhile.
+    if (!ok || !mine() || !canChange() || busyPlot(shown.x, shown.y)) return;
     const key = `${plotKey(shown.x, shown.y)}${op}`;
-    if (st.pendingForms.has(key)) return;
     const args = op === 'revoke'
       ? { x: shown.x, y: shown.y, plotId: shown.plotId, characterId: shown.characterId, reason }
       : op === 'unreserve' ? { x: shown.x, y: shown.y, plotId: shown.plotId, reason } : { x: shown.x, y: shown.y, reason };
     const action = { revoke: 'kingdomRevoke', reserve: 'kingdomReserve', unreserve: 'kingdomUnreserve' }[op];
-    st.pendingForms.add(key);
+    // Pending until its plot has been read again (or its recovery has ended), so the controls drawn
+    // before the answer can't send another change meanwhile (K1-ADM02). Other plots stay free.
+    s.pending.add(key);
     delete st.formErrors[form.id];
     render();
     let failed = null;
+    let done = null;
     try {
-      const r = await call(action, args);
-      st.clearForms.add(form.id);
-      toast(op === 'revoke'
-        ? `${shown.name}’s Kingdom is revoked. ${r?.refund > 0 ? `${fmt(r.refund)} gold refunded.` : 'Nothing was refunded.'}`
-        : op === 'reserve' ? `Plot ${shown.x}, ${shown.y} is reserved.` : `Plot ${shown.x}, ${shown.y} is no longer reserved.`);
+      done = await call(action, args);
     } catch (e) {
       failed = e;
-      // Stays on screen until dismissed: the form may be gone once the plot is read again.
-      toast(e.message, true);
-    } finally {
-      st.pendingForms.delete(key);
     }
-    // Whatever happened, show the plot as it is now. A refusal is not retried, and nothing is sent
-    // with a replacement id: the staff member looks, and asks again if they still mean it.
-    if (failed?.status === 409 && /aren’t open/.test(failed.message)) await loadCap();
-    await loadPlot(shown.x, shown.y);
-    loadList();
+    // Sent and perhaps committed, but for a sign-in that has ended: nothing is shown, cleared or
+    // asked for the next one. The server's transaction stands; it isn't undone.
+    if (!mine()) return;
+    try {
+      if (failed) toast(failed.message, true); // stays until dismissed: the form may be gone after the reload
+      else {
+        toast(op === 'revoke'
+          ? `${shown.name}’s Kingdom is revoked. ${done?.refund > 0 ? `${fmt(done.refund)} gold refunded.` : 'Nothing was refunded.'}`
+          : op === 'reserve' ? `Plot ${shown.x}, ${shown.y} is reserved.` : `Plot ${shown.x}, ${shown.y} is no longer reserved.`);
+      }
+      // Whatever happened, the plot is read again, if it's still the one being looked at; a newer
+      // inspection, and anything typed in it, is left alone. A refusal is not retried, and nothing
+      // is sent with a replacement id: the staff member looks, and asks again if they still mean it.
+      if (failed?.status === 409 && /aren’t open/.test(failed.message)) await loadCap();
+      else if (unknownAction(failed)) await loadCap();
+      if (!mine() || !available()) return;
+      if (inspecting(shown.x, shown.y)) {
+        if (!failed) st.clearForms.add(form.id);
+        await loadPlot(shown.x, shown.y);
+      }
+      if (mine()) loadList();
+    } finally {
+      s.pending.delete(key);
+      if (mine()) render();
+    }
   }
 
   // ------------------------------------------------------------ events (admin.js calls these)

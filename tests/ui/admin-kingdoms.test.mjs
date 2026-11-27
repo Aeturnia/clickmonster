@@ -315,3 +315,185 @@ test('K4-13 a slow owner search overtaken by a newer one never replaces its resu
   assert.equal(await page.locator('#admin table [data-a="kpOpen"][data-v="3,2"]').count(), 0, 'nothing of the older search');
   await done(ctx);
 });
+
+// ------------------------------------------------------------ review corrections (the K1-4 review)
+// Sign out in a second tab of the same browser: this tab follows (net.js's storage listener).
+async function signOutElsewhere(ctx) {
+  const other = await ctx.context.newPage();
+  await other.goto(`${env.url}/admin.html#dashboard`);
+  await other.waitForSelector('.a-nav', { timeout: 15000 });
+  await other.click('[data-a="signout"]');
+  await other.waitForSelector('#login');
+  await other.close();
+}
+async function signInHere(page, who) {
+  await page.waitForSelector('#login');
+  await page.fill('#email', ACCOUNTS[who].email);
+  await page.fill('#password', ACCOUNTS[who].password);
+  await page.click('#login button[type=submit]');
+  await page.waitForSelector('.a-nav', { timeout: 15000 });
+}
+const byAccount = (backend, acct) => backend.adminKingdomCalls.filter((c) => c.account === acct.id).length;
+
+// K1-ADM01
+test('K4-14 signing out (in another tab) while a revoke question is open answers it no; nothing is sent, then or after', async () => {
+  const ctx = await console_();
+  const { page, backend } = ctx;
+  await showPlot(page, 9, 3);
+  await page.fill('#kp-revoke-reason', 'Abandoned test account');
+  await page.click('#kp-revoke button[type=submit]');
+  await page.waitForSelector('#confirm[open]');
+  await page.fill('#confirm-input', NAME);
+  await signOutElsewhere(ctx);
+  await page.waitForSelector('#login');
+  assert.equal(await has(page, '#confirm[open]'), false, 'the question closed with the sign-in');
+  await signInHere(page, 'admin');
+  await settle(page);
+  assert.equal(await has(page, '#confirm[open]'), false);
+  assert.deepEqual(changeCalls(backend), [], 'no change sent');
+  assert.ok(backend.heroes[PLAYER].kingdom, 'the Kingdom is intact');
+  await done(ctx);
+});
+
+test('K4-15 a revoke on its way at sign-out may commit, but nothing of it reaches the next staff member', async () => {
+  const ctx = await console_();
+  const { page, backend } = ctx;
+  await showPlot(page, 9, 3);
+  await page.fill('#kp-revoke-reason', 'Abandoned test account');
+  const release = backend.hold('kingdomRevoke');
+  await page.click('#kp-revoke button[type=submit]');
+  await page.waitForSelector('#confirm[open]');
+  await page.fill('#confirm-input', NAME);
+  await page.click('#confirm [data-r="ok"]');
+  await until(() => arrived(backend, 'kingdomRevoke') === 1, 'the revoke request');
+  await page.click('[data-a="signout"]');
+  await signInHere(page, 'mod'); // the address is still #kingdom/9,3, so the moderator sees that plot
+  await page.waitForFunction(() => document.querySelector('#kp-title')?.textContent === 'Plot 9, 3' && !document.querySelector('[aria-busy="true"]'));
+  await settle(page);
+  const before = byAccount(backend, ACCOUNTS.mod);
+  release(); // the revoke commits now
+  await page.waitForTimeout(500); await settle(page);
+  assert.equal(backend.plots.some((p) => p.x === 9 && p.y === 3), false, "the server's transaction stands");
+  assert.equal(byAccount(backend, ACCOUNTS.mod), before, 'no read for the moderator from the old change');
+  assert.ok(!(await page.textContent('body')).includes('Kingdom is revoked'), 'no success shown to the moderator');
+  assert.equal(await page.textContent('#alerts'), '', 'and no alert');
+  assert.match(await page.textContent('#admin'), new RegExp(`Claimed by ${NAME}`), "the moderator's record is their own read");
+  await done(ctx);
+});
+
+test('K4-16 after the question, a change no longer allowed (Kingdoms closed meanwhile) is not sent', async () => {
+  const ctx = await console_();
+  const { page, backend } = ctx;
+  await showPlot(page, 20, 20);
+  await page.fill('#kp-reserve-reason', 'Event plaza');
+  const release = backend.hold('kingdomReserve');
+  await page.click('#kp-reserve button[type=submit]');
+  await page.waitForSelector('#confirm[open]');
+  await page.click('#confirm [data-r="ok"]');
+  await until(() => arrived(backend, 'kingdomReserve') === 1, 'the reserve request');
+  await showPlot(page, 9, 3);
+  await page.fill('#kp-revoke-reason', 'Abandoned test account');
+  await page.click('#kp-revoke button[type=submit]');
+  await page.waitForSelector('#confirm[open]');
+  await page.fill('#confirm-input', NAME);
+  backend.adminKingdoms = 'closed';
+  release(); // refused (not open): the capability is read again, and Kingdoms are closed
+  await page.waitForFunction(() => /Kingdoms are closed/.test(document.querySelector('#kp-state')?.textContent || ''));
+  await page.click('#confirm [data-r="ok"]');
+  await page.waitForTimeout(400); await settle(page);
+  assert.equal(arrived(backend, 'kingdomRevoke'), 0, 'the revoke was not sent');
+  assert.ok(backend.heroes[PLAYER].kingdom);
+  await done(ctx);
+});
+
+// K1-ADM02
+test('K4-17 a change answered after another plot is opened leaves that plot, and what was typed in it, alone', async () => {
+  const ctx = await console_();
+  const { page, backend } = ctx;
+  await showPlot(page, 20, 20);
+  await page.fill('#kp-reserve-reason', 'Event plaza');
+  const release = backend.hold('kingdomReserve');
+  await page.click('#kp-reserve button[type=submit]');
+  await page.waitForSelector('#confirm[open]');
+  await page.click('#confirm [data-r="ok"]');
+  await until(() => arrived(backend, 'kingdomReserve') === 1, 'the reserve request');
+  await showPlot(page, 21, 21);
+  await page.fill('#kp-reserve-reason', 'Second plaza');
+  const reads = arrived(backend, 'kingdomPlot');
+  release();
+  await page.waitForTimeout(500); await settle(page);
+  assert.equal(await page.textContent('#kp-title'), 'Plot 21, 21', 'the newer plot stays');
+  assert.equal(await page.inputValue('#kp-reserve-reason'), 'Second plaza', 'and what was typed in it');
+  assert.equal(arrived(backend, 'kingdomPlot'), reads, 'plot 20, 20 was not read again over it');
+  assert.equal(backend.plots.find((p) => p.x === 20 && p.y === 20)?.status, 'reserved');
+  await done(ctx);
+});
+
+test('K4-18 a change stays guarded until its recovery ends, even while the capability is read again slowly', async () => {
+  const ctx = await console_();
+  const { page, backend } = ctx;
+  await showPlot(page, 20, 20);
+  backend.adminKingdoms = 'closed';
+  const slowMeta = backend.holdOnce('meta');
+  await page.fill('#kp-reserve-reason', 'Event plaza');
+  await page.click('#kp-reserve button[type=submit]');
+  await page.waitForSelector('#confirm[open]');
+  await page.click('#confirm [data-r="ok"]');
+  await until(() => arrived(backend, 'meta') === 2, 'the capability read after the refusal');
+  await page.click('#kp-reserve button[type=submit]'); // the form drawn before the refusal is still there
+  await page.waitForTimeout(300);
+  assert.equal(await has(page, '#confirm[open]'), false, 'no second question');
+  assert.match(await page.textContent('body'), /Still working on the last change to this plot/);
+  slowMeta();
+  await page.waitForFunction(() => /Kingdoms are closed/.test(document.querySelector('#kp-state')?.textContent || ''));
+  await settle(page);
+  assert.equal(arrived(backend, 'kingdomReserve'), 1);
+  await done(ctx);
+});
+
+// K1-ADM03
+test('K4-19 losing the capability closes the section: a rollback to v8, or meta failing; nothing more is asked', async () => {
+  const one = await console_();
+  await showPlot(one.page, 9, 3);
+  one.backend.adminKingdoms = 'v8'; // the function rolled back
+  await one.page.click('[data-a="kpReload"]');
+  await one.page.waitForFunction(() => document.querySelector('[aria-current="page"]')?.dataset.v === 'dashboard');
+  await settle(one.page);
+  assert.equal(await one.page.locator('[data-a="tab"][data-v="kingdoms"]').count(), 0, 'no Kingdoms in the navigation');
+  const n = kCalls(one.backend).length;
+  await one.page.waitForTimeout(500);
+  assert.equal(kCalls(one.backend).length, n, 'no further Kingdom request');
+  await done(one);
+
+  const two = await console_();
+  await showPlot(two.page, 20, 20);
+  two.backend.adminKingdoms = 'closed';
+  two.backend.failNext('meta', 500, 'Server error');
+  await two.page.fill('#kp-reserve-reason', 'Event plaza');
+  await two.page.click('#kp-reserve button[type=submit]');
+  await two.page.waitForSelector('#confirm[open]');
+  await two.page.click('#confirm [data-r="ok"]');
+  await two.page.waitForFunction(() => document.querySelector('[aria-current="page"]')?.dataset.v === 'dashboard');
+  await settle(two.page);
+  assert.equal(await two.page.locator('[data-a="tab"][data-v="kingdoms"]').count(), 0, 'unconfirmed is not closed: the section goes');
+  assert.equal(arrived(two.backend, 'kingdomPlot'), 1, 'the plot was not read again');
+  await done(two);
+});
+
+test('K4-20 a late capability answer for an ended sign-in is dropped', async () => {
+  const backend = new FakeBackend({ hero: makeHero(), adminKingdoms: 'v8', kingdoms: { plots: [{ x: 3, y: 2, status: 'claimed', name: 'Alda' }] } });
+  const ctx = await env.page({ backend, viewport: { width: 1440, height: 900 }, mobile: false });
+  const { page } = ctx;
+  const slowMeta = backend.holdOnce('meta'); // the admin's capability read is slow
+  await signIn(page, env.url, 'admin', '/admin.html#kingdoms');
+  await until(() => arrived(backend, 'meta') === 1, "the admin's meta");
+  await signOutElsewhere(ctx);
+  await signInHere(page, 'mod'); // with v8: no capability
+  await settle(page);
+  backend.adminKingdoms = 'open';
+  slowMeta(); // the admin's answer, now with Kingdoms open, arrives last
+  await page.waitForTimeout(500); await settle(page);
+  assert.equal(await page.locator('[data-a="tab"][data-v="kingdoms"]').count(), 0, 'the moderator has no Kingdoms section from it');
+  assert.deepEqual(kCalls(backend), [], 'and no Kingdom request');
+  await done(ctx);
+});
