@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 
 import { SUPABASE_URL } from '../../public/js/config.js';
-import { DEFAULT_ZONES, loadZones } from '../../public/js/data/zones.js';
+import { DEFAULT_ZONES, loadZones, ZONES } from '../../public/js/data/zones.js';
 import { createCharacter, ensureCharacter, applyRegen, spendLevel, addItem, maxHp } from '../../public/js/engine/character.js';
 import { move, walkTo, usePortal, heal } from '../../public/js/engine/world.js';
 import { startBattle, battleAction } from '../../public/js/engine/battle.js';
@@ -192,8 +192,14 @@ export class FakeBackend {
   // kingdoms: open Kingdoms in the fake game function, with its test configuration, and seed the plot
   // table: { plots: [{ x, y, status, character_id? , name? }] }. Plots named by `name` belong to that
   // other hero. Every Kingdom request is recorded in kingdomCalls, closed or open.
-  constructor({ hero = makeHero(), players = [], chat = [], events = [], seed = 7, zones = [], quests = null, reports = null, worldEvents = [], activeHunts = [], news = [], kingdoms = null } = {}) {
+  // adminKingdoms (K1-4): the admin function's Kingdoms capability, 'v8' (the deployed function),
+  // 'closed' or 'open'; see adminKingdom() for its Kingdom actions.
+  constructor({ hero = makeHero(), players = [], chat = [], events = [], seed = 7, zones = [], quests = null, reports = null, worldEvents = [], activeHunts = [], news = [], kingdoms = null, adminKingdoms = null } = {}) {
     this.kingdomsOpen = !!kingdoms;
+    // The admin function's Kingdoms capability (K1-4, Q3): 'v8' (the deployed function: no kingdoms
+    // key in meta, and no Kingdom actions), 'closed' or 'open'. By default, open with kingdoms, else v8.
+    this.adminKingdoms = adminKingdoms || (kingdoms ? 'open' : 'v8');
+    this.adminKingdomCalls = []; // { action, args, account }: every Kingdom request to the admin function
     this.kingdomCalls = []; // { kind: 'read' | 'owners' | 'finder' | 'action', ... }
     this.nextPlotId = 101;
     this.ownerNames = {}; // character id -> name, for owners who aren't the signed-in hero
@@ -222,6 +228,7 @@ export class FakeBackend {
     this.calls = [];
     this.failures = []; // { action, status, message, once }
     this.holds = {}; // action -> promise: requests for it wait until released
+    this.onceHolds = {}; // action -> promise: only the next request for it waits (holdOnce())
     this.readHolds = []; // Kingdom reads held with their answer as it was when asked (holdRead())
     this.offline = false;
     this.sockets = [];
@@ -286,6 +293,14 @@ export class FakeBackend {
   // Hold only sign-ins (password grants), or only the token check (GET /auth/v1/user, which
   // supabase-js's setSession() makes under its lock), until the returned function is called.
   holdStep(step) { let release; this.stepHolds[step] = new Promise((r) => { release = r; }); return () => { delete this.stepHolds[step]; release(); }; }
+
+  // Keep only the next request for an action waiting until the returned function is called; later
+  // ones answer at once (K1-4: a slow read overtaken by a newer one). Answered with the state at release.
+  holdOnce(action) {
+    let release;
+    this.onceHolds[action] = new Promise((r) => { release = r; });
+    return () => { delete this.onceHolds[action]; release(); };
+  }
 
   // Keep requests for an action waiting (a slow server) until the returned function is called.
   hold(action) {
@@ -675,8 +690,92 @@ export class FakeBackend {
         log({ action: 'zone:reset', target_name: def.name, details: { id: a.id } });
         return { zones: rows };
       }
+      // Kingdoms K1-4: the console's capability (Q3), as supabase/functions/admin/index.ts reports it.
+      // adminKingdoms 'v8' is the deployed function, whose meta has no kingdoms key.
+      case 'meta': {
+        const out = { zones: Object.values(ZONES).map((z) => ({ id: z.id, name: z.name, size: z.size })), items: [] };
+        if (this.adminKingdoms !== 'v8') out.kingdoms = { version: 1, open: this.adminKingdoms === 'open' };
+        return out;
+      }
+      case 'kingdomPlot': case 'kingdomSearch': case 'kingdomRevoke': case 'kingdomReserve': case 'kingdomUnreserve':
+        return this.adminKingdom(user, action, a, { err, requireAdmin, log });
       default: return { ok: true };
     }
+  }
+
+  // The admin function's Kingdom actions (supabase/functions/admin/index.ts, K1-2) on the same plots
+  // as the fake game function. Reads for any staff member; the changes are admin only, refused while
+  // closed, checked as the database functions check them, and each writes its audit entry.
+  adminKingdom(user, action, a, { err, requireAdmin, log }) {
+    this.adminKingdomCalls.push({ action, args: structuredClone(a), account: user.id });
+    if (this.adminKingdoms === 'v8') throw err('Unknown action.');
+    const coord = (v) => { const n = Number(v); if (!Number.isInteger(n) || n < 1 || n > 100) throw err('Plot coordinates are 1 to 100.'); return n; };
+    const instance = (v) => { const n = Number(v); if (!Number.isSafeInteger(n) || n < 1) throw err('Reload the plot and try again.'); return n; };
+    const reason = (v) => { const t = String(v || '').trim().slice(0, 300); if (!t) throw err('Give a reason.'); return t; };
+    const open = () => { if (this.adminKingdoms !== 'open') throw err('Kingdoms aren’t open yet.', 409); };
+    const stale = () => err('That plot has changed since you looked. Reload it and check again.', 409);
+    const ownerOf = (cid) => {
+      const acct = Object.keys(this.charIds).find((k) => this.charIds[k] === cid);
+      const hero = acct && this.heroes[acct];
+      if (hero) return { owner: { id: cid, name: hero.name, level: hero.level }, kingdom: hero.kingdom ?? null };
+      if (this.ownerNames[cid]) return { owner: { id: cid, name: this.ownerNames[cid], level: 10 }, kingdom: null, other: true };
+      return { owner: null, kingdom: null };
+    };
+    const row = (pl) => ({ id: pl.id, x: pl.x, y: pl.y, status: pl.status, character_id: pl.character_id, claimed_at: pl.claimed_at });
+    if (action === 'kingdomPlot') {
+      const x = coord(a.x), y = coord(a.y);
+      const pl = this.plots.find((p) => p.x === x && p.y === y);
+      if (!pl) return { plot: null };
+      if (!pl.character_id) return { plot: row(pl), owner: null, kingdom: null };
+      const o = ownerOf(pl.character_id);
+      // Another hero (no fake hero row): their Kingdom is the plot, as I-1 has it.
+      return { plot: row(pl), owner: o.owner, kingdom: o.other ? { plot: { x, y }, claimedAt: 1 } : o.kingdom };
+    }
+    if (action === 'kingdomSearch') {
+      const q = String(a.q || '').trim().toLowerCase();
+      let plots = this.plots.map(row);
+      if (q) plots = plots.filter((p) => p.character_id && (ownerOf(p.character_id).owner?.name || '').toLowerCase().includes(q));
+      else plots.sort((p, r) => String(r.claimed_at || '').localeCompare(String(p.claimed_at || '')));
+      return { plots: plots.slice(0, 50).map((p) => ({ ...p, owner: p.character_id ? ownerOf(p.character_id).owner : null })) };
+    }
+    requireAdmin();
+    open();
+    const x = coord(a.x), y = coord(a.y);
+    if (action === 'kingdomRevoke') {
+      const plotId = instance(a.plotId);
+      const cid = String(a.characterId || '');
+      if (!cid) throw err('Reload the plot and try again.');
+      const why = reason(a.reason);
+      const i = this.plots.findIndex((p) => p.x === x && p.y === y && p.status === 'claimed' && p.id === plotId && p.character_id === cid);
+      if (i < 0) {
+        if (this.plots.some((p) => p.x === x && p.y === y)) throw stale();
+        throw err('That plot isn’t claimed.', 409);
+      }
+      this.plots.splice(i, 1);
+      const acct = Object.keys(this.charIds).find((k) => this.charIds[k] === cid);
+      if (acct && this.heroes[acct]) delete this.heroes[acct].kingdom; // the same transaction (I-1)
+      log({ action: 'kingdom:revoke', target_id: cid, target_name: ownerOf(cid).owner?.name || null, details: { x, y, plot_id: plotId, reason: why, refund: 0, at_ms: Date.now() } });
+      return { refund: 0 };
+    }
+    if (action === 'kingdomReserve') {
+      const why = reason(a.reason);
+      if (this.plots.some((p) => p.x === x && p.y === y)) throw err('That plot is already taken or reserved.', 409);
+      const id = this.nextPlotId++;
+      this.plots.push({ id, x, y, status: 'reserved', character_id: null, claimed_at: new Date().toISOString() });
+      log({ action: 'kingdom:reserve', details: { x, y, plot_id: id, reason: why } });
+      return { plotId: id };
+    }
+    // kingdomUnreserve
+    const plotId = instance(a.plotId);
+    const why = reason(a.reason);
+    const i = this.plots.findIndex((p) => p.x === x && p.y === y && p.id === plotId && p.status === 'reserved');
+    if (i < 0) {
+      if (this.plots.some((p) => p.x === x && p.y === y)) throw stale();
+      throw err('That plot isn’t reserved.', 409);
+    }
+    this.plots.splice(i, 1);
+    log({ action: 'kingdom:unreserve', details: { x, y, plot_id: plotId, reason: why } });
+    return { ok: true };
   }
 
   // Another tab released the player's Kingdom and claimed a plot again (a new ownership instance).
@@ -906,6 +1005,8 @@ export async function attach(context, backend, baseUrl) {
         const body = JSON.parse(req.postData() || '{}');
         backend.calls.push({ fn: fnName, action: body.action, args: body.args });
         if (backend.holds[body.action]) await backend.holds[body.action];
+        const once = backend.onceHolds[body.action];
+        if (once) { delete backend.onceHolds[body.action]; await once; }
         const fail = backend.failures.findIndex((f) => f.action === body.action);
         if (fail >= 0) {
           const f = backend.failures.splice(fail, 1)[0];

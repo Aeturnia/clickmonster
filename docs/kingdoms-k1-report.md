@@ -465,7 +465,7 @@ It asked for two corrections. **The owner authorized them, and ratified two thin
 
 ## 3. K1-3: the player's interface (authorized by the owner, 2026-11-26)
 
-**Status: implemented, with the review corrections K1-UI01 to K1-UI03 (3.6) and the re-review corrections K1-UI01a and K1-UI03a (3.7), at its final review gate.**
+**Status: accepted and merged** as PR #119 (`e31a946`, 2026-11-26), after its final independent review at `672e86e`, with zero outstanding findings. `main`'s CI run 45902673857 passed. The review corrections are in 3.6, and the re-review corrections in 3.7.
 - **Kingdoms stay closed as shipped.** With the shipped constants, nothing of Kingdoms is drawn, and no Kingdom request leaves the browser. Production has no Kingdom table yet (the rollout is K1-5), and `game` is still v15.
 - **No server change,** and no deploy.
 
@@ -687,3 +687,223 @@ It asked for two narrow corrections. **The owner authorized them** (2026-11-26),
 **Tracked separately:**
 - **The 120-second zone-edit read** (3.6, Not covered) is now **#120**, with a backlog entry in `docs/backlog.md`.
 - **The owner's instruction (2026-11-26):** track it only. **Not authorized, and not scheduled.** K1-3 doesn't change it.
+
+## 4. K1-4: the admin console (authorized by the owner, 2026-11-26)
+
+**Status: implemented, with the review corrections K1-ADM01 to K1-ADM03 (4.6) and the re-review correction K1-ADM02a (4.7), at its final review gate.**
+- **The owner authorized it** with PR #119's merge, conditional on `main`'s CI, which passed (run 45902673857).
+- **Client only:** no server or database change, and no deploy. It works against the deployed `admin` v8: with it, the console shows no Kingdoms section and asks nothing about Kingdoms.
+- **Kingdoms stay closed.**
+
+### 4.1 What it adds
+
+**`public/js/admin-kingdoms.js`, new** (plan 2.4). The section is in the World group as "Kingdoms".
+- **Find a plot** by its coordinates, or **find by owner** (part of a hero's name). Without a name, it lists the most recent plots, up to 50.
+- **A plot's record:**
+  - free;
+  - reserved, with its reservation id;
+  - or claimed by a hero (a link to their player record), with their level, since when, and the ownership id.
+  - **If the hero's own record doesn't put their Kingdom on this plot,** the record says so, and points to the I-1 check (`supabase/checks/kingdom_verify.sql`).
+  - "Reload plot".
+- **The changes,** admin only and only while open. Each needs a reason, checked inline before anything is asked or sent:
+  - **revoke** a claimed plot: **tier 1, type the hero's name.** The question says the plot is freed and the hero loses their Kingdom, and that nothing is refunded except the gold paid for a building still under construction;
+  - **reserve** a free plot, and **unreserve** a reserved one: tier 3, a normal question (an implementation choice, 4.4).
+- **The identity shown is the identity sent.** The form carries the plot as shown: coordinates, instance id and, for a revoke, the owner's character id and name. They are taken when the form is sent, before the question. They are never looked up again, and never replaced.
+- **Single flight:** each change runs under `kingdom:<x>,<y>:<op>` in `st.pendingForms`. Another press for the same plot while one is on its way says "Still working on the last change to this plot", and sends and asks nothing.
+- **After any change, done or refused,** the plot is read again, with the list.
+  - **A refusal stays on screen** as an alert until dismissed, because the form may be gone once the plot is read again.
+  - **It is never retried.** A plot that changed hands (`MRSTL`, 409) shows its new instance, and the staff member asks again if they still mean it.
+  - **"Kingdoms aren't open yet"** also reads the capability again, so the section turns read-only.
+- **Reads are numbered** (the plot, the list, the capability). An answer is used only while its read is the latest of its kind, and only for the sign-in it was asked from: signing out, or in, replaces the section's state.
+
+**Q3, the capability** (the K1-2 review's carry-forward):
+- **When:** at sign-in, before the first route, the console asks the `admin` function for `meta`.
+- **Only `meta.kingdoms`** (`{ version, open }`) turns the section on.
+- **Its absence** (the deployed v8's `meta` has no such key), **a refusal, or no connection** all mean no capability:
+  - no nav entry;
+  - `#kingdoms` and `#kingdom/<x>,<y>` fall back to the overview;
+  - no Kingdom line on a player record;
+  - **no Kingdom request,** and nothing said about it.
+- **While closed:** the section reads, and says that the changes open with Kingdoms.
+- **While open:** every staff member reads. **Admins change, and moderators are told that only admins can.**
+- **The server's `open` decides,** never the browser's `kingdomsOpen()`: Netlify and the functions deploy separately.
+- **It never relies on a hidden control.** The function refuses a moderator's change (403) and any change while closed (409) anyway.
+
+**`public/js/admin.js`:**
+- the section in the navigation, only with the capability;
+- the routes `#kingdoms` and `#kingdom/<x>,<y>`;
+- `meta` at sign-in, and the reset at sign-in and sign-out;
+- **`call()` keeps the HTTP status on its error,** so a 409 can be told apart. It is a safe addition for the other callers;
+- **the audit log's text** for `kingdom:revoke`, `kingdom:reserve` and `kingdom:unreserve`: the plot, the instance, any refund and the reason, instead of raw JSON;
+- **the player record:** "Kingdom on plot x, y", with a link to the plot. It sends nothing, because the record already carries the hero's `kingdom`.
+
+**The harness, `tests/ui/harness.mjs`:**
+- **`new FakeBackend({ adminKingdoms })`:** `'v8'`, `'closed'` or `'open'`. The default is open with `kingdoms`, otherwise v8, so every existing admin test runs against the deployed shape.
+- **The fake admin function's Kingdom actions** mirror `supabase/functions/admin/index.ts` and the database functions, on the same plots as the fake game function:
+  - reads for any staff member;
+  - changes for admins only (403), refused while closed (409);
+  - the coordinate, instance and reason checks;
+  - `MRSTL`, `MRNOP` and `MRPLT`, in the database's order;
+  - a revoke also removes the hero's Kingdom (I-1);
+  - an audit entry with the database's `details`.
+  - With `'v8'`, `meta` has no `kingdoms`, and the Kingdom actions are "Unknown action.".
+- **`adminKingdomCalls`** records each Kingdom request to the admin function, with its account.
+- **`holdOnce(action)`** holds only the next request of an action.
+
+**`tools/admin-shots.mjs`:** a second pass, with Kingdoms open and then closed: the section, a claimed, a reserved and a free plot, and the revoke question. `ADMIN_SHOTS_KINGDOMS=0` skips it, for capturing a checkout from before K1-4.
+
+### 4.2 The tests (`tests/ui/admin-kingdoms.test.mjs`, 13)
+
+| Test | What it proves |
+|---|---|
+| K4-1 | **The deployed function (v8):** no section, a link to a plot falls back to the overview, `meta` is asked, **no Kingdom request,** no alert, and no Kingdom line on the hero's record |
+| K4-2 | **Closed:** the note, the recent plots, a claimed and a free plot's records, no change forms. The hero's record shows their Kingdom and links to its plot (`#kingdom/9,3`). No change is asked for |
+| K4-3 | **Open, a moderator:** the note, records, no change forms, no change requests |
+| K4-4 | **Revoke:** no reason gives an inline error and no question. Then tier 1: the confirm is disabled until the name is typed. **The request is the plot shown:** `{ x, y, plotId, characterId, reason }`. The hero's Kingdom goes with the plot, the plot reads as free, there's a success message, and the audit entry has the database's `details`, readable in the Audit log |
+| K4-5 | **Reserve, then unreserve:** normal questions. The unreserve names the reservation shown. Both are audited, in order |
+| K4-6 | **A stale revoke:** the plot changed hands to a new instance. **One request, with the instance shown,** refused with "That plot has changed since you looked". The plot is read again and shows the new instance, the new Kingdom is intact, nothing is audited, and **nothing is sent again** |
+| K4-7 | **A second press** while a reserve is on its way: no second question, no second request, "Still working…". One audit entry |
+| K4-8 | **Kingdoms closed meanwhile:** the reserve is refused, the alert stays, the section turns read-only, and nothing is sent again |
+| K4-9 | **A slow plot read overtaken by a newer one** never replaces it, and the address stays the newer plot's |
+| K4-10 | **A plot read on its way at sign-out:** another staff member signs in on the same page. Straight away, and again after the old answer lands, they see no plot record and no loading from it |
+| K4-11 | **A link to a plot** (`#kingdom/3,2`) opens it after the capability is known |
+| K4-12 | **At 320 px:** no sideways scrolling, and axe finds nothing on a claimed plot's record |
+| K4-13 | **A slow owner search overtaken by a newer one** never replaces its results or its note |
+
+**axe, 0 violations of any impact:** in K4-2 (closed, a free plot), K4-4 (a claimed plot, and the revoke question) and K4-12 (320 px).
+
+**Mutation checks** (each undoes one guard, and runs only the tests meant to catch it, with a 4-minute limit; the files restored, checked by md5):
+
+| Mutation | Caught by |
+|---|---|
+| A1: the capability ignored (Kingdoms always available) | K4-1: a link to a plot opened the section |
+| A2: closed ignored | K4-2: a revoke was offered |
+| A3: the role ignored | K4-3 |
+| A4: the instance id looked up again just before a revoke | K4-6: the revoke succeeded on the new instance |
+| A5: a 409 retried | K4-6: two requests |
+| A6: no single flight | K4-7: a second question opened |
+| A7: the capability not read again after "not open" | K4-8: the section stayed writable |
+| A8: no read number for the plot | K4-9: the slower plot replaced the newer one |
+| A9: no reset at sign-in or sign-out | K4-10: "no plot record, or its loading, carried over" |
+| A10: no reason check | K4-4: no inline error |
+| A11: the player record's line without the capability | K4-1 |
+| A12: no read number for the list | K4-13: the older search's results replaced the newer |
+
+**The restored files** matched their md5s before the run.
+
+**Found by the mutations:**
+- **A9 first failed through a `settle()` timeout,** before the assertion that names it. K4-10 now checks straight after the second sign-in, before waiting, and A9 fails on that assertion.
+- **The list's read number had no test.** K4-13 was added, and A12 is caught by it.
+
+### 4.3 Evidence (local, the owner's laptop, 2026-11-26)
+
+- **`tests/ui/admin-kingdoms.test.mjs`:** 13 of 13 (K4-1 to K4-12, then K4-10's added check and K4-13, run on their own). **The existing admin files** (`admin.test.mjs`, `admin-console.test.mjs`, `admin-news.test.mjs`): 47 of 47 with the new startup `meta` request.
+- **Engine:** 110 of 110.
+- **The full browser suite:** **355 of 355** (343, plus K4-1 to K4-12), in two runs, with the local stack stopped, before K4-13 was added. With K4-13 it is 356; CI's browser job is that run.
+- **The admin screens** (`tools/admin-shots.mjs`, at 320, 390, 768, 1024 and 1440):
+  - **The deployed shape (v8), `main` (`e31a946`, a temporary worktree) against this branch,** with the Kingdom pass off on both: **53 of 60 byte-identical.**
+    - **The other 7** are Events and rates, and Hunts, whose fixtures take their times from the clock. On 390 px Events and rates, the only difference is the event's end time (5:34:34 PM against 5:35:47 PM).
+    - **axe: 0 violations of any impact,** on both.
+    - **The one layout flag,** the 320 px zone editor's 8 elements off the right edge, is the same on both.
+  - **The Kingdoms pass** (open, then closed): 35 screens. **axe 0 violations of any impact.** No horizontal overflow, nothing off the right edge, no page errors, and no unexpected requests.
+    - **The first capture found 3 targets under 24 px wide at 1024 and 1440:** the list's plot buttons ("9, 3", 23 px).
+    - **The label is now "Plot 9, 3",** and the recapture had none under 24 px.
+- **The real `admin` function and database** aren't run against the console here. The function is unchanged, and its Kingdom actions are tested on the local stack (`tests/db/kingdoms-api.test.mjs`, K1-2). The console's requests use the function's argument names (`x`, `y`, `plotId`, `characterId`, `reason`), and the fake checks them as the function does. CI runs the database suite.
+
+### 4.4 Implementation choices and deviations, for review
+
+- **Reserve and unreserve are tier 3** (a normal question). They're reversible, and they don't touch a hero. **Revoke is tier 1**, as the scope says.
+- **Every change needs a reason.** The function requires one (`reasonOf()`); the console asks for it inline first.
+- **The section is in the World group,** after Economy.
+- **The player record's Kingdom line** is in `admin.js`, not the module, though the module draws it (`playerLine()`). It's one line and a link, and it sends nothing.
+- **The list without a name** is the function's own: the 50 most recent by claim time.
+- **A record whose hero doesn't record that plot** says so, rather than offering a different action. The I-1 check is the authority.
+
+- **Two local full browser runs, not three** (plan section 6), given the laptop's memory. K1-3's reviews accepted this for K1-3; it is asked again here. CI's browser job is the further run.
+- **No local `npm run test:db`** (plan section 6). Nothing on the server or in the database changed; CI's database job runs it.
+
+### 4.5 Not done in K1-4
+
+- **Correcting a Kingdom's stock or buildings** through the hero editor (scope 5.10). K-1 has neither; it's K-2's. The hero editor accepts a fixed list of fields, and a Kingdom isn't one, so it can't break I-1.
+- **The rollout (K1-5)** and activation. Kingdoms stay closed.
+- **The local database suite:** not run, because nothing on the server changed. CI runs it.
+- **The capability read's number** has no test of its own. A late `meta` answer for an earlier sign-in is dropped by the state replacement at sign-in and sign-out, which A9 tests.
+- **Real devices and screen readers:** not tested.
+
+### 4.6 Review corrections (the review of `4849cc5`, 2026-11-26)
+
+**The review accepted:**
+- the administration design;
+- every implementation choice in 4.4, including tier 3 for reserve and unreserve and tier 1 for revoke;
+- the mandatory reasons;
+- Q3's ordinary behaviour and the roles;
+- the identities sent;
+- no automatic retry;
+- the read numbers;
+- the audit-log text;
+- the screens and axe evidence, within their limits;
+- the local testing deviations;
+- K1-3's closeout.
+
+It asked for three corrections about the changes' lifecycle. **The owner authorized them** (2026-11-26). They are client only.
+
+| Finding | What changed | Its tests |
+|---|---|---|
+| **K1-ADM01:** a change was not bound to the staff sign-in that started it | **The section's state object is the sign-in's identity.** `change()` takes it before the question.<br>**Signing out cancels an open question** (`cancelAsk()` in `admin.js`'s sign-out, here or from another tab), answered no.<br>**After the question,** the change goes ahead only if the sign-in is the same, changes are still allowed (`canChange()`: the capability, open, an admin), and no other change to that plot started.<br>**A change already sent, answered after the sign-in ended,** is not followed up: no message, no form cleared, no read of the plot, the list or `meta`. Its transaction may have committed on the server; that is not undone, or claimed undone.<br>**The section's changes in flight** are its own (`pending`, in its state), and `reset()` also drops its forms' errors and typed reasons, so none carry over.<br>**A sign-in whose `meta` answer comes after it ended** routes nothing (`admin.js`) | **K4-14:** another tab signs out while the revoke question is open, with the name typed. The question closes; signed in again, nothing has been sent, and the Kingdom is intact.<br>**K4-15:** a revoke on its way at sign-out, then a moderator signs in on the same page, on the same plot. The revoke commits, and the moderator gets no read, message or alert from it; their record is their own read.<br>**K4-16:** a revoke question is open while Kingdoms close (another change's refusal reads `meta` again). Confirming it sends nothing |
+| **K1-ADM02:** a change's recovery replaced a newer inspection | **The plot is read again only if it's still the one on screen** (or being read). Otherwise the newer plot, and anything typed in it, is left alone; the list is still read again.<br>**A form is cleared only after a success on the plot still shown.**<br>**The change stays pending until its recovery ends:** the capability read again after a "not open" refusal, and the plot read again. A second press meanwhile says "Still working…" and sends and asks nothing. Other plots stay independent | **K4-17:** a reserve answered after another plot is opened, with a reason typed there. That plot and the reason stay, and the first plot isn't read again over it.<br>**K4-18:** a reserve refused as not open, with the capability read held. The form drawn before the refusal opens no second question, and sends nothing |
+| **K1-ADM03:** losing the capability left the section | **When `meta` no longer reports Kingdoms** (a rollback to v8, or `meta` failing), `lose()` drops every Kingdom read on its way, empties the section's data, and falls back to the overview. The nav entry goes, and nothing more is asked.<br>**"Unknown action."** (the answer of a function without Kingdoms) from a plot or list read, or a change, reads `meta` again.<br>**Closed is not gone:** a function that reports Kingdoms closed keeps the section, read-only (K4-8) | **K4-19:** rolled back to v8, Reload plot gets "Unknown action.", and the section closes to the overview with no further Kingdom request. Then `meta` fails after a "not open" refusal: the section closes, and the plot isn't read again.<br>**K4-20:** an admin's `meta` held across another tab's sign-out and a moderator's sign-in with v8, then answered with Kingdoms open: the moderator gets no section and no Kingdom request |
+
+**Negative controls (targeted; the twelve earlier mutations weren't repeated):**
+- **On `4849cc5`** (a temporary worktree, with the new harness and tests): **6 of the 7 new tests fail.**
+  - **K4-14** to **K4-18** fail on their assertions: "the question closed with the sign-in", "no read for the moderator from the old change", "the revoke was not sent", "the newer plot stays" and "no second question".
+  - **K4-19** fails on a timeout: the section never fell back to the overview.
+  - **K4-20 passes on the old code:** the state replacement at sign-in already dropped a late `meta` answer. It's coverage the review asked for, not a regression.
+- **Mutations** (each with a 4-minute limit; the files restored, checked by md5):
+
+| Mutation | Caught by |
+|---|---|
+| B1: no `cancelAsk()` at sign-out | K4-14: "the question closed with the sign-in" |
+| B2: no eligibility check after the question | K4-16: "the revoke was not sent" |
+| B3: an ended sign-in's answer followed up | K4-15: "no success shown to the moderator" |
+| B4: the recovery reads the old plot regardless | K4-17: "the newer plot stays" |
+| B5: the change's guard released before its recovery | K4-18: "no second question" |
+| B6: `loadCap()` doesn't close the section on loss | K4-19: it never fell back to the overview |
+| B7: "Unknown action." on a read not followed up | K4-19: as B6 |
+
+**Without a test of their own:**
+- **The same-sign-in check after the question** (`mine()`): signing out always cancels the question, and the eligibility check also fails after a sign-out.
+- **`admin.js`'s check that the sign-in is unchanged before the first route:** without it, the ended sign-in's route runs for the current one and finds no section to open.
+
+Both are second lines, kept because the review asked for them explicitly.
+
+**Evidence (local, the owner's laptop, 2026-11-26):**
+- **`tests/ui/admin-kingdoms.test.mjs`:** 20 of 20. With the other admin files, 67 of 67.
+- **Engine:** 110 of 110.
+- **The full browser suite** is CI's, on this head, as the review allowed.
+- **No new screens:** no visible change, except that the section can now close to the overview.
+
+### 4.7 Re-review correction (the re-review of `d407920`, 2026-11-27)
+
+**The re-review accepted:**
+- **K1-ADM01 and K1-ADM03 are resolved,** and **Q3 is satisfied.**
+- **K1-ADM02** is accepted, apart from one precedence defect.
+- **The seven mutations, and the local testing deviations,** are accepted.
+- **The two secondary session checks** (4.6) are kept, without needing tests of their own.
+
+**The owner authorized the one correction** (2026-11-27). It is client only.
+
+| Finding | What changed | Its test |
+|---|---|---|
+| **K1-ADM02a:** while a newer plot was loading, the previous record still counted as the one being inspected | **`inspecting()`** now takes the plot being read before the record kept from the last read, as `record()` draws them. It also requires the Kingdoms section to be the one open. **`route()`** takes them in the same order | **K4-21:** plot A's reserve is held. Plot B's read starts and is held too. A's answer comes while B is loading, then B's. Plot A isn't read again; B stays the plot being inspected, with its own answer shown, and B's address; A's change was made |
+
+**Negative control** (a 4-minute limit; the file restored, checked by md5): **with the previous order in `inspecting()`, K4-21 fails on "plot 20, 20 is not read again over the plot being loaded".**
+
+**Without a test of its own:**
+- **`route()`'s order.** The address is pushed when a read ends, when only the record is left, so the order shows only if the address is written while a read is on its way.
+- **The section check in `inspecting()`.**
+
+The re-review asked for both.
+
+**Evidence (local, 2026-11-27):**
+- **The admin browser tests:** 68 of 68 (21 for Kingdoms).
+- **The full suite** is CI's, on this head.

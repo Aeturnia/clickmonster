@@ -67,8 +67,9 @@ Read these first:
   - **The K-1 plan is accepted:** `docs/kingdoms-k1-plan.md`, revision 1, merged as PR #116 (`55e41f7`, 2026-11-25), with the four owner decisions ratified and qualifications Q1 to Q4 (recorded on #83).
   - **K1-1, the database, is accepted and merged:** PR #117 (`0b9b4ab`, 2026-11-25).
   - **K1-2, the engine and the `game` and `admin` functions, is accepted and merged:** PR #118 (`6b19337`, 2026-11-26).
-  - **K1-3, the player's interface, is authorized** (2026-11-26). Its review corrections (K1-UI01 to K1-UI03) and re-review corrections (K1-UI01a, K1-UI03a) are at the final review gate. See `docs/kingdoms-k1-report.md`, section 3. Kingdoms stay closed, and nothing is deployed.
-  - **K1-4 and K1-5 are not authorized.**
+  - **K1-3, the player's interface, is accepted and merged:** PR #119 (`e31a946`, 2026-11-26), after two correction rounds (report 3.6 and 3.7). `main`'s CI run 45902673857 passed.
+  - **K1-4, the admin console, is authorized** (2026-11-26). Its review corrections (K1-ADM01 to K1-ADM03) and re-review correction (K1-ADM02a) are at the final review gate. See `docs/kingdoms-k1-report.md`, section 4. Kingdoms stay closed, and nothing is deployed.
+  - **K1-5 is not authorized.**
 - **#102, pending rewards delivered exactly once: fixed, deployed, accepted in independent review, and closed as completed** (2026-11-24, on the owner's authorization).
   - **The scope and reports:** `docs/pending-rewards-scope.md` and `docs/pending-rewards-report.md`.
   - **The implementation:** stage 1, PR #107; stage 2, PR #108. The rollout procedure is PR #109.
@@ -260,6 +261,19 @@ Read these first:
     - **The hero's own plot** is the one whose owner is the hero's character id (`my_character()`, `myCharacterId()` in `net.js`), never one matched by coordinates alone. A missing or someone else's row reads the hero again, once per mismatch, and shows Try again instead of Release.
     - **A release sends the instance id that was on screen.**
     - **Tests:** `tests/ui/kingdoms.test.mjs`, with `kingdomsOn(page)` and `new FakeBackend({ kingdoms })` in the harness. `backend.holdRead(kind)` holds one Kingdom read with its answer as it was when asked.
+  - **K1-4, the admin console** (`public/js/admin-kingdoms.js`, the World group's Kingdoms section):
+    - **Q3:** at sign-in, before the first route, the console asks `meta`. **Only `meta.kingdoms` turns the section on.** The deployed `admin` v8 has no such key; with it, a refusal or a failure, there's no section, no player-record line and **no Kingdom request**. The server's `open` decides, never the browser's `kingdomsOpen()`.
+    - **Closed:** read-only. **Open:** reads for all staff; revoke (tier 1, type the hero's name), reserve and unreserve (tier 3) for admins. Each needs a reason.
+    - **A change sends the plot as shown** (instance id, and the owner for a revoke), single-flight under `kingdom:<x>,<y>:<op>`. It stays pending until its recovery ends.
+      - **After it, done or refused,** its plot is read again only if it's still the one on screen. A plot being read counts before the record kept from the previous read (`inspecting()`).
+      - **A refusal is never retried.** A "not open" refusal or "Unknown action." reads `meta` again.
+    - **A change belongs to the sign-in that started it:**
+      - signing out (`cancelAsk()`) answers its question no;
+      - after the question, the sign-in and the permission are checked again;
+      - an answer that arrives after the sign-in ended is not followed up. The server's transaction stands.
+    - **Losing the capability** (a rollback, or `meta` failing) closes the section to the overview. Closed isn't lost.
+    - **Reads are numbered;** the section's state is replaced at sign-in and sign-out.
+    - **Tests:** `tests/ui/admin-kingdoms.test.mjs`, with `new FakeBackend({ adminKingdoms: 'v8' | 'closed' | 'open' })`. The default is open with `kingdoms`, otherwise v8.
 - **Signing out and refused sessions** (`net.js`; `docs/sign-out-report.md`):
   - **`signOut()` and `endSession()`** end this device's session only (`scope: 'local'`), with a 5 s limit. If the library errs, runs out of time or leaves a session saved, they remove `clickmonster.auth` themselves (only if it is still the session being ended), keep the message in `sessionStorage` (`clickmonster.note`) and reload. `signOut()` is the player's own; `endSession()` says "Your session has ended".
   - **Other tabs** follow a removed session through a `storage` listener.
@@ -357,7 +371,7 @@ Read these first:
 
 ```
 npm test                 # engine, entrance file checks, the first-paint tripwire, the public pages, news rules, the news page handler, the town rule, the log rules, the session rule, the pending-rewards staging rule and the Kingdom rules (110)
-npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (343)
+npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (364)
 npm run test:db          # database (pgTAP, 222: news 42, pending rewards 40, Kingdoms 140) and API/function/recovery/session/pending-rewards/Kingdom-check/Kingdom tests (63, plus 4 opt-in: 1, and the 3 closed-state checks) on the LOCAL Supabase stack, with Mailpit
 npx playwright install chromium   # once
 ```
@@ -415,7 +429,7 @@ npx playwright install chromium   # once
 - **The functions run too,** at `127.0.0.1:54321/functions/v1/<name>`. The CLI mounts each imported file when the stack starts, so after adding or moving a shared file, stop and start the stack.
 
 **`tests/ui/harness.mjs`** serves `public/` as Netlify does, as far as the tests need: a file first; then a directory's address without its slash redirected (301) to the slash form; then an address with a slash, where `x.html` exists, redirected (301) to `/x`; then `netlify.toml`'s 200 rewrites; then `x.html` for `/x`. It is a limited model: the live check is the authority for Netlify's routing. It answers every Supabase request with a fake backend built on the real engine. Any other host fails the test. supabase-js comes from `public/vendor/`; the CDN module is allowed only when `UI_PUBLIC_DIR` points at another checkout, which may be older code, and is cached in `tests/ui/.cache`. It provides:
-- **`FakeBackend({ hero, players, chat, events, zones, quests, reports, worldEvents, activeHunts })`**. Its admin actions write the audit log and refuse repeats the way `supabase/functions/admin/index.ts` does, so a duplicate request shows up as a duplicate audit entry (`backend.adminData().log`). Keep it in step when server behaviour changes. It also provides `failNext(action, status, msg)`, `hold(action)` (returns a release function) and `broadcast()` for Realtime. Recorded `calls` and `unexpected` requests are available for assertions.
+- **`FakeBackend({ hero, players, chat, events, zones, quests, reports, worldEvents, activeHunts })`**. Its admin actions write the audit log and refuse repeats the way `supabase/functions/admin/index.ts` does, so a duplicate request shows up as a duplicate audit entry (`backend.adminData().log`). Keep it in step when server behaviour changes. It also provides `failNext(action, status, msg)`, `hold(action)` (returns a release function), `holdOnce(action)` (only the next request) and `broadcast()` for Realtime. Recorded `calls` and `unexpected` requests are available for assertions.
 - **Test accounts:** `ACCOUNTS.player`, `admin`, `mod` (a moderator) and `fresh`.
 - **Auth:** `savedSession(acct, expiresIn)` builds a stored session to seed `localStorage` (a negative `expiresIn` gives an expired one). Every access token is distinct (a `jti` counter). Refresh tokens are `refresh-<id>`; add one to `backend.revoked` to make the server refuse it. `backend.staleTokens = n` refuses the next n game calls, for one request at a time. For concurrent refusals, use `backend.expireIssuedTokens({ together: n })`: it refuses by token, answers the first n refusals together, and records `backend.tokenLog`. `backend.authCalls` lists the grant types requested, and `/auth/v1/signup` answers as with email confirmation on.
 - **Fixtures:** `makeHero()`, `bigZone(n)`, `townLairZone()` (a lair on the town tile), `fixedQuest()`, `ADMIN_CHAT`/`ADMIN_REPORTS`. `makeHero()` stands in Bramblebrook's village (5, 5), where no roaming monsters can be fought (F2): tests that fight use `makeHero({ y: 4 })` or step north first, and choose with `#mon-select`.
