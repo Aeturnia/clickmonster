@@ -848,3 +848,43 @@ for (const [w, scale] of [[390, null], [320, '200%']]) {
     await done(ctx);
   });
 }
+
+// ------------------------------------------------------------ #113: a hunt's attack plays only its own exchange
+// Each attack in a world-boss hunt plays, and announces, only the lines it added to the log, not the
+// whole hunt again. A hunt has no monsterId: it is identified by its hunt id (#113).
+test('#113 each attack in a world-boss hunt plays and announces only its own exchange, not the whole hunt again', async () => {
+  const ctx = await game({ edit: BIG, activeHunts: [BIG_HUNT()] });
+  const { page } = ctx;
+  await intoHunt(page);
+  // Record every float added to the fight, and every announcement made to screen readers.
+  await page.evaluate(() => {
+    window.__floats = [];
+    window.__said = [];
+    new MutationObserver((muts) => {
+      for (const n of muts.flatMap((m) => [...m.addedNodes])) if (n.nodeType === 1 && n.classList.contains('float')) window.__floats.push(n.className);
+    }).observe(document.getElementById('main'), { childList: true, subtree: true });
+    const sr = document.getElementById('sr-status');
+    new MutationObserver(() => { if (sr.textContent) window.__said.push(sr.textContent); }).observe(sr, { childList: true, characterData: true, subtree: true });
+  });
+  const fxKinds = new Set(['player', 'monster', 'miss']);
+  const attack = async () => {
+    const before = await page.evaluate(() => window.clickmonster.char.battle.log.length);
+    await page.evaluate(() => { window.__floats = []; window.__said = []; });
+    await tap(page, '[data-a="melee"]');
+    await page.waitForTimeout(1200); // every float of the exchange has started (260 ms apart)
+    return page.evaluate((n) => ({
+      added: window.clickmonster.char.battle.log.slice(n),
+      floats: window.__floats.length,
+      said: window.__said.slice(),
+    }), before);
+  };
+  const first = await attack();
+  assert.ok(first.added.length > 0, 'the first attack added an exchange');
+  const second = await attack();
+  assert.ok(second.added.length > 0, 'the second attack added an exchange');
+  const expectedFloats = second.added.filter((e) => fxKinds.has(e.kind)).length;
+  assert.equal(second.floats, expectedFloats, `the second attack floats only its own exchange (${expectedFloats}), not the hunt so far`);
+  assert.deepEqual(second.said, [second.added.map((e) => e.text).join(' ')], 'and announces only its own exchange');
+  for (const e of first.added) assert.ok(!second.said.join(' ').includes(e.text) || second.added.some((x) => x.text === e.text), 'nothing of the first attack is announced again');
+  await done(ctx);
+});

@@ -85,7 +85,8 @@ Read these first:
   - **The live checks** (report 4.4): the smoke check and a hunt reward delivered once passed.
   - **The refused action wasn't checked in production.** The owner approved the real-stack integration tests instead. Don't describe it as a production result.
 - **#105, quest completion before the hero's save:** tracked, not authorized.
-- **#113, a hunt's replayed effects, and #114, a hunt's hidden reward notices:** both found in #102's play test, tracked in the backlog, and not authorized. #113 is for after Kingdoms.
+- **#113, a hunt's replayed effects:** authorized after K-1 closed (2026-11-27), and fixed at its review gate. A battle's identity is typed (`battleKey()`), so a hunt attack plays and announces only its own exchange.
+- **#114, a hunt's hidden reward notices:** found in #102's play test, tracked in the backlog, and not authorized.
 
 - **UI modernization Phases 1–4 are complete and merged into `main`.** Phase 4 (the admin console) was approved in its final independent review at `a8d9dc6` and merged as PR #13 (`baa75d9`). All four review findings, P4-01 to P4-04, are closed.
 - **The desktop layout milestone is complete and merged into `main`** (2026-11-13). It was scoped in `docs/desktop-scope.md` (PR #17), with the owner's decisions in its section 4.
@@ -379,7 +380,7 @@ Read these first:
 
 ```
 npm test                 # engine, entrance file checks, the first-paint tripwire, the public pages, news rules, the news page handler, the town rule, the log rules, the session rule, the pending-rewards staging rule and the Kingdom rules (110)
-npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (364)
+npm run test:ui          # browser UI tests: Playwright + axe, against a fake backend (365)
 npm run test:db          # database (pgTAP, 222: news 42, pending rewards 40, Kingdoms 140) and API/function/recovery/session/pending-rewards/Kingdom-check/Kingdom tests (63, plus 4 opt-in: 1, and the 3 closed-state checks) on the LOCAL Supabase stack, with Mailpit
 npx playwright install chromium   # once
 ```

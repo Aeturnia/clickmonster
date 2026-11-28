@@ -1644,6 +1644,11 @@ async function remoteCall(a, v) {
   }
 }
 
+// Which fight a battle is, by kind (#113): a world-boss hunt by its hunt id, an ordinary fight by
+// its monster. A hunt has no monsterId, so comparing that alone replayed (and announced) the whole
+// hunt after each attack. A hunt and a fight can never count as the same.
+const battleKey = (b) => (!b ? null : b.hunt ? `hunt:${b.hunt}` : b.monsterId ? `monster:${b.monsterId}` : null);
+
 async function runRemote(a, v, el) {
   const g = gameGen;
   const call = await remoteCall(a, v); // may wait for a confirmation
@@ -1652,7 +1657,7 @@ async function runRemote(a, v, el) {
   const before = char && {
     loc: locKey(), zone: char.loc.zone, gold: char.gold, xp: char.xp, level: char.level, masteries: { ...char.masteries },
     battleLog: char.battle && !char.battle.pvp ? char.battle.log.length : 0,
-    battleId: char.battle?.monsterId,
+    battleId: battleKey(char.battle),
   };
   ui.busy = true;
   // Pending: remembered by key so it survives re-renders (regeneration ticks every second).
@@ -1712,7 +1717,8 @@ async function runRemote(a, v, el) {
   // Battle feedback for the new log lines.
   const b = char?.battle;
   if (b && ['melee', 'cast', 'flee', 'attack'].includes(action)) {
-    const start = b.monsterId && b.monsterId === before?.battleId ? before.battleLog : 0;
+    const key = battleKey(b);
+    const start = key && key === before?.battleId ? before.battleLog : 0;
     playEffects(b.log.slice(start));
   }
   if (char && before && locKey() !== before.loc) { ui.players = null; refreshPlayers(); chat.setZone(char.loc.zone); }
