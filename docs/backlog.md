@@ -341,7 +341,7 @@ A separate staging Supabase project is dropped. The live sign-in session above c
   - **Cosmetic:** the server resolves one exchange per attack, and damage, HP and rewards are correct. It dates from hunts (PR #6, 2026-11-12), not from #102.
   - **The review's condition for the fix** (2026-11-24): compare typed battle identities, so a hunt and an ordinary fight can never count as the same fight. Test the effects and the announcements.
   - **Scheduling:** after the Kingdoms work (the owner). No milestone.
-  - **Not authorized.**
+  - **Authorized and fixed (2026-11-27),** after K-1 closed. A battle's identity is now typed (`battleKey()` in `main.js`: `hunt:<id>` or `monster:<id>`), so a hunt attack plays and announces only its own exchange. The test (`gameplay-polish.test.mjs`, "#113") checks both, and fails on the old code. The fake backend now runs a hunt's exchange through the engine's `huntExchange()`, as the `game` function does. Client only.
 
 - **A hunt's reward notices are hidden behind the finished battle screen** (found in #102's live play test, 2026-11-24). **Tracked in #114.**
   - **What happens:**
