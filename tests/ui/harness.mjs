@@ -23,7 +23,7 @@ import { buy, buyAndEquip, sell, equip, unequip, socketGem, extractGem, deposit,
 import { generateQuests, accept, hourBucket } from '../../public/js/engine/quests.js';
 import { canSend } from '../../public/js/engine/chat.js';
 import { duel } from '../../public/js/engine/pvp.js';
-import { startHuntBattle } from '../../public/js/engine/hunt.js';
+import { startHuntBattle, huntExchange } from '../../public/js/engine/hunt.js';
 import { setKingdomConfig, kingdomConfig, TEST_CONFIG } from '../../public/js/data/kingdoms.js';
 import { claimKingdom, releaseKingdom } from '../../public/js/engine/kingdom.js';
 import { checkNews, canDeleteNews } from '../../public/js/data/news.js';
@@ -405,7 +405,9 @@ export class FakeBackend {
     const actions = {
       move: () => move(c, args.dir), walk: () => walkTo(c, args.x, args.y),
       fight: () => startBattle(c, args.monsterId, () => 0.99),
-      melee: () => battleAction(c, 'melee', rng), cast: () => battleAction(c, 'cast', rng), flee: () => battleAction(c, 'flee', rng),
+      melee: () => (c.battle?.hunt ? this.huntAct(c, 'melee', rng) : battleAction(c, 'melee', rng)),
+      cast: () => (c.battle?.hunt ? this.huntAct(c, 'cast', rng) : battleAction(c, 'cast', rng)),
+      flee: () => (c.battle?.hunt ? this.huntAct(c, 'flee', rng) : battleAction(c, 'flee', rng)),
       again: () => { const m = c.battle.monsterId; c.battle = null; startBattle(c, m, () => 0.99); },
       done: () => { if (c.battle?.over) c.battle = null; }, portal: () => usePortal(c), heal: () => heal(c),
       buy: () => buy(c, args.itemId), buyequip: () => buyAndEquip(c, args.itemId), sell: () => sell(c, Number(args.uid)),
@@ -776,6 +778,23 @@ export class FakeBackend {
     this.plots.splice(i, 1);
     log({ action: 'kingdom:unreserve', details: { x, y, plot_id: plotId, reason: why } });
     return { ok: true };
+  }
+
+  // A world-boss hunt's exchange, as the game function's huntAction() runs it (#113): the engine's
+  // huntExchange(), with the shared damage taken from the hunt's HP. The killing blow's rewards (the
+  // database's hunt_hit and finishHunt) are not modelled.
+  huntAct(c, mode, rng) {
+    const b = c.battle;
+    if (b.over) throw Object.assign(new Error('This fight is over.'), { status: 400 });
+    const hunt = this.activeHunts.find((x) => x.id === b.hunt);
+    if (!hunt) { b.over = 'ended'; b.log.push({ kind: 'info', text: 'The hunt is over.' }); return; }
+    const dealt = huntExchange(c, hunt, mode, rng);
+    if (dealt > 0) {
+      hunt.hp = Math.max(0, hunt.hp - dealt);
+      b.hp = hunt.hp;
+      b.maxHp = hunt.max_hp ?? hunt.maxHp;
+      if (hunt.hp === 0) { b.over = 'victory'; b.log.push({ kind: 'win', text: `You landed the killing blow on ${hunt.name}!` }); }
+    }
   }
 
   // Another tab released the player's Kingdom and claimed a plot again (a new ownership instance).
