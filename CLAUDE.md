@@ -77,7 +77,8 @@ Read these first:
       - **`game` is v16 and `admin` v9,** from `8eb471d`;
       - **Kingdoms are closed:** players see nothing, and staff see the console's read-only Kingdoms section.
     - **K-1 is complete.** #83 closes once the closing record is merged.
-    - **Not authorized:** activation, balancing values (`CLAIM_MIN_LEVEL`, `CLAIM_COST`) and K-2. **Opening Kingdoms is a reviewed code change** in the site and both functions (plan section 3).
+    - **Not authorized:** activation, balancing values (`CLAIM_MIN_LEVEL`, `CLAIM_COST`) and K-2's implementation. **Opening Kingdoms is a reviewed code change** in the site and both functions (plan section 3).
+  - **The K-2 plan** (#84: resources, buildings and production; `docs/kingdoms-k2-plan.md`) **is authorized** (2026-11-27) and at its review gate. **The implementation is not authorized:** each stage needs its own authorization.
 - **#102, pending rewards delivered exactly once: fixed, deployed, accepted in independent review, and closed as completed** (2026-11-24, on the owner's authorization).
   - **The scope and reports:** `docs/pending-rewards-scope.md` and `docs/pending-rewards-report.md`.
   - **The implementation:** stage 1, PR #107; stage 2, PR #108. The rollout procedure is PR #109.
