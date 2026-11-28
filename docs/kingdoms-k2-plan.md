@@ -91,7 +91,12 @@
 | `clock` | server milliseconds, settled up to |
 | `construction` | `null`, or `{ building, toLevel, startedAt, finishAt, paid: { gold, ore, food, wood, material } }` |
 
-- **`construction.finishAt` and `construction.paid.gold` are already a contract.** K1-1's `kingdom_revoke()` reads exactly those fields to refund a construction's gold (`supabase/migrations/20261125120000_kingdoms.sql`). It is refused with `MRARG` if they're malformed. **K-2 writes exactly that shape;** nothing in the database changes for it.
+- **`construction.finishAt` and `construction.paid.gold` are already a contract.** K1-1's `kingdom_revoke()` reads exactly those fields to refund a construction's gold (`supabase/migrations/20261125120000_kingdoms.sql`). It is refused with `MRARG` if they're malformed. **K-2 writes exactly that shape.**
+- **Checked against the SQL as built, read-only (2026-11-27):** the extra fields need no database change.
+  - **`kingdom_verify.sql` (I-1)** checks only that `data.kingdom` is an object, and that its `plot` matches the claimed plot. Extra keys pass.
+  - **`kingdom_claim()`** checks the same, on `p_data`.
+  - **`kingdom_release()`** requires no `kingdom` key.
+  - **`kingdom_revoke()`** reads only `construction.finishAt` and `construction.paid.gold`, and removes `kingdom` whole, so the stock and buildings are forfeited, as scope 5.4 says.
 - **A Kingdom without economic fields** (any K-1 claim) reads as zero stock, all levels 0, no construction. **Its clock starts at the first settlement while the economy is open.** Every level is 0 until something is built, so no production can be owed for the time before.
 - **The engine validates the shape on every settlement,** and refuses a malformed Kingdom rather than repair it. That's the same rule as K-1's I-1.
 
@@ -155,7 +160,7 @@
 **`kingdomStart { building, fromLevel }`** and **`kingdomCancel { startedAt }`:**
 - **They use the ordinary versioned save** through `commitRow()`. Only claim and release go through the Postgres functions (K1-2).
 - **They are refused outside the Kingdom Zone,** and while the economy is closed.
-- **They are not in `FAST_ACTIONS`:** they're management actions, not combat.
+- **They join `FAST_ACTIONS`,** with its 150 ms floor, as scope 5.10 recommends and as claim and release did (K-1 plan, choice 6).
 
 **A kill's material** is saved with the hero, as gold is.
 
@@ -212,7 +217,37 @@
   - **These are best effort,** like every hero edit (5.11; #80).
   - **The editor can't add or remove a Kingdom, move its plot, or write a construction** (I-1 and the revoke's contract).
   - **A corrected stock above its cap** follows 5.9's rule.
+  - **The building a construction is raising can't have its level corrected** while that construction is under way. Its `toLevel` would no longer follow. The editor refuses it, with the reason.
 - **The `materials` multiplier** in Events and rates (OD-5).
+
+### 2.9 What is live while closed, and the publish order
+
+**Netlify publishes `public/` on each merge,** long before K2-5 deploys the functions. Every state in between must work with the functions then deployed, as in K-1 (its plan, section 3).
+
+**While `KINGDOM_ECONOMY` is off:**
+
+| Part | While off |
+|---|---|
+| **The material roll** (engine, client and `game`) | Never runs. Loot is exactly as today |
+| **Settlement** | Never runs. A Kingdom's economic fields aren't written |
+| **`kingdomStart` and `kingdomCancel`** | Refused: "The Kingdom's economy isn't open yet." The client doesn't send them |
+| **The management view** | Says the economy isn't open yet. No stock, buildings or buttons |
+| **The `materials` multiplier** | The console may show it (OD-5). **The players' event banner omits it,** so no event can promise players a material bonus while there are no materials |
+| **The resource ledger** (after K2-1) | Exists, empty. Nothing writes it |
+| **The hero editor's corrections** | Refused while closed, like the admin Kingdom changes |
+
+**Each merge and gate:**
+
+| After | The site | The server | Effect |
+|---|---|---|---|
+| **K2-1's merge** | Unchanged | Unchanged | None. The migration is a file |
+| **K2-2's merge** | The engine has the economy, off. `MULT_KEYS` has `materials` | `game` v16, `admin` v9 | **None for players:** closed, and the banner omits `materials`. **The console:** `admin` v9's `cleanMults()` iterates its own deployed `MULT_KEYS`, so a `materials` value sent by the newer console is **dropped, not stored.** The console says the multiplier has no effect yet (OD-5) |
+| **K2-3 and K2-4's merges** | The interfaces, drawing no economy while off | Unchanged | None |
+| **K2-5, Gate B** | Unchanged | The resource-ledger table and function | None. Nothing writes the table |
+| **K2-5, Gate C** | Unchanged | `game` and `admin` with the economy, off. `admin` now stores a `materials` multiplier | None for players: the banner still omits it while closed |
+| **K-2 activation** (not K-2) | Open, in a reviewed PR, after K-3's numbers | The same PR, redeployed | The economy runs |
+
+**The reverse, a newer function with an older cached client,** is harmless. The older client doesn't know `materials` or the new actions, and the server refuses them while closed anyway.
 
 ## 3. Stages
 
@@ -270,7 +305,14 @@ As in K-1:
 - **Time-limited mutation checks,** for the guards.
 - **A report** (`docs/kingdoms-k2-report.md`) stating the deviations, and what wasn't verified.
 
-## 7. Not verified by this plan
+## 7. Deviations from the accepted K-0 scope
+
+**None in substance.** Clarifications, within the scope's own decisions:
+- **The banner leaves out `materials` while the economy is closed** (2.9). The scope doesn't mention event banners. This keeps copy accurate (`CLAUDE.md`: accuracy matters in copy).
+- **The editor can't correct the level of a building under construction** (2.8). The scope's corrections (5.10) don't say; this keeps the construction's `toLevel` consistent.
+- **The test configuration** extends K-1's decision 9.1 to the economy's test values (2.1).
+
+## 8. Not verified by this plan
 
 - **The economy's balance:** that's #86 and K-3.
 - **The arithmetic at extreme values:** the safe-integer bounds are designed in, and tested in K2-2.
