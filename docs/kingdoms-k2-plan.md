@@ -1,12 +1,19 @@
 # Kingdoms K-2: implementation plan (#84)
 
-**Status: revision 1, for independent re-review. No code, migration or deploy.**
+**Status: revision 2, for final independent re-review. No code, migration or deploy.**
 - **Authorized:**
   - **the plan:** by the owner on 2026-11-27, after K-1 closed (#83);
-  - **this revision:** on 2026-11-27, after the review of `4bc5b9a`.
+  - **revision 1:** on 2026-11-27, after the review of `4bc5b9a`;
+  - **revision 2:** on 2026-11-28, after the re-review of `0e3d3d7`.
 - **What changed in revision 1:**
   - **the six review findings,** K2-B01 to K2-B06 (section 10);
   - **the owner's ratification** of OD-1 to OD-5, with the review's qualifications (section 4).
+- **What changed in revision 2:**
+  - **K2-B02a:** a construction revision, so a delayed start after a cancel is refused;
+  - **K2-B03a:** deletion forfeitures are left out of the ledger;
+  - **the re-review's K2-2 acceptance conditions,** Q1 to Q7, and the two switches tested apart (3.1).
+
+  See section 10.
 - **The implementation is not authorized.** Each stage below needs its own authorization and review gate, as in K-1. **No balancing value is chosen here.**
 - **The contract** is the accepted K-0 scope, [`docs/kingdoms-scope.md`](kingdoms-scope.md) (PR #101, with amendment 1 in PR #106). The parts K-2 implements are:
   - resources (5.6);
@@ -110,8 +117,12 @@ So the economy stays off when the configuration is incomplete **or malformed:** 
 | `rem` | `{ ore, food, wood }`: the production remainders (5.9) |
 | `clock` | server milliseconds, settled up to |
 | `construction` | `null`, or `{ id, building, toLevel, startedAt, finishAt, paid: { gold, ore, food, wood, material } }` |
+| `rev` | the construction revision: a whole number, from 0, **that only rises.** It advances by 1 on each start, each cancel, and each construction's finish (K2-B02a) |
 
 - **`construction.id`** is a random UUID made by the server when the construction starts (K2-B02). It is the construction's identity. `startedAt` isn't relied on to be unique.
+- **`rev`** identifies the construction state a player saw, even when no building's level has changed. A start that was cancelled leaves the levels as they were, but not `rev`.
+  - **A finish advances it inside `settle()`,** at `finishAt`. So it is deterministic, and path-independent like the rest of settlement: a read that doesn't save shows the same `rev` the next saving request reaches.
+  - **A K-1 Kingdom without it** reads as 0.
 - **`construction.finishAt` and `construction.paid.gold` are already a contract.** K1-1's `kingdom_revoke()` reads exactly those fields to refund a construction's gold. **K-2 writes exactly that shape.** The extra `id` is ignored by it.
 - **Checked against the SQL as built (2026-11-27):** the extra fields need no database change.
   - **`kingdom_verify.sql` (I-1)** checks only that `data.kingdom` is an object, and that its `plot` matches.
@@ -132,22 +143,24 @@ So the economy stays off when the configuration is incomplete **or malformed:** 
 
 **Every request names the Kingdom it acts on** (K2-B02). That's the ownership instance (`kingdom_plots.id`, which K1-3's client already reads for release), never replaced by the one the hero holds now. The server checks it against the hero's claimed plot, read in the same request. **A different instance is refused as `plot_changed`, and nothing is sent again.** The client reloads, and the player confirms again.
 
-**`kingdomStart { plotId, building, fromLevel }`** refuses:
+**`kingdomStart { plotId, building, fromLevel, rev }`** refuses:
 - unless the economy is open, the hero is in the Kingdom Zone and outside a fight;
 - if `plotId` isn't the hero's current ownership instance (a release and reclaim since the confirmation);
+- **if `rev` isn't the Kingdom's settled `rev`** (K2-B02a). A delayed duplicate of a start that was then cancelled carries the `rev` from before both. The start, then the cancel, advanced it, so the duplicate is refused, and nothing is charged. The player confirms again;
 - unless the building is one of the four;
 - if `fromLevel` isn't the building's current level (a retried or doubled start: one start, one charge);
 - if a construction is under way;
 - at `MAX_BUILDING_LEVEL`;
 - if the resources or the carried gold aren't enough.
 
-**What it does:** settle first, then pay, recording `paid`, and set a new `id`, `startedAt = now` and `finishAt = now + BUILD_TIME`.
+**What it does:** settle first, then pay, recording `paid`, and set a new `id`, `startedAt = now`, `finishAt = now + BUILD_TIME × 1000` (the table's seconds in milliseconds, Q1), and `rev + 1`.
 
 **`kingdomCancel { plotId, constructionId }`:**
 - **It checks the ownership instance first,** as for a start.
 - **It settles first.** A construction with `finishAt <= now` has finished, so the cancel is refused ("That construction has already finished.").
 - **`constructionId` must equal the construction under way.** A stale cancel can never reach a later construction, and a doubled cancel refunds once.
 - **The refund is exactly `paid`,** with the gold to carried gold (OD-2). Refunded stock above a cap is kept.
+- **`rev` advances by 1.**
 
 **Why the ownership check holds:**
 - The hero's save is versioned, and claim, release and revoke all raise the version.
@@ -192,7 +205,7 @@ So the economy stays off when the configuration is incomplete **or malformed:** 
 | **`game`, a duel's target** (`attack`: the defender's row is loaded and saved) | **No:** preserved | None. A duel changes only gold and XP | None |
 | **`game`, claim** (`kingdom_claim()`) | No. There's no Kingdom yet | The Kingdom starts empty | None |
 | **`game`, release** (`kingdom_release()`) | **Yes,** first. Then it's refused if a construction is under way | The Kingdom is removed | Production, then `forfeit_release` (the settled stock) |
-| **`game`, deleting a hero** | **Yes,** in memory only, for the ledger | The row is deleted; K-1's cascade frees the plot | `forfeit_delete` (the settled stock), after the delete |
+| **`game`, deleting a hero** | **No** | The row is deleted; K-1's cascade frees the plot | **Not recorded** (K2-B03a). The delete is by account, not by the loaded version, so stock read before it could be stale. A documented limitation (2.6) |
 | **`admin`, revoke** (`kingdom_revoke()`) | No: the database function removes the Kingdom whole | Forfeited. The construction's gold refunded (K1-1) | **Not recorded.** The function doesn't return the stock, and the stored stock isn't settled. A documented limitation (2.6) |
 | **`admin`, the editor's economic corrections** (stock, building levels) | **Yes, before the correction,** at the admin request's `now`. Without that, the next settlement would apply a corrected level to the whole interval before it | The correction, on the settled state; then the versioned save | Production, then `admin_correction` |
 | **`admin`, the editor's other edits** (stats, gold, location, items) | **No:** preserved | None | None |
@@ -218,7 +231,7 @@ So the economy stays off when the configuration is incomplete **or malformed:** 
 | `construction` | a start's cost, negative |
 | `refund` | a cancel's refund, positive |
 | `admin_correction` | an editor correction's difference, either sign |
-| `forfeit_release`, `forfeit_delete` | the settled stock given up, negative |
+| `forfeit_release` | the settled stock a release gives up, negative. The release is version-checked (`kingdom_release()`), so the stock is the one actually given up |
 
 **So a request that produces 30 ore and spends 30 records both,** not a net 0.
 
@@ -228,8 +241,9 @@ So the economy stays off when the configuration is incomplete **or malformed:** 
 - **So the ledger can undercount, never overcount** (5.11, the owner's question 10).
 
 **Not recorded, and stated as limits:**
-- **a revoke's forfeited stock** (2.5);
-- **production that accrues and is then forfeited by a revoke** before any save.
+- **a revoke's forfeited stock** (2.5). The database function doesn't return it, and the stored stock isn't settled;
+- **a deleted hero's forfeited stock** (2.5, K2-B03a). The delete is by account, not conditional on the version loaded, so a stock read before it could include changes another request made or undid in between. Making deletion version-conditional would change an established destructive path for best-effort statistics, so it isn't done;
+- **production that accrues and is then forfeited** by a revoke or a deletion before any save.
 
 **The ledger is statistics for #86 and staff. It doesn't reconcile the economy, and never claims to.**
 
@@ -257,7 +271,12 @@ So the economy stays off when the configuration is incomplete **or malformed:** 
 - **Cancel is tier 3:** a normal question. It refunds in full and loses nothing.
 - **Pending keys:** `kingdom:<building>:<op>`.
 
-**Identity through the confirmation** (K2-B02). The view carries the ownership instance id and, for Cancel, the construction's id, taken when the button is pressed. A refusal as `plot_changed` (or a construction no longer there) reloads the view and sends nothing more, as K1-3's release does.
+**Identity through the confirmation** (K2-B02, K2-B02a). The view carries, taken when the button is pressed:
+- the ownership instance id;
+- for Build and Upgrade, the construction revision `rev` it showed;
+- for Cancel, the construction's id.
+
+A refusal as `plot_changed`, a changed `rev`, or a construction no longer there reloads the view and sends nothing more, as K1-3's release does.
 
 **Account isolation** (K2-B06). Every read and action records `gameGen`, and is dropped for another account, as in K1-3. The view's reads are numbered, as in K1-3's corrections.
 
@@ -338,6 +357,21 @@ Each stage needs the owner's authorization and an independent review, as in K-1.
 4. **K2-4, the admin console:** the economy's view and corrections, the ledger's reads, and the multiplier, all behind the capability.
 5. **K2-5, the dormant rollout:** a procedure for review, then Gates A to C (the migration, then `game` and `admin`), with `KINGDOM_ECONOMY` off.
 
+### 3.1 K2-2's acceptance conditions (from the re-review of `0e3d3d7`)
+
+**K2-2's review checks each of these,** besides section 5's criteria:
+
+| # | Condition |
+|---|---|
+| **Q1** | **Construction times are converted** from the table's seconds to milliseconds before they're added to `now` (2.3) |
+| **Q2** | **Arithmetic is safe throughout:** intermediate products, accumulated stock, refunds and timestamps all stay within `Number.MAX_SAFE_INTEGER`. That includes **`'unlimited'` caps,** where cutting an interval at the cap isn't available: the calculation must still be deterministic and overflow-safe, for example by splitting long intervals into bounded steps that give the same result |
+| **Q3** | **A legitimate K-1 Kingdom** (only `plot` and `claimedAt`) **is told apart from a partial or malformed K-2 state.** The first reads as empty, and the second is refused (2.2) |
+| **Q4** | **The bootstrap check covers retention as well as cost:** Essence must be obtainable under the configured drop chances, and keepable under the material's cap, in the amount a first building needs. #86 and K-3 show it's realistic |
+| **Q5** | **A material drop never reduces a stock already above its cap** (after a refund or a correction). It adds nothing, and the stock stays as it was |
+| **Q6** | **No retroactive change under a clock that runs back:** if a request's `now` is before the stored `clock`, settlement does nothing (scope 5.9, step 1). A start, cancel or admin correction then applies at the stored `clock`, or is refused. It never charges, refunds or corrects as of an earlier time |
+| **Q7** | **The admin capability guard and the players' banner filter ship in K2-2,** in the same change that adds `materials` to `MULT_KEYS`. The console's multiplier forms are drawn from `MULT_KEYS`, so publishing the key without the guard would bring back the compatibility defect 2.8 prevents |
+| **Switches** | **The bounded closed-state run on the local stack tests the two switches apart:** both off; Kingdoms open with the economy closed; and both open, with test values. K-1 may be activated without K-2 |
+
 **After K-2, not part of it:**
 - **#86's simulations,** on K-2's engine functions;
 - **K-3,** the numbers, which must pass the validator and the bootstrap criterion;
@@ -370,6 +404,7 @@ The owner ratified all five on 2026-11-27, with the review's qualifications:
 | **A stale confirmation can't act on replacement state:** release and reclaim, then the old start or cancel | 2.3, API tests (`plot_changed`, nothing changed); browser tests (one request, a reload, nothing sent again) |
 | A doubled start starts once and charges once; a second start is refused, **including two at once** | 2.3, Node and API tests, concurrent on the local stack |
 | A doubled cancel refunds once, and exactly what was paid | 2.3, API tests |
+| **A delayed duplicate of a start, after that construction was cancelled, is refused, and charges nothing** | 2.3, `rev` (K2-B02a): an API test (start, cancel, replay the first start) and a Node test |
 | **A cancel racing a revoke refunds once,** through whichever commits first | 2.3, K1-1's function: an API test on the local stack, as scope 9 requires |
 | A revoke during a construction refunds exactly its gold, with the boundary cases | K1-1's function and pgTAP, unchanged. K2-2 adds an API test with a real construction written by `kingdomStart` |
 | A refund above the cap is kept, and accrual pauses | 2.3, Node tests |
@@ -402,7 +437,8 @@ As in K-1:
 - **The banner leaves out `materials` while the economy is closed** (2.4, 2.9). The scope doesn't mention event banners; this keeps copy accurate.
 - **The editor can't correct the level of a building under construction** (2.8). This keeps the construction's `toLevel` consistent.
 - **The test configuration** extends K-1's decision 9.1 (2.1).
-- **Constructions carry an `id`** (2.2), and requests name the ownership instance (2.3). The scope's retry rules (5.8) named the building's level and the start time. These are stricter, and they also cover stale confirmations (K2-B02).
+- **Constructions carry an `id`, and the Kingdom a construction revision `rev`** (2.2). Requests name the ownership instance, and a start names the `rev` it saw (2.3). The scope's retry rules (5.8) named the building's level and the start time. These are stricter, and they also cover stale confirmations and a start replayed after a cancel (K2-B02, K2-B02a).
+- **Deletion forfeitures aren't recorded in the ledger** (2.6, K2-B03a), as revocation's aren't. The scope's 5.11 asks for inflows and outflows best effort; these two are stated limits.
 - **The ledger's sources** (2.6) refine 5.11's "inflows and outflows". Its contract, best effort, is unchanged.
 
 ## 8. Not verified by this plan
@@ -428,3 +464,16 @@ As in K-1:
 | **K2-B04:** the configuration contract | 2.1: unset against `'unlimited'`, indexing, domains, safe integers, fail-closed validation, and the bootstrap check as a K-3 criterion |
 | **K2-B05:** compatibility and the admin capability | 2.8, the three capability states; 2.9, the publish order with v9's `cleanMults()` behaviour; activation keeps 5.7's server-first order |
 | **K2-B06:** acceptance traceability | Section 5, completed, with the closed-state run on the local stack in K2-2's gate |
+
+### The re-review's findings, disposed (the re-review of `0e3d3d7`, 2026-11-28)
+
+**Accepted:**
+- **K2-B01 and K2-B06:** resolved.
+- **K2-B02 and K2-B03:** accepted, except one case each.
+- **K2-B04 and K2-B05:** accepted, with qualifications.
+
+| Finding | Where |
+|---|---|
+| **K2-B02a:** a delayed start replayed after a cancel | **2.2:** the construction revision `rev`, advanced on start, cancel and finish. **2.3:** a start carries the `rev` it saw, and a different `rev` is refused without a charge. **2.7:** the confirmation carries it. **Section 5:** the start, cancel and replay test |
+| **K2-B03a:** deletion forfeitures could use stale stock | **2.5 and 2.6:** deletion forfeitures are left out of the ledger, alongside revocation's, and both are stated as limits. The deletion path isn't changed |
+| **Qualifications Q1 to Q7,** and the switches tested apart | **3.1:** K2-2's acceptance conditions |
